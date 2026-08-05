@@ -1,0 +1,261 @@
+import { useCallback, useEffect, useState } from 'react'
+import { useAuth } from '../contexts/AuthContext.jsx'
+import { supabase, translateAuthError } from '../lib/supabase.js'
+import { EVENTS, guarded, logEvent } from '../lib/audit.js'
+import { DEFAULT_CATEGORIES } from '../utils/categories.js'
+import { uid } from '../utils/format.js'
+import { useLocalStorage } from './useLocalStorage.js'
+
+function normalizeTransaction(input) {
+  return {
+    id: input.id || uid(),
+    type: input.type === 'income' ? 'income' : 'expense',
+    description: String(input.description || '').trim() || 'Sem descrição',
+    amount: Math.abs(Number(input.amount) || 0),
+    categoryId: input.categoryId || 'outros-d',
+    date: String(input.date || '').slice(0, 10),
+    method: input.method || 'pix',
+    paid: input.paid !== false,
+    recurrence: input.recurrence || 'none',
+    recurrenceEnd: input.recurrenceEnd || '',
+    installments: Math.max(1, Number(input.installments) || 1),
+    tags: Array.isArray(input.tags)
+      ? input.tags
+      : String(input.tags || '').split(/[,\s]+/).map((tag) => tag.trim()).filter(Boolean),
+    note: String(input.note || ''),
+    paidOccurrences: input.paidOccurrences || {},
+    createdAt: input.createdAt || new Date().toISOString(),
+  }
+}
+
+const toTxRow = (tx, userId) => ({
+  id: tx.id,
+  user_id: userId,
+  type: tx.type,
+  description: tx.description,
+  amount: tx.amount,
+  category_id: tx.categoryId,
+  date: tx.date,
+  method: tx.method,
+  paid: tx.paid,
+  recurrence: tx.recurrence,
+  recurrence_end: tx.recurrenceEnd || null,
+  installments: tx.installments,
+  tags: tx.tags,
+  note: tx.note || null,
+  paid_occurrences: tx.paidOccurrences,
+  created_at: tx.createdAt,
+})
+
+const fromTxRow = (row) => normalizeTransaction({
+  id: row.id,
+  type: row.type,
+  description: row.description,
+  amount: Number(row.amount),
+  categoryId: row.category_id,
+  date: row.date,
+  method: row.method,
+  paid: row.paid,
+  recurrence: row.recurrence,
+  recurrenceEnd: row.recurrence_end || '',
+  installments: row.installments,
+  tags: row.tags || [],
+  note: row.note || '',
+  paidOccurrences: row.paid_occurrences || {},
+  createdAt: row.created_at,
+})
+
+const fromCategory = (row) => ({
+  id: row.id, name: row.name, type: row.type, color: row.color, icon: row.icon, custom: row.custom,
+})
+const toCategory = (cat, userId) => ({
+  id: cat.id, user_id: userId, name: cat.name, type: cat.type,
+  color: cat.color, icon: cat.icon, custom: cat.custom !== false,
+})
+const fromGoal = (row) => ({
+  id: row.id, name: row.name, target: Number(row.target), current: Number(row.current),
+  deadline: row.deadline || '', icon: row.icon, color: row.color,
+})
+const toGoal = (goal, userId) => ({
+  id: goal.id, user_id: userId, name: goal.name, target: goal.target,
+  current: goal.current, deadline: goal.deadline || null, icon: goal.icon, color: goal.color,
+})
+
+export function useSupabaseFinance() {
+  const { user } = useAuth()
+  const [transactions, setTransactions] = useState([])
+  const [categories, setCategories] = useState([])
+  const [budgets, setBudgets] = useState({})
+  const [goals, setGoals] = useState([])
+  const [theme, setTheme] = useLocalStorage('planejador:theme', 'light')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const reportError = useCallback((dbError) => {
+    setError(translateAuthError(dbError))
+    window.setTimeout(() => setError(''), 6000)
+  }, [])
+
+  const load = useCallback(async () => {
+    if (!user || !supabase) return
+    setLoading(true)
+    setError('')
+    const [txResult, catResult, budgetResult, goalResult] = await Promise.all([
+      guarded(() => supabase.from('transactions').select('*').order('created_at', { ascending: false }), { table: 'transactions', action: 'select' }),
+      guarded(() => supabase.from('categories').select('*').order('created_at'), { table: 'categories', action: 'select' }),
+      guarded(() => supabase.from('budgets').select('*'), { table: 'budgets', action: 'select' }),
+      guarded(() => supabase.from('goals').select('*').order('created_at'), { table: 'goals', action: 'select' }),
+    ])
+    const firstError = [txResult, catResult, budgetResult, goalResult].find((r) => r.error)?.error
+    if (firstError) reportError(firstError)
+    setTransactions((txResult.data || []).map(fromTxRow))
+    setCategories((catResult.data || []).map(fromCategory))
+    setBudgets(Object.fromEntries((budgetResult.data || []).map((row) => [row.category_id, Number(row.limit_amount)])))
+    setGoals((goalResult.data || []).map(fromGoal))
+    setLoading(false)
+  }, [reportError, user])
+
+  useEffect(() => { load() }, [load])
+
+  const persist = useCallback(async (operation, context) => {
+    const result = await guarded(operation, context)
+    if (result.error) {
+      reportError(result.error)
+      await load()
+      return false
+    }
+    return true
+  }, [load, reportError])
+
+  const addTransaction = useCallback((input) => {
+    const tx = normalizeTransaction(input)
+    setTransactions((prev) => [tx, ...prev])
+    void persist(() => supabase.from('transactions').insert(toTxRow(tx, user.id)), { table: 'transactions', action: 'insert' })
+    return tx
+  }, [persist, user])
+
+  const updateTransaction = useCallback((id, input) => {
+    const rootId = String(id).split('#')[0]
+    let updated
+    setTransactions((prev) => prev.map((tx) => {
+      if (tx.id !== rootId) return tx
+      updated = normalizeTransaction({ ...tx, ...input, id: rootId })
+      return updated
+    }))
+    if (updated) void persist(
+      () => supabase.from('transactions').update(toTxRow(updated, user.id)).eq('id', rootId).eq('user_id', user.id),
+      { table: 'transactions', action: 'update' },
+    )
+  }, [persist, user])
+
+  const deleteTransaction = useCallback((id) => {
+    const rootId = String(id).split('#')[0]
+    setTransactions((prev) => prev.filter((tx) => tx.id !== rootId))
+    void persist(() => supabase.from('transactions').delete().eq('id', rootId).eq('user_id', user.id), { table: 'transactions', action: 'delete' })
+  }, [persist, user])
+
+  const duplicateTransaction = useCallback((occurrence) => addTransaction({
+    ...occurrence, id: uid(), description: `${occurrence.description} (cópia)`, recurrence: 'none',
+    installments: 1, paidOccurrences: {}, createdAt: new Date().toISOString(),
+  }), [addTransaction])
+
+  const togglePaid = useCallback((occurrence) => {
+    const rootId = occurrence.sourceId || String(occurrence.id).split('#')[0]
+    const index = occurrence.occurrenceIndex || 0
+    const root = transactions.find((tx) => tx.id === rootId)
+    if (!root) return
+    const updated = { ...root }
+    if (index === 0) updated.paid = !updated.paid
+    else {
+      updated.paidOccurrences = { ...(root.paidOccurrences || {}) }
+      if (updated.paidOccurrences[index]) delete updated.paidOccurrences[index]
+      else updated.paidOccurrences[index] = true
+    }
+    updateTransaction(rootId, updated)
+  }, [transactions, updateTransaction])
+
+  const addCategory = useCallback((input) => {
+    const base = String(input.name || 'cat').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    const cat = { id: input.id || `${base}-${Math.random().toString(36).slice(2, 5)}`, name: String(input.name || 'Nova categoria').trim(), type: input.type === 'income' ? 'income' : 'expense', color: input.color || '#6366f1', icon: input.icon || '📁', custom: true }
+    setCategories((prev) => [...prev, cat])
+    void persist(() => supabase.from('categories').insert(toCategory(cat, user.id)), { table: 'categories', action: 'insert' })
+  }, [persist, user])
+
+  const updateCategory = useCallback((id, patch) => {
+    setCategories((prev) => prev.map((cat) => cat.id === id ? { ...cat, ...patch } : cat))
+    const allowed = Object.fromEntries(Object.entries(patch).filter(([key]) => ['name', 'type', 'color', 'icon'].includes(key)))
+    void persist(() => supabase.from('categories').update(allowed).eq('id', id).eq('user_id', user.id), { table: 'categories', action: 'update' })
+  }, [persist, user])
+
+  const deleteCategory = useCallback((id) => {
+    const category = categories.find((cat) => cat.id === id)
+    if (!category?.custom) return
+    const fallback = category.type === 'income' ? 'outros-r' : 'outros-d'
+    setCategories((prev) => prev.filter((cat) => cat.id !== id))
+    setBudgets((prev) => { const next = { ...prev }; delete next[id]; return next })
+    setTransactions((prev) => prev.map((tx) => tx.categoryId === id ? { ...tx, categoryId: fallback } : tx))
+    void (async () => {
+      await persist(() => supabase.from('transactions').update({ category_id: fallback }).eq('category_id', id).eq('user_id', user.id), { table: 'transactions', action: 'update_category' })
+      await persist(() => supabase.from('budgets').delete().eq('category_id', id).eq('user_id', user.id), { table: 'budgets', action: 'delete' })
+      await persist(() => supabase.from('categories').delete().eq('id', id).eq('user_id', user.id), { table: 'categories', action: 'delete' })
+    })()
+  }, [categories, persist, user])
+
+  const setBudget = useCallback((categoryId, limit) => {
+    const amount = Number(limit) || 0
+    setBudgets((prev) => { const next = { ...prev }; if (amount <= 0) delete next[categoryId]; else next[categoryId] = amount; return next })
+    if (amount <= 0) void persist(() => supabase.from('budgets').delete().eq('category_id', categoryId).eq('user_id', user.id), { table: 'budgets', action: 'delete' })
+    else void persist(() => supabase.from('budgets').upsert({ user_id: user.id, category_id: categoryId, limit_amount: amount }), { table: 'budgets', action: 'upsert' })
+  }, [persist, user])
+
+  const addGoal = useCallback((input) => {
+    const goal = { id: uid(), name: String(input.name || 'Nova meta').trim(), target: Math.abs(Number(input.target) || 0), current: Math.abs(Number(input.current) || 0), deadline: input.deadline || '', icon: input.icon || '🎯', color: input.color || '#6366f1' }
+    setGoals((prev) => [...prev, goal])
+    void persist(() => supabase.from('goals').insert(toGoal(goal, user.id)), { table: 'goals', action: 'insert' })
+  }, [persist, user])
+
+  const updateGoal = useCallback((id, patch) => {
+    const currentGoal = goals.find((goal) => goal.id === id)
+    if (!currentGoal) return
+    const goal = { ...currentGoal, ...patch, target: patch.target !== undefined ? Math.abs(Number(patch.target) || 0) : currentGoal.target, current: patch.current !== undefined ? Math.abs(Number(patch.current) || 0) : currentGoal.current }
+    setGoals((prev) => prev.map((item) => item.id === id ? goal : item))
+    void persist(() => supabase.from('goals').update(toGoal(goal, user.id)).eq('id', id).eq('user_id', user.id), { table: 'goals', action: 'update' })
+  }, [goals, persist, user])
+
+  const deleteGoal = useCallback((id) => {
+    setGoals((prev) => prev.filter((goal) => goal.id !== id))
+    void persist(() => supabase.from('goals').delete().eq('id', id).eq('user_id', user.id), { table: 'goals', action: 'delete' })
+  }, [persist, user])
+
+  const exportData = useCallback(() => ({ transactions, categories, budgets, goals }), [transactions, categories, budgets, goals])
+
+  const importData = useCallback(async (data) => {
+    const txs = Array.isArray(data.transactions) ? data.transactions.map(normalizeTransaction) : transactions
+    const cats = Array.isArray(data.categories) && data.categories.length ? data.categories : categories
+    const nextBudgets = data.budgets && typeof data.budgets === 'object' ? data.budgets : budgets
+    const nextGoals = Array.isArray(data.goals) ? data.goals.map((goal) => ({ id: goal.id || uid(), name: String(goal.name || 'Meta'), target: Math.abs(Number(goal.target) || 0), current: Math.abs(Number(goal.current) || 0), deadline: goal.deadline || '', icon: goal.icon || '🎯', color: goal.color || '#6366f1' })) : goals
+    await supabase.rpc('delete_my_data')
+    const results = await Promise.all([
+      supabase.from('categories').upsert(cats.map((cat) => toCategory(cat, user.id))),
+      txs.length ? supabase.from('transactions').insert(txs.map((tx) => toTxRow(tx, user.id))) : Promise.resolve({ error: null }),
+      Object.keys(nextBudgets).length ? supabase.from('budgets').insert(Object.entries(nextBudgets).map(([categoryId, amount]) => ({ user_id: user.id, category_id: categoryId, limit_amount: Number(amount) }))) : Promise.resolve({ error: null }),
+      nextGoals.length ? supabase.from('goals').insert(nextGoals.map((goal) => toGoal(goal, user.id))) : Promise.resolve({ error: null }),
+    ])
+    const failure = results.find((result) => result.error)
+    if (failure) reportError(failure.error)
+    await logEvent(EVENTS.DATA_IMPORTED, 'warning', { transactions: txs.length, goals: nextGoals.length })
+    await load()
+  }, [budgets, categories, goals, load, reportError, transactions, user])
+
+  const clearAll = useCallback(async () => {
+    const { error: clearError } = await supabase.rpc('delete_my_data')
+    if (clearError) reportError(clearError)
+    await supabase.from('categories').upsert(DEFAULT_CATEGORIES.map((cat) => toCategory({ ...cat, custom: false }, user.id)))
+    await load()
+  }, [load, reportError, user])
+
+  return { transactions, categories, budgets, goals, theme, loading, error, reload: load,
+    addTransaction, updateTransaction, deleteTransaction, duplicateTransaction, togglePaid,
+    addCategory, updateCategory, deleteCategory, setBudget, addGoal, updateGoal, deleteGoal,
+    setTheme, exportData, importData, clearAll }
+}

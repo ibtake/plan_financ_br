@@ -1,0 +1,223 @@
+import { useMemo, useRef, useState } from 'react'
+import AppIcon from './AppIcon.jsx'
+import { useIcons } from '../contexts/IconContext.jsx'
+import { ICON_CATALOG, ICON_GROUPS, TOTAL_ICONS } from '../utils/iconRegistry.js'
+import { estimateStorageBytes, readIconFile } from '../utils/iconUpload.js'
+
+/** Linha da tabela: um emoji, onde ele aparece e o controle de substituicao */
+function IconRow({ item, replaced, onUpload, onClear, busy }) {
+  const inputRef = useRef(null)
+
+  return (
+    <div className={`icon-row${replaced ? ' is-replaced' : ''}`}>
+      <div className="icon-row-preview">
+        <AppIcon emoji={item.emoji} size={30} />
+      </div>
+
+      <div className="icon-row-info">
+        <div className="icon-row-label">{item.label}</div>
+        <div className="icon-row-usage">{item.usage}</div>
+      </div>
+
+      <div className="icon-row-status">
+        {replaced ? (
+          <span className="badge badge-ok">PNG aplicado</span>
+        ) : (
+          <span className="badge badge-muted">Emoji original</span>
+        )}
+      </div>
+
+      <div className="icon-row-actions">
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/webp,image/svg+xml"
+          className="sr-only"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) onUpload(item.emoji, file)
+            event.target.value = ''
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          {replaced ? 'Trocar' : 'Enviar PNG'}
+        </button>
+        {replaced && (
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => onClear(item.emoji)}>
+            Remover
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function IconManager() {
+  const { overrides, setOverride, clearOverride, clearAll, overrideCount } = useIcons()
+  const [group, setGroup] = useState('all')
+  const [search, setSearch] = useState('')
+  const [onlyPending, setOnlyPending] = useState(false)
+  const [message, setMessage] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const notify = (text, kind = 'ok') => {
+    setMessage({ text, kind })
+    window.setTimeout(() => setMessage(null), 4000)
+  }
+
+  const handleUpload = async (emoji, file) => {
+    setBusy(true)
+    try {
+      const dataUrl = await readIconFile(file)
+      setOverride(emoji, dataUrl)
+      notify('Ícone aplicado. A mudança já aparece em todas as telas.')
+    } catch (error) {
+      notify(error.message, 'danger')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleClear = (emoji) => {
+    clearOverride(emoji)
+    notify('Ícone restaurado para o emoji original.')
+  }
+
+  const handleClearAll = () => {
+    if (!overrideCount) return
+    if (window.confirm(`Restaurar os ${overrideCount} ícones personalizados para os emojis originais?`)) {
+      clearAll()
+      notify('Todos os ícones voltaram ao padrão.')
+    }
+  }
+
+  const visible = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    return ICON_CATALOG.filter((item) => {
+      if (group !== 'all' && item.group !== group) return false
+      if (onlyPending && overrides[item.emoji]) return false
+      if (!term) return true
+      return (
+        item.label.toLowerCase().includes(term) ||
+        item.usage.toLowerCase().includes(term) ||
+        item.emoji === term
+      )
+    })
+  }, [group, onlyPending, overrides, search])
+
+  const grouped = useMemo(() => {
+    const buckets = new Map()
+    for (const item of visible) {
+      if (!buckets.has(item.group)) buckets.set(item.group, [])
+      buckets.get(item.group).push(item)
+    }
+    return buckets
+  }, [visible])
+
+  const progress = Math.round((overrideCount / TOTAL_ICONS) * 100)
+  const storageKb = Math.round(estimateStorageBytes(overrides) / 1024)
+
+  return (
+    <div className="stack">
+      <div className="card">
+        <div className="card-head">
+          <div>
+            <div className="card-title">Personalização de ícones</div>
+            <div className="card-sub">
+              Substitua os emojis por PNG conforme validar cada tela. As mudanças valem para toda a
+              aplicação e ficam salvas neste navegador.
+            </div>
+          </div>
+          {overrideCount > 0 && (
+            <button type="button" className="btn btn-sm btn-ghost" onClick={handleClearAll}>
+              Restaurar tudo
+            </button>
+          )}
+        </div>
+
+        <div className="icon-progress">
+          <div className="icon-progress-bar">
+            <div className="icon-progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+          <div className="icon-progress-meta">
+            <strong>{overrideCount}</strong> de {TOTAL_ICONS} ícones substituídos ({progress}%)
+            {storageKb > 0 && <span className="icon-progress-size"> · {storageKb} KB armazenados</span>}
+          </div>
+        </div>
+
+        {message && <div className={`notice ${message.kind === 'danger' ? 'danger' : 'success'}`}>{message.text}</div>}
+
+        <div className="icon-toolbar">
+          <input
+            className="input"
+            type="search"
+            placeholder="Buscar por nome ou tela..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <select className="input" value={group} onChange={(event) => setGroup(event.target.value)}>
+            <option value="all">Todos os grupos ({TOTAL_ICONS})</option>
+            {ICON_GROUPS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+          <label className="icon-toggle">
+            <input
+              type="checkbox"
+              checked={onlyPending}
+              onChange={(event) => setOnlyPending(event.target.checked)}
+            />
+            <span>Só pendentes</span>
+          </label>
+        </div>
+
+        <div className="icon-hint">
+          Recomendado: PNG quadrado com fundo transparente, 128×128 px, até 1 MB. A imagem é
+          redimensionada e reprocessada no seu navegador, sem envio para servidor.
+        </div>
+      </div>
+
+      {visible.length === 0 && (
+        <div className="card empty-state">
+          <AppIcon emoji="🔍" size={34} />
+          <div>Nenhum ícone corresponde ao filtro.</div>
+        </div>
+      )}
+
+      {ICON_GROUPS.filter((section) => grouped.has(section.id)).map((section) => (
+        <div className="card" key={section.id}>
+          <div className="card-head">
+            <div>
+              <div className="card-title">{section.name}</div>
+              <div className="card-sub">{section.hint}</div>
+            </div>
+            <span className="badge badge-muted">
+              {grouped.get(section.id).filter((item) => overrides[item.emoji]).length}/
+              {grouped.get(section.id).length}
+            </span>
+          </div>
+
+          <div className="icon-list">
+            {grouped.get(section.id).map((item) => (
+              <IconRow
+                key={item.emoji}
+                item={item}
+                replaced={Boolean(overrides[item.emoji])}
+                onUpload={handleUpload}
+                onClear={handleClear}
+                busy={busy}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}

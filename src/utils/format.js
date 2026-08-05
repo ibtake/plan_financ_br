@@ -1,0 +1,187 @@
+// Formatacao de moeda, datas e numeros (pt-BR)
+
+const brl = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+})
+
+const brlCompact = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+})
+
+export function formatCurrency(value) {
+  const n = Number(value) || 0
+  return brl.format(n)
+}
+
+export function formatCompact(value) {
+  const n = Number(value) || 0
+  if (Math.abs(n) < 1000) return brl.format(n)
+  return brlCompact.format(n)
+}
+
+export function formatPercent(value, digits = 0) {
+  const n = Number(value) || 0
+  return `${n.toFixed(digits).replace('.', ',')}%`
+}
+
+export function formatNumber(value, digits = 2) {
+  return new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(Number(value) || 0)
+}
+
+// ---------- Datas ----------
+
+export const MONTH_NAMES = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+]
+
+export const MONTH_SHORT = [
+  'Jan',
+  'Fev',
+  'Mar',
+  'Abr',
+  'Mai',
+  'Jun',
+  'Jul',
+  'Ago',
+  'Set',
+  'Out',
+  'Nov',
+  'Dez',
+]
+
+/** Retorna a chave "AAAA-MM" de uma data ISO (AAAA-MM-DD) */
+export function monthKeyFromDate(isoDate) {
+  if (!isoDate) return ''
+  return String(isoDate).slice(0, 7)
+}
+
+/** Monta a chave "AAAA-MM" a partir de ano e mes (0-11) */
+export function makeMonthKey(year, month) {
+  return `${year}-${String(month + 1).padStart(2, '0')}`
+}
+
+/** Converte "AAAA-MM" em { year, month } (month 0-11) */
+export function parseMonthKey(key) {
+  const [y, m] = String(key).split('-')
+  return { year: Number(y), month: Number(m) - 1 }
+}
+
+/** Rotulo amigavel: "Março 2026" */
+export function monthLabel(key) {
+  const { year, month } = parseMonthKey(key)
+  if (Number.isNaN(year) || Number.isNaN(month)) return ''
+  return `${MONTH_NAMES[month]} ${year}`
+}
+
+/** Rotulo curto: "Mar/26" */
+export function monthLabelShort(key) {
+  const { year, month } = parseMonthKey(key)
+  if (Number.isNaN(year) || Number.isNaN(month)) return ''
+  return `${MONTH_SHORT[month]}/${String(year).slice(2)}`
+}
+
+/** Soma (ou subtrai) meses de uma chave "AAAA-MM" */
+export function addMonths(key, delta) {
+  const { year, month } = parseMonthKey(key)
+  const d = new Date(year, month + delta, 1)
+  return makeMonthKey(d.getFullYear(), d.getMonth())
+}
+
+/** Lista de N chaves de mes terminando em `key` (inclusive) */
+export function lastMonths(key, count) {
+  const out = []
+  for (let i = count - 1; i >= 0; i--) out.push(addMonths(key, -i))
+  return out
+}
+
+/** Chave do mes atual */
+export function currentMonthKey() {
+  const d = new Date()
+  return makeMonthKey(d.getFullYear(), d.getMonth())
+}
+
+/** Data de hoje no formato AAAA-MM-DD */
+export function todayISO() {
+  const d = new Date()
+  const off = d.getTimezoneOffset()
+  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10)
+}
+
+/** Formata AAAA-MM-DD como DD/MM/AAAA */
+export function formatDate(isoDate) {
+  if (!isoDate) return ''
+  const [y, m, d] = String(isoDate).slice(0, 10).split('-')
+  return `${d}/${m}/${y}`
+}
+
+/** Formata AAAA-MM-DD como "12 mar" */
+export function formatDateShort(isoDate) {
+  if (!isoDate) return ''
+  const [, m, d] = String(isoDate).slice(0, 10).split('-')
+  return `${d} ${MONTH_SHORT[Number(m) - 1]?.toLowerCase() ?? ''}`
+}
+
+/** Quantidade de dias entre hoje e uma data (positivo = futuro) */
+export function daysUntil(isoDate) {
+  if (!isoDate) return 0
+  const target = new Date(`${String(isoDate).slice(0, 10)}T00:00:00`)
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  return Math.round((target - now) / 86400000)
+}
+
+/** Ultimo dia do mes de uma chave "AAAA-MM" */
+export function lastDayOfMonth(key) {
+  const { year, month } = parseMonthKey(key)
+  return new Date(year, month + 1, 0).getDate()
+}
+
+/** Constroi data ISO respeitando o ultimo dia do mes */
+export function isoDateInMonth(monthKey, day) {
+  const max = lastDayOfMonth(monthKey)
+  const d = Math.min(Math.max(1, Number(day) || 1), max)
+  return `${monthKey}-${String(d).padStart(2, '0')}`
+}
+
+/** Variacao percentual entre dois valores */
+export function percentChange(current, previous) {
+  const c = Number(current) || 0
+  const p = Number(previous) || 0
+  if (p === 0) return c === 0 ? 0 : 100
+  return ((c - p) / Math.abs(p)) * 100
+}
+
+/** Gera id unico simples */
+export function uid() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+}
+
+/** Converte string digitada em numero (aceita "1.234,56" e "1234.56") */
+export function parseAmount(input) {
+  if (typeof input === 'number') return input
+  if (!input) return 0
+  let s = String(input).trim().replace(/[R$\s]/g, '')
+  if (s.includes(',')) {
+    s = s.replace(/\./g, '').replace(',', '.')
+  }
+  const n = parseFloat(s)
+  return Number.isFinite(n) ? n : 0
+}

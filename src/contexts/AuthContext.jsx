@@ -1,0 +1,348 @@
+// =====================================================================
+// AuthContext - sessao, cadastro, login e MFA (TOTP)
+// =====================================================================
+//
+// Concentra toda a interacao com o Supabase Auth. Os componentes de
+// interface nunca falam diretamente com a API de autenticacao.
+//
+// NOTAS DE SEGURANCA
+//   - O segredo TOTP nunca e persistido pela aplicacao; ele existe
+//     apenas na memoria durante a ativacao e depois fica sob guarda do
+//     Supabase.
+//   - Erros de login usam mensagem generica para nao revelar quais
+//     e-mails existem na base (evita enumeracao de usuarios).
+//   - Ha logout automatico por inatividade.
+// =====================================================================
+
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { supabase, isSupabaseConfigured, translateAuthError } from '../lib/supabase.js'
+import {
+  EVENTS,
+  logEvent,
+  registerFailedLogin,
+  clearLoginAttempts,
+  getLoginLock,
+} from '../lib/audit.js'
+
+const AuthContext = createContext(null)
+
+/** Encerra a sessao apos este periodo sem interacao */
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000
+
+/** Senha considerada aceitavel pela politica da aplicacao */
+export function validatePassword(password) {
+  const value = String(password || '')
+  const checks = {
+    length: value.length >= 10,
+    lower: /[a-z]/.test(value),
+    upper: /[A-Z]/.test(value),
+    number: /[0-9]/.test(value),
+    symbol: /[^A-Za-z0-9]/.test(value),
+  }
+  const score = Object.values(checks).filter(Boolean).length
+  const variety = [checks.lower, checks.upper, checks.number, checks.symbol].filter(Boolean).length
+  return { checks, score, valid: checks.length && variety >= 3 }
+}
+
+export function AuthProvider({ children }) {
+  const [session, setSession] = useState(null)
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+  // 'none' = sem MFA | 'required' = precisa do codigo | 'verified' = liberado
+  const [mfaStage, setMfaStage] = useState('none')
+  const [assuranceLevel, setAssuranceLevel] = useState(null)
+  const idleTimer = useRef(null)
+
+  // ---------- Sessao ----------
+
+  const refreshAssurance = useCallback(async () => {
+    if (!supabase) return null
+    try {
+      const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+      setAssuranceLevel(data || null)
+      if (data?.nextLevel === 'aal2' && data.nextLevel !== data.currentLevel) {
+        setMfaStage('required')
+      } else {
+        setMfaStage(data?.currentLevel === 'aal2' ? 'verified' : 'none')
+      }
+      return data
+    } catch {
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setLoading(false)
+      return
+    }
+
+    let active = true
+
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!active) return
+      setSession(data.session)
+      setUser(data.session?.user || null)
+      if (data.session) await refreshAssurance()
+      setLoading(false)
+    })
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (!active) return
+      setSession(newSession)
+      setUser(newSession?.user || null)
+      if (newSession) await refreshAssurance()
+      else {
+        setMfaStage('none')
+        setAssuranceLevel(null)
+      }
+      if (event === 'SIGNED_OUT') setLoading(false)
+    })
+
+    return () => {
+      active = false
+      listener?.subscription?.unsubscribe()
+    }
+  }, [refreshAssurance])
+
+  // ---------- Logout por inatividade ----------
+
+  const signOut = useCallback(
+    async (reason = 'manual') => {
+      if (!supabase) return
+      if (reason === 'manual') await logEvent(EVENTS.LOGOUT, 'info', { reason })
+      await supabase.auth.signOut()
+      setSession(null)
+      setUser(null)
+      setMfaStage('none')
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!session) return
+
+    const reset = () => {
+      if (idleTimer.current) clearTimeout(idleTimer.current)
+      idleTimer.current = setTimeout(() => {
+        signOut('idle_timeout')
+      }, IDLE_TIMEOUT_MS)
+    }
+
+    const events = ['mousedown', 'keydown', 'touchstart', 'scroll']
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
+    reset()
+
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, reset))
+      if (idleTimer.current) clearTimeout(idleTimer.current)
+    }
+  }, [session, signOut])
+
+  // ---------- Cadastro e login ----------
+
+  const signUp = useCallback(async ({ email, password, fullName }) => {
+    if (!supabase) return { error: 'Supabase nao configurado.' }
+
+    const strength = validatePassword(password)
+    if (!strength.valid) {
+      return {
+        error:
+          'A senha precisa ter ao menos 10 caracteres e combinar letras maiusculas, ' +
+          'minusculas, numeros e simbolos.',
+      }
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email: String(email || '').trim().toLowerCase(),
+      password,
+      options: { data: { full_name: String(fullName || '').trim().slice(0, 120) } },
+    })
+
+    if (error) return { error: translateAuthError(error) }
+    if (data.session) await logEvent(EVENTS.SIGNUP, 'info', {})
+    return { data }
+  }, [])
+
+  const signIn = useCallback(async ({ email, password }) => {
+    if (!supabase) return { error: 'Supabase nao configurado.' }
+
+    const lock = getLoginLock()
+    if (lock.locked) {
+      const minutes = Math.ceil(lock.remainingMs / 60000)
+      return { error: `Muitas tentativas falhas. Tente novamente em ${minutes} minuto(s).` }
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: String(email || '').trim().toLowerCase(),
+      password,
+    })
+
+    if (error) {
+      const attempt = registerFailedLogin()
+      // O evento so e gravado se houver sessao; sem sessao, o proprio
+      // rate limit do Supabase e a defesa ativa.
+      await logEvent(EVENTS.LOGIN_FAILED, 'warning', { attempts: attempt.attempts })
+      const restantes = attempt.max - attempt.attempts
+      const aviso =
+        !attempt.locked && restantes > 0 && restantes <= 2
+          ? ` Restam ${restantes} tentativa(s) antes do bloqueio temporario.`
+          : ''
+      return { error: translateAuthError(error) + aviso }
+    }
+
+    clearLoginAttempts()
+    const assurance = await refreshAssurance()
+
+    if (assurance?.nextLevel === 'aal2' && assurance.nextLevel !== assurance.currentLevel) {
+      return { data, mfaRequired: true }
+    }
+
+    await logEvent(EVENTS.LOGIN_SUCCESS, 'info', {})
+    return { data }
+  }, [refreshAssurance])
+
+  const resetPassword = useCallback(async (email) => {
+    if (!supabase) return { error: 'Supabase nao configurado.' }
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      String(email || '').trim().toLowerCase(),
+      { redirectTo: `${window.location.origin}/` },
+    )
+    if (error) return { error: translateAuthError(error) }
+    await logEvent(EVENTS.PASSWORD_RESET, 'warning', {})
+    // Resposta identica mesmo se o e-mail nao existir (anti-enumeracao)
+    return { ok: true }
+  }, [])
+
+  const updatePassword = useCallback(async (newPassword) => {
+    if (!supabase) return { error: 'Supabase nao configurado.' }
+    const strength = validatePassword(newPassword)
+    if (!strength.valid) return { error: 'A nova senha nao atende a politica de seguranca.' }
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    if (error) return { error: translateAuthError(error) }
+    await logEvent(EVENTS.PASSWORD_CHANGED, 'warning', {})
+    return { ok: true }
+  }, [])
+
+  // ---------- MFA / TOTP ----------
+
+  /** Lista os fatores TOTP ja confirmados */
+  const listFactors = useCallback(async () => {
+    if (!supabase) return []
+    const { data, error } = await supabase.auth.mfa.listFactors()
+    if (error) return []
+    return (data?.totp || []).filter((f) => f.status === 'verified')
+  }, [])
+
+  /** Inicia a ativacao: retorna QR code e segredo para o app autenticador */
+  const enrollMfa = useCallback(async () => {
+    if (!supabase) return { error: 'Supabase nao configurado.' }
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: 'totp',
+      friendlyName: `Planejador ${new Date().toISOString().slice(0, 10)}`,
+    })
+    if (error) return { error: translateAuthError(error) }
+    return {
+      factorId: data.id,
+      qrCode: data.totp.qr_code,
+      secret: data.totp.secret,
+    }
+  }, [])
+
+  /** Confirma a ativacao validando o primeiro codigo gerado */
+  const verifyMfaEnrollment = useCallback(
+    async (factorId, code) => {
+      if (!supabase) return { error: 'Supabase nao configurado.' }
+      const { error } = await supabase.auth.mfa.challengeAndVerify({
+        factorId,
+        code: String(code || '').replace(/\D/g, ''),
+      })
+      if (error) {
+        await logEvent(EVENTS.MFA_FAILED, 'warning', { context: 'enrollment' })
+        return { error: translateAuthError(error) }
+      }
+      await logEvent(EVENTS.MFA_ENROLLED, 'warning', {})
+      await refreshAssurance()
+      return { ok: true }
+    },
+    [refreshAssurance],
+  )
+
+  /** Valida o codigo durante o login */
+  const verifyMfaChallenge = useCallback(
+    async (code) => {
+      if (!supabase) return { error: 'Supabase nao configurado.' }
+      const factors = await listFactors()
+      if (!factors.length) return { error: 'Nenhum aplicativo autenticador configurado.' }
+
+      const { error } = await supabase.auth.mfa.challengeAndVerify({
+        factorId: factors[0].id,
+        code: String(code || '').replace(/\D/g, ''),
+      })
+
+      if (error) {
+        await logEvent(EVENTS.MFA_FAILED, 'critical', { context: 'login' })
+        return { error: translateAuthError(error) }
+      }
+
+      await logEvent(EVENTS.MFA_OK, 'info', {})
+      await logEvent(EVENTS.LOGIN_SUCCESS, 'info', { mfa: true })
+      await refreshAssurance()
+      return { ok: true }
+    },
+    [listFactors, refreshAssurance],
+  )
+
+  /** Remove o fator TOTP, exigindo um codigo valido antes */
+  const disableMfa = useCallback(
+    async (code) => {
+      if (!supabase) return { error: 'Supabase nao configurado.' }
+      const factors = await listFactors()
+      if (!factors.length) return { error: 'Nenhum fator ativo.' }
+
+      const verify = await supabase.auth.mfa.challengeAndVerify({
+        factorId: factors[0].id,
+        code: String(code || '').replace(/\D/g, ''),
+      })
+      if (verify.error) {
+        await logEvent(EVENTS.MFA_FAILED, 'critical', { context: 'disable' })
+        return { error: translateAuthError(verify.error) }
+      }
+
+      const { error } = await supabase.auth.mfa.unenroll({ factorId: factors[0].id })
+      if (error) return { error: translateAuthError(error) }
+
+      await logEvent(EVENTS.MFA_REMOVED, 'critical', {})
+      await refreshAssurance()
+      return { ok: true }
+    },
+    [listFactors, refreshAssurance],
+  )
+
+  const value = {
+    session,
+    user,
+    loading,
+    mfaStage,
+    assuranceLevel,
+    isConfigured: isSupabaseConfigured,
+    signUp,
+    signIn,
+    signOut,
+    resetPassword,
+    updatePassword,
+    listFactors,
+    enrollMfa,
+    verifyMfaEnrollment,
+    verifyMfaChallenge,
+    disableMfa,
+  }
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth precisa estar dentro de AuthProvider')
+  return ctx
+}

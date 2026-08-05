@@ -1,0 +1,131 @@
+// Dados de exemplo para o usuario testar o app rapidamente
+
+import { currentMonthKey, addMonths, isoDateInMonth, uid } from './format.js'
+
+export function buildSampleData() {
+  const m0 = currentMonthKey()
+  const m1 = addMonths(m0, -1)
+  const m2 = addMonths(m0, -2)
+  const m3 = addMonths(m0, -3)
+
+  const tx = (date, type, description, categoryId, amount, extra = {}) => ({
+    id: uid(),
+    date,
+    type,
+    description,
+    categoryId,
+    amount,
+    method: 'pix',
+    paid: true,
+    recurrence: 'none',
+    installments: 1,
+    tags: [],
+    note: '',
+    paidOccurrences: {},
+    createdAt: new Date().toISOString(),
+    ...extra,
+  })
+
+  const transactions = [
+    // Receitas recorrentes
+    tx(isoDateInMonth(m3, 5), 'income', 'Salário', 'salario', 6500, { recurrence: 'monthly' }),
+    tx(isoDateInMonth(m3, 20), 'income', 'Projeto freelance', 'freelance', 1800, {
+      recurrence: 'quarterly',
+    }),
+
+    // Despesas fixas recorrentes
+    tx(isoDateInMonth(m3, 10), 'expense', 'Aluguel', 'moradia', 1900, {
+      recurrence: 'monthly',
+      method: 'boleto',
+    }),
+    tx(isoDateInMonth(m3, 12), 'expense', 'Energia elétrica', 'moradia', 185, {
+      recurrence: 'monthly',
+      method: 'boleto',
+    }),
+    tx(isoDateInMonth(m3, 15), 'expense', 'Internet fibra', 'moradia', 119.9, {
+      recurrence: 'monthly',
+      method: 'debito',
+    }),
+    tx(isoDateInMonth(m3, 8), 'expense', 'Plano de saúde', 'saude', 420, {
+      recurrence: 'monthly',
+      method: 'debito',
+    }),
+    tx(isoDateInMonth(m3, 3), 'expense', 'Streaming (combo)', 'assinaturas', 74.9, {
+      recurrence: 'monthly',
+      method: 'credito',
+    }),
+    tx(isoDateInMonth(m3, 7), 'expense', 'Academia', 'saude', 99, {
+      recurrence: 'monthly',
+      method: 'credito',
+    }),
+
+    // Mes -2
+    tx(isoDateInMonth(m2, 6), 'expense', 'Compras do mês', 'mercado', 780.4),
+    tx(isoDateInMonth(m2, 14), 'expense', 'Restaurante', 'alimentacao', 156.8),
+    tx(isoDateInMonth(m2, 22), 'expense', 'Combustível', 'transporte', 240),
+
+    // Mes -1
+    tx(isoDateInMonth(m1, 5), 'expense', 'Compras do mês', 'mercado', 845.2),
+    tx(isoDateInMonth(m1, 11), 'expense', 'Cinema + jantar', 'lazer', 190),
+    tx(isoDateInMonth(m1, 18), 'expense', 'Uber', 'transporte', 132.5),
+    tx(isoDateInMonth(m1, 25), 'expense', 'Curso online', 'educacao', 297, {
+      installments: 3,
+      method: 'credito',
+    }),
+    tx(isoDateInMonth(m1, 28), 'income', 'Venda usados', 'outros-r', 350),
+
+    // Mes atual
+    tx(isoDateInMonth(m0, 4), 'expense', 'Compras do mês', 'mercado', 690.75),
+    tx(isoDateInMonth(m0, 9), 'expense', 'Farmácia', 'saude', 87.3),
+    tx(isoDateInMonth(m0, 13), 'expense', 'Delivery', 'alimentacao', 68.9),
+    tx(isoDateInMonth(m0, 16), 'expense', 'Presente aniversário', 'compras', 150),
+    tx(isoDateInMonth(m0, 21), 'expense', 'Ração e petshop', 'pets', 210, { paid: false }),
+    tx(isoDateInMonth(m0, 26), 'expense', 'Fatura cartão', 'dividas', 430, {
+      paid: false,
+      method: 'credito',
+    }),
+    tx(isoDateInMonth(m0, 27), 'income', 'Dividendos', 'investimentos', 128.4),
+  ]
+
+  const budgets = {
+    mercado: 800,
+    alimentacao: 400,
+    transporte: 350,
+    lazer: 300,
+    saude: 600,
+    compras: 250,
+    assinaturas: 120,
+  }
+
+  const goals = [
+    {
+      id: uid(),
+      name: 'Reserva de emergência',
+      target: 20000,
+      current: 7400,
+      deadline: `${addMonths(m0, 10)}-01`,
+      icon: '🛟',
+      color: '#22c55e',
+    },
+    {
+      id: uid(),
+      name: 'Viagem de férias',
+      target: 8000,
+      current: 2300,
+      deadline: `${addMonths(m0, 6)}-01`,
+      icon: '✈️',
+      color: '#0ea5e9',
+    },
+    {
+      id: uid(),
+      name: 'Notebook novo',
+      target: 6000,
+      current: 4800,
+      deadline: `${addMonths(m0, 3)}-01`,
+      icon: '💻',
+      color: '#8b5cf6',
+    },
+  ]
+
+  return { transactions, budgets, goals }
+}
