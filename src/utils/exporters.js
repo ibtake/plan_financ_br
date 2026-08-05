@@ -79,7 +79,8 @@ export function exportCSV(rows, categories, filename = `planejador-${stamp()}.cs
  *   ao banco ele passa por tres barreiras:
  *     1. Limite de tamanho, para nao travar a aba com um JSON gigante
  *     2. Checagem de formato e de limite de itens por colecao
- *     3. Normalizacao por registro no hook, e as constraints do Postgres
+ *     3. Sanitizacao recursiva contra Prototype Pollution
+ *     4. Normalizacao por registro no hook, e as constraints do Postgres
  *   A ultima palavra e sempre do banco: as constraints em schema.sql
  *   rejeitam valor fora de faixa mesmo que algo escape daqui.
  */
@@ -89,6 +90,46 @@ const MAX_FILE_BYTES = 8 * 1024 * 1024
 
 /** Teto por colecao, alinhado ao uso real da aplicacao */
 const MAX_ITEMS = { transactions: 20000, categories: 500, goals: 500, budgets: 500 }
+
+/**
+ * CORRECAO 5: Sanitizacao recursiva contra Prototype Pollution
+ *
+ * Remove chaves perigosas que podem poluir o prototype de Object:
+ * - __proto__
+ * - constructor
+ * - prototype
+ *
+ * Estas chaves sao vetores de ataque conhecidos. Um JSON forjado pode
+ * usar essas propriedades para injetar codigo ou alterar comportamento
+ * de objetos globais. A sanitizacao acontece ANTES de qualquer uso
+ * dos dados, impedindo que cheguem ao estado da aplicacao ou ao banco.
+ */
+function sanitizeObject(obj) {
+  if (obj === null || typeof obj !== 'object') {
+    return obj
+  }
+
+  // Arrays: sanitiza cada elemento recursivamente
+  if (Array.isArray(obj)) {
+    return obj.map((item) => sanitizeObject(item))
+  }
+
+  // Objetos: cria um novo objeto limpo removendo chaves perigosas
+  const sanitized = {}
+  for (const key of Object.keys(obj)) {
+    // Bloqueia as tres chaves de ataque conhecidas
+    const lowerKey = key.toLowerCase()
+    if (lowerKey === '__proto__' || lowerKey === 'constructor' || lowerKey === 'prototype') {
+      // Silenciosamente descarta a chave - nao ha uso legitimo para elas em backup
+      continue
+    }
+
+    // Recursivamente sanitiza valores aninhados
+    sanitized[key] = sanitizeObject(obj[key])
+  }
+
+  return sanitized
+}
 
 export function importJSON(file) {
   return new Promise((resolve, reject) => {
@@ -101,7 +142,10 @@ export function importJSON(file) {
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result))
-        const data = parsed?.data ?? parsed
+
+        // CORRECAO 5: Sanitiza ANTES de qualquer uso
+        const sanitized = sanitizeObject(parsed)
+        const data = sanitized?.data ?? sanitized
 
         if (!data || typeof data !== 'object' || Array.isArray(data)) {
           reject(new Error('Arquivo inválido: não parece um backup do Planejador.'))

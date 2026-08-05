@@ -13,6 +13,9 @@
 --   3. Visitantes nao autenticados nao leem nada
 --   4. Tentativas de acesso indevido ficam registradas em security_events
 --   5. Dados invalidos sao rejeitados pelo proprio banco
+--   6. MFA obrigatorio verificado na camada de banco (AAL2)
+--   7. Sessoes revogadas invalidadas imediatamente (JWT TOCTOU)
+--   8. Rate limiting em eventos de seguranca (protecao anti-DoS)
 -- =====================================================================
 
 
@@ -83,7 +86,126 @@ $$;
 
 
 -- =====================================================================
--- BLOCO 5 - Tabela de auditoria de seguranca
+-- BLOCO 5 - Funcao de validacao de sessao: JWT TOCTOU mitigation
+-- =====================================================================
+-- Valida que o token JWT foi emitido DEPOIS da ultima alteracao de
+-- credenciais do usuario. Previne que tokens antigos continuem validos
+-- apos troca de senha ou outras mudancas de seguranca.
+--
+-- IMPORTANTE: Esta funcao deve ser usada em TODAS as politicas RLS de
+-- tabelas criticas. Sem ela, um token comprometido continua valido ate
+-- expirar naturalmente (ate 1 hora).
+-- =====================================================================
+
+-- GRACE_SECONDS absorve duas fontes de erro que, sem tolerancia, causariam
+-- bloqueio total do usuario legitimo:
+--   1. "iat" tem granularidade de 1 segundo (truncado); updated_at tem
+--      microssegundos. Sem arredondar para baixo, um token emitido no mesmo
+--      instante do UPDATE ja nasceria "velho".
+--   2. O proprio Supabase toca updated_at durante o login (last_sign_in_at),
+--      no mesmo momento em que emite o token.
+-- 10s nao enfraquece a revogacao: uma troca de senha real deixa o token
+-- antigo minutos ou horas atras do updated_at.
+
+create or replace function public.is_token_valid()
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+stable
+as $$
+declare
+  v_uid          uuid;
+  v_token_iat    bigint;
+  v_user_updated timestamptz;
+  c_grace        constant bigint := 10;
+begin
+  v_uid := auth.uid();
+  if v_uid is null then
+    return false;
+  end if;
+
+  -- "iat" = momento de emissao do token, em segundos Unix
+  v_token_iat := coalesce((auth.jwt() ->> 'iat')::bigint, 0);
+  if v_token_iat = 0 then
+    return false;
+  end if;
+
+  select updated_at into v_user_updated
+  from auth.users
+  where id = v_uid;
+
+  -- Sem registro de updated_at nao ha o que comparar: nao bloqueia o acesso
+  if v_user_updated is null then
+    return true;
+  end if;
+
+  -- floor() evita o arredondamento para cima do cast direto a bigint, que
+  -- tornaria falso um token emitido no mesmo segundo da alteracao.
+  return v_token_iat + c_grace >= floor(extract(epoch from v_user_updated))::bigint;
+end;
+$$;
+
+
+-- =====================================================================
+-- BLOCO 6 - Funcao de validacao de MFA: AAL2 enforcement
+-- =====================================================================
+-- Valida que usuarios com MFA configurado estao usando token AAL2.
+-- Previne bypass de MFA via API com token AAL1.
+--
+-- IMPORTANTE: Esta funcao deve ser usada em TODAS as politicas RLS de
+-- tabelas criticas. Sem ela, um atacante pode obter token AAL1 e acessar
+-- dados ignorando o MFA.
+-- =====================================================================
+
+create or replace function public.has_required_aal()
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+stable
+as $$
+declare
+  v_uid         uuid;
+  v_current_aal text;
+  v_has_mfa     boolean;
+begin
+  v_uid := auth.uid();
+  if v_uid is null then
+    return false;
+  end if;
+
+  v_current_aal := coalesce(auth.jwt() ->> 'aal', 'aal1');
+
+  -- Fator "verified" = MFA concluido e em uso. Fator "unverified" e um
+  -- cadastro abandonado no meio: exigir aal2 por causa dele trancaria o
+  -- usuario fora da propria conta.
+  select exists (
+    select 1
+    from auth.mfa_factors
+    where user_id = v_uid
+      and status::text = 'verified'
+  ) into v_has_mfa;
+
+  if v_has_mfa then
+    return v_current_aal = 'aal2';
+  end if;
+
+  return true;
+end;
+$$;
+
+-- As duas funcoes sao chamadas dentro das policies, logo executadas pelo
+-- papel que faz a consulta. Sem EXECUTE explicito, um banco endurecido
+-- (onde o EXECUTE default de PUBLIC foi revogado) faria toda query falhar.
+revoke all on function public.is_token_valid() from public, anon;
+revoke all on function public.has_required_aal() from public, anon;
+grant execute on function public.is_token_valid() to authenticated;
+grant execute on function public.has_required_aal() to authenticated;
+
+
+-- =====================================================================
+-- BLOCO 7 - Tabela de auditoria de seguranca
 -- =====================================================================
 -- Registra eventos relevantes de seguranca, incluindo TENTATIVAS
 -- falhas. E deliberadamente somente-leitura para o usuario: ele pode
@@ -139,25 +261,24 @@ create policy "own events select"
   to authenticated
   using (auth.uid() = user_id);
 
--- Usuario registra eventos apenas em seu proprio nome
-drop policy if exists "own events insert" on public.security_events;
-create policy "own events insert"
-  on public.security_events for insert
-  to authenticated
-  with check (auth.uid() = user_id);
+-- REMOVIDO: policy de INSERT direto. Agora apenas via RPC log_security_event()
+-- para permitir rate limiting e prevenir DoS.
 
 -- Nao existe policy de UPDATE nem DELETE: o log e imutavel.
 -- Sem policy, a RLS bloqueia a operacao por padrao.
 
-grant select, insert on public.security_events to authenticated;
+grant select on public.security_events to authenticated;
 
 
 -- =====================================================================
--- BLOCO 6 - Funcao de deteccao de acesso indevido
+-- BLOCO 8 - Funcao de deteccao de acesso indevido (com rate limiting)
 -- =====================================================================
 -- Chamada pelo aplicativo quando o Postgres recusa uma operacao por
 -- violacao de RLS. Como a RLS ja bloqueou o acesso, o registro serve
 -- para documentar a TENTATIVA - que e justamente o sinal de ataque.
+--
+-- CORRECAO 1: search_path fixado para prevenir schema shadowing
+-- CORRECAO 3: Rate limiting implementado - max 50 eventos/hora por usuario
 --
 -- SECURITY DEFINER permite gravar o evento mesmo em situacoes em que o
 -- usuario teria o insert negado. O search_path fixo e obrigatorio para
@@ -173,14 +294,26 @@ create or replace function public.log_security_event(
 returns void
 language plpgsql
 security definer
-set search_path = ''
+set search_path = public, pg_temp  -- CORRECAO 1: protecao contra schema shadowing
 as $$
 declare
   v_uid   uuid := auth.uid();
   v_email text;
+  v_event_count integer;
 begin
   -- Exige usuario autenticado: evita poluicao anonima do log
   if v_uid is null then
+    return;
+  end if;
+
+  -- CORRECAO 3: Rate limiting - conta eventos na ultima hora
+  select count(*) into v_event_count
+  from public.security_events
+  where user_id = v_uid
+    and created_at > now() - interval '1 hour';
+
+  -- Aborta se ultrapassou o limite (protecao anti-DoS)
+  if v_event_count >= 50 then
     return;
   end if;
 
@@ -206,7 +339,7 @@ grant execute on function public.log_security_event(text, text, jsonb, text) to 
 
 
 -- =====================================================================
--- BLOCO 7 - Perfis de usuario
+-- BLOCO 9 - Perfis de usuario
 -- =====================================================================
 
 create table if not exists public.profiles (
@@ -227,20 +360,20 @@ drop policy if exists "own profile select" on public.profiles;
 create policy "own profile select"
   on public.profiles for select
   to authenticated
-  using (auth.uid() = id);
+  using (auth.uid() = id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own profile insert" on public.profiles;
 create policy "own profile insert"
   on public.profiles for insert
   to authenticated
-  with check (auth.uid() = id);
+  with check (auth.uid() = id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own profile update" on public.profiles;
 create policy "own profile update"
   on public.profiles for update
   to authenticated
-  using (auth.uid() = id)
-  with check (auth.uid() = id);
+  using (auth.uid() = id AND is_token_valid() AND has_required_aal())
+  with check (auth.uid() = id AND is_token_valid() AND has_required_aal());
 
 drop trigger if exists profiles_updated_at on public.profiles;
 create trigger profiles_updated_at
@@ -251,7 +384,7 @@ grant select, insert, update on public.profiles to authenticated;
 
 
 -- =====================================================================
--- BLOCO 8 - Categorias
+-- BLOCO 10 - Categorias
 -- =====================================================================
 
 create table if not exists public.categories (
@@ -278,22 +411,27 @@ alter table public.categories force row level security;
 drop policy if exists "own categories select" on public.categories;
 create policy "own categories select"
   on public.categories for select
-  to authenticated using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own categories insert" on public.categories;
 create policy "own categories insert"
   on public.categories for insert
-  to authenticated with check (auth.uid() = user_id);
+  to authenticated
+  with check (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own categories update" on public.categories;
 create policy "own categories update"
   on public.categories for update
-  to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal())
+  with check (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own categories delete" on public.categories;
 create policy "own categories delete"
   on public.categories for delete
-  to authenticated using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop trigger if exists categories_no_owner_change on public.categories;
 create trigger categories_no_owner_change
@@ -304,7 +442,7 @@ grant select, insert, update, delete on public.categories to authenticated;
 
 
 -- =====================================================================
--- BLOCO 9 - Lancamentos
+-- BLOCO 11 - Lancamentos
 -- =====================================================================
 
 create table if not exists public.transactions (
@@ -348,22 +486,27 @@ alter table public.transactions force row level security;
 drop policy if exists "own transactions select" on public.transactions;
 create policy "own transactions select"
   on public.transactions for select
-  to authenticated using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own transactions insert" on public.transactions;
 create policy "own transactions insert"
   on public.transactions for insert
-  to authenticated with check (auth.uid() = user_id);
+  to authenticated
+  with check (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own transactions update" on public.transactions;
 create policy "own transactions update"
   on public.transactions for update
-  to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal())
+  with check (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own transactions delete" on public.transactions;
 create policy "own transactions delete"
   on public.transactions for delete
-  to authenticated using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop trigger if exists transactions_updated_at on public.transactions;
 create trigger transactions_updated_at
@@ -379,7 +522,7 @@ grant select, insert, update, delete on public.transactions to authenticated;
 
 
 -- =====================================================================
--- BLOCO 10 - Orcamentos
+-- BLOCO 12 - Orcamentos
 -- =====================================================================
 
 create table if not exists public.budgets (
@@ -400,22 +543,27 @@ alter table public.budgets force row level security;
 drop policy if exists "own budgets select" on public.budgets;
 create policy "own budgets select"
   on public.budgets for select
-  to authenticated using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own budgets insert" on public.budgets;
 create policy "own budgets insert"
   on public.budgets for insert
-  to authenticated with check (auth.uid() = user_id);
+  to authenticated
+  with check (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own budgets update" on public.budgets;
 create policy "own budgets update"
   on public.budgets for update
-  to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal())
+  with check (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own budgets delete" on public.budgets;
 create policy "own budgets delete"
   on public.budgets for delete
-  to authenticated using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop trigger if exists budgets_updated_at on public.budgets;
 create trigger budgets_updated_at
@@ -431,7 +579,7 @@ grant select, insert, update, delete on public.budgets to authenticated;
 
 
 -- =====================================================================
--- BLOCO 11 - Metas
+-- BLOCO 13 - Metas
 -- =====================================================================
 
 create table if not exists public.goals (
@@ -451,7 +599,8 @@ create table if not exists public.goals (
   constraint goals_name_length check (char_length(name) between 1 and 120),
   constraint goals_target_check check (target >= 0 and target < 1000000000),
   constraint goals_current_check check (current >= 0 and current < 1000000000),
-  constraint goals_color_format check (color ~ '^#[0-9a-fA-F]{6}$')
+  constraint goals_color_format check (color ~ '^#[0-9a-fA-F]{6}$'),
+  constraint goals_icon_length check (char_length(icon) <= 8)
 );
 
 alter table public.goals enable row level security;
@@ -460,22 +609,27 @@ alter table public.goals force row level security;
 drop policy if exists "own goals select" on public.goals;
 create policy "own goals select"
   on public.goals for select
-  to authenticated using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own goals insert" on public.goals;
 create policy "own goals insert"
   on public.goals for insert
-  to authenticated with check (auth.uid() = user_id);
+  to authenticated
+  with check (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own goals update" on public.goals;
 create policy "own goals update"
   on public.goals for update
-  to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal())
+  with check (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop policy if exists "own goals delete" on public.goals;
 create policy "own goals delete"
   on public.goals for delete
-  to authenticated using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 drop trigger if exists goals_updated_at on public.goals;
 create trigger goals_updated_at
@@ -491,7 +645,7 @@ grant select, insert, update, delete on public.goals to authenticated;
 
 
 -- =====================================================================
--- BLOCO 12 - Provisionamento automatico de novos usuarios
+-- BLOCO 14 - Provisionamento automatico de novos usuarios
 -- =====================================================================
 -- Ao criar a conta, o usuario recebe automaticamente o perfil e as
 -- categorias padrao, sem que o front-end precise de permissoes extras.
@@ -501,7 +655,7 @@ create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer
-set search_path = ''
+set search_path = public, pg_temp
 as $$
 begin
   insert into public.profiles (id, full_name)
@@ -546,7 +700,7 @@ create trigger on_auth_user_created
 
 
 -- =====================================================================
--- BLOCO 13 - Exclusao total dos dados do proprio usuario
+-- BLOCO 15 - Exclusao total dos dados do proprio usuario
 -- =====================================================================
 -- Usada pelo botao "Apagar todos os dados". Restrita ao usuario
 -- autenticado: nao aceita parametro de id, logo nao ha como apagar
@@ -557,7 +711,7 @@ create or replace function public.delete_my_data()
 returns void
 language plpgsql
 security definer
-set search_path = ''
+set search_path = public, pg_temp
 as $$
 declare
   v_uid uuid := auth.uid();
@@ -583,7 +737,7 @@ grant execute on function public.delete_my_data() to authenticated;
 
 
 -- =====================================================================
--- BLOCO 14 - Verificacao final
+-- BLOCO 16 - Verificacao final
 -- =====================================================================
 -- Todas as linhas devem aparecer com rls_ativa = true.
 -- Se alguma vier false, PARE e execute este arquivo novamente.

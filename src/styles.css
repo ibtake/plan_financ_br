@@ -1434,7 +1434,7 @@ textarea {
 
 .icon-progress-meta {
   font-size: 14px;
-  color: var(--text-secondary);
+  color: var(--text-soft);
 }
 
 .icon-progress-size {
@@ -1454,7 +1454,7 @@ textarea {
   align-items: center;
   gap: 6px;
   font-size: 14px;
-  color: var(--text-secondary);
+  color: var(--text-soft);
   cursor: pointer;
   user-select: none;
 }
@@ -1483,12 +1483,12 @@ textarea {
   gap: 14px;
   padding: 12px;
   border-radius: var(--radius-sm);
-  background: var(--surface-1);
+  background: var(--surface-2);
   transition: var(--transition);
 }
 
 .icon-row.is-replaced {
-  background: color-mix(in srgb, var(--primary) 5%, var(--surface-1));
+  background: color-mix(in srgb, var(--primary) 5%, var(--surface-2));
 }
 
 .icon-row-preview {
@@ -1498,7 +1498,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-2);
+  background: var(--bg-soft);
   border-radius: var(--radius-sm);
 }
 
@@ -1510,7 +1510,7 @@ textarea {
 .icon-row-label {
   font-size: 14px;
   font-weight: 500;
-  color: var(--text-primary);
+  color: var(--text);
 }
 
 .icon-row-usage {
