@@ -64,8 +64,13 @@ O deploy do frontend na Vercel não apaga os dados do Supabase. Mudanças de ban
 - Primeira instalação: [`docs/IMPLANTACAO-V2.md`](docs/IMPLANTACAO-V2.md)
 - Atualizações sem perda de dados: [`docs/ATUALIZACOES-E-DEPLOY.md`](docs/ATUALIZACOES-E-DEPLOY.md)
 - Migrações do banco: [`supabase/migrations/README.md`](supabase/migrations/README.md)
+- Administração de usuários: [`docs/MANUAL-ADMINISTRACAO-USUARIOS.md`](docs/MANUAL-ADMINISTRACAO-USUARIOS.md)
 
 Para atualizações de frontend, utilize os Preview Deployments da Vercel. Para alterações de tabelas, colunas, funções ou RLS, adicione uma nova migração versionada em `supabase/migrations/`; não edite uma migração que já tenha sido aplicada.
+
+O cadastro público está desativado. Novas contas são criadas na aba
+**Configurações** por um administrador autorizado por UUID, com MFA, através da
+Edge Function `admin-users`.
 
 ## Upload pelo navegador do GitHub
 

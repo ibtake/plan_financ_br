@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { importJSON } from '../utils/exporters.js'
+import AdminUserManagement from './AdminUserManagement.jsx'
 
 export default function SettingsPanel({
   theme,
@@ -43,6 +44,8 @@ export default function SettingsPanel({
   return (
     <div className="stack">
       {message && <div className={`notice ${message.tone}`}>{message.text}</div>}
+
+      <AdminUserManagement />
 
       <div className="grid-2">
         <section className="card">

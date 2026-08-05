@@ -1,58 +1,19 @@
 // =====================================================================
-// Tela de autenticacao: login, cadastro, recuperacao e desafio MFA
+// Tela de autenticacao: login, recuperacao e desafio MFA
 // =====================================================================
 
 import { useEffect, useMemo, useState } from 'react'
-import { useAuth, validatePassword } from '../../contexts/AuthContext.jsx'
+import { useAuth } from '../../contexts/AuthContext.jsx'
 import { configurationProblem } from '../../lib/supabase.js'
 import CodeInput from './CodeInput.jsx'
 
-/** Medidor visual de forca da senha */
-function PasswordStrength({ password }) {
-  const { checks, score } = validatePassword(password)
-  if (!password) return null
-
-  const labels = ['Muito fraca', 'Fraca', 'Razoável', 'Boa', 'Forte']
-  const label = labels[Math.max(0, score - 1)] || labels[0]
-  const percent = (score / 5) * 100
-  const tone = score <= 2 ? 'over' : score <= 3 ? 'warn' : 'ok'
-
-  const items = [
-    ['length', 'Ao menos 10 caracteres'],
-    ['upper', 'Letra maiúscula'],
-    ['lower', 'Letra minúscula'],
-    ['number', 'Número'],
-    ['symbol', 'Símbolo'],
-  ]
-
-  return (
-    <div className="pw-strength">
-      <div className="progress" style={{ height: 6 }}>
-        <div className={`progress-bar ${tone}`} style={{ width: `${percent}%` }} />
-      </div>
-      <div className="text-xs text-muted" style={{ marginTop: 5 }}>
-        Força da senha: <strong>{label}</strong>
-      </div>
-      <ul className="pw-checks">
-        {items.map(([key, text]) => (
-          <li key={key} className={checks[key] ? 'ok' : ''}>
-            {checks[key] ? '✔' : '○'} {text}
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
 export default function AuthScreen() {
   const auth = useAuth()
-  // login | signup | forgot | mfa
+  // login | forgot | mfa
   const [mode, setMode] = useState('login')
   const [form, setForm] = useState({
     email: '',
     password: '',
-    confirm: '',
-    fullName: '',
   })
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
@@ -146,38 +107,6 @@ export default function AuthScreen() {
     // Sem MFA, o AuthContext atualiza a sessao e o App troca de tela
   }
 
-  const handleSignup = async (event) => {
-    event.preventDefault()
-    resetMessages()
-
-    if (form.password !== form.confirm) {
-      setError('As senhas não coincidem.')
-      return
-    }
-    if (!validatePassword(form.password).valid) {
-      setError('A senha não atende aos requisitos mínimos de segurança listados abaixo.')
-      return
-    }
-
-    setBusy(true)
-    const result = await auth.signUp({
-      email: form.email,
-      password: form.password,
-      fullName: form.fullName,
-    })
-    setBusy(false)
-
-    if (result.error) {
-      setError(result.error)
-      return
-    }
-    if (!result.data?.session) {
-      setNotice('Conta criada. Verifique seu e-mail para confirmar o acesso.')
-      setMode('login')
-    }
-    // Com sessao imediata, o App troca de tela automaticamente
-  }
-
   const handleForgot = async (event) => {
     event.preventDefault()
     resetMessages()
@@ -224,7 +153,6 @@ export default function AuthScreen() {
 
   const titles = {
     login: { title: 'Entrar na sua conta', sub: 'Acesse seu planejamento financeiro' },
-    signup: { title: 'Criar conta', sub: 'Leva menos de um minuto' },
     forgot: { title: 'Recuperar senha', sub: 'Enviaremos um link por e-mail' },
     mfa: { title: 'Verificação em duas etapas', sub: 'Abra seu aplicativo autenticador' },
   }
@@ -300,101 +228,9 @@ export default function AuthScreen() {
               <button type="button" className="link-btn" onClick={() => switchMode('forgot')}>
                 Esqueci minha senha
               </button>
-              <button type="button" className="link-btn" onClick={() => switchMode('signup')}>
-                Criar uma conta
-              </button>
             </div>
-          </form>
-        )}
-
-        {/* ----- Cadastro ----- */}
-        {mode === 'signup' && (
-          <form className="stack" style={{ gap: 14, marginTop: 18 }} onSubmit={handleSignup}>
-            <div className="field">
-              <label className="label" htmlFor="signup-name">
-                Nome
-              </label>
-              <input
-                id="signup-name"
-                className="input"
-                type="text"
-                autoComplete="name"
-                required
-                maxLength={120}
-                value={form.fullName}
-                onChange={set('fullName')}
-                placeholder="Como quer ser chamado"
-              />
-            </div>
-
-            <div className="field">
-              <label className="label" htmlFor="signup-email">
-                E-mail
-              </label>
-              <input
-                id="signup-email"
-                className="input"
-                type="email"
-                autoComplete="email"
-                inputMode="email"
-                required
-                value={form.email}
-                onChange={set('email')}
-                placeholder="voce@exemplo.com"
-              />
-            </div>
-
-            <div className="field">
-              <label className="label" htmlFor="signup-password">
-                Senha
-              </label>
-              <input
-                id="signup-password"
-                className="input"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={form.password}
-                onChange={set('password')}
-                placeholder="Crie uma senha forte"
-              />
-              <PasswordStrength password={form.password} />
-            </div>
-
-            <div className="field">
-              <label className="label" htmlFor="signup-confirm">
-                Confirmar senha
-              </label>
-              <input
-                id="signup-confirm"
-                className={`input${
-                  form.confirm && form.confirm !== form.password ? ' input-invalid' : ''
-                }`}
-                type="password"
-                autoComplete="new-password"
-                required
-                value={form.confirm}
-                onChange={set('confirm')}
-                placeholder="Repita a senha"
-              />
-              {form.confirm && form.confirm !== form.password && (
-                <div className="field-error">As senhas não coincidem.</div>
-              )}
-            </div>
-
-            <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
-              {busy ? 'Criando conta...' : 'Criar conta'}
-            </button>
-
-            <div className="auth-links">
-              <button type="button" className="link-btn" onClick={() => switchMode('login')}>
-                Já tenho conta
-              </button>
-            </div>
-
             <p className="text-xs text-muted" style={{ margin: 0 }}>
-              Depois de entrar, ative a verificação em duas etapas em Configurações para
-              proteger seus dados financeiros com o Google Authenticator.
+              Novas contas são criadas exclusivamente pelo administrador do sistema.
             </p>
           </form>
         )}

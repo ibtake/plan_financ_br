@@ -1,0 +1,7 @@
+project_id = "planejador-financeiro"
+
+[auth]
+enable_signup = false
+
+[functions.admin-users]
+verify_jwt = true

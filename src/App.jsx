@@ -14,6 +14,7 @@ import IconManager from './components/IconManager.jsx'
 import SettingsPanel from './components/SettingsPanel.jsx'
 import SecurityPanel from './components/SecurityPanel.jsx'
 import AuthScreen from './components/auth/AuthScreen.jsx'
+import RequiredPasswordChange from './components/auth/RequiredPasswordChange.jsx'
 import { useAuth } from './contexts/AuthContext.jsx'
 import { useMonthlyData } from './hooks/useFinance.js'
 import { useSupabaseFinance } from './hooks/useSupabaseFinance.js'
@@ -49,6 +50,7 @@ export default function App() {
   }
 
   if (!auth.session || auth.mfaStage === 'required') return <AuthScreen />
+  if (auth.user?.app_metadata?.must_change_password === true) return <RequiredPasswordChange />
 
   return <AuthenticatedApp />
 }

@@ -1,5 +1,5 @@
 // =====================================================================
-// AuthContext - sessao, cadastro, login e MFA (TOTP)
+// AuthContext - sessao, login e MFA (TOTP)
 // =====================================================================
 //
 // Concentra toda a interacao com o Supabase Auth. Os componentes de
@@ -139,30 +139,7 @@ export function AuthProvider({ children }) {
     }
   }, [session, signOut])
 
-  // ---------- Cadastro e login ----------
-
-  const signUp = useCallback(async ({ email, password, fullName }) => {
-    if (!supabase) return { error: 'Supabase nao configurado.' }
-
-    const strength = validatePassword(password)
-    if (!strength.valid) {
-      return {
-        error:
-          'A senha precisa ter ao menos 10 caracteres e combinar letras maiusculas, ' +
-          'minusculas, numeros e simbolos.',
-      }
-    }
-
-    const { data, error } = await supabase.auth.signUp({
-      email: String(email || '').trim().toLowerCase(),
-      password,
-      options: { data: { full_name: String(fullName || '').trim().slice(0, 120) } },
-    })
-
-    if (error) return { error: translateAuthError(error) }
-    if (data.session) await logEvent(EVENTS.SIGNUP, 'info', {})
-    return { data }
-  }, [])
+  // ---------- Login ----------
 
   const signIn = useCallback(async ({ email, password }) => {
     if (!supabase) return { error: 'Supabase nao configurado.' }
@@ -326,7 +303,6 @@ export function AuthProvider({ children }) {
     mfaStage,
     assuranceLevel,
     isConfigured: isSupabaseConfigured,
-    signUp,
     signIn,
     signOut,
     resetPassword,
