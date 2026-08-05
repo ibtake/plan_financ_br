@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { KeyRound } from 'lucide-react'
 import { useAuth, validatePassword } from '../../contexts/AuthContext.jsx'
 import { callAdminApi } from '../../lib/adminApi.js'
 
@@ -27,7 +28,9 @@ export default function RequiredPasswordChange() {
     <div className="auth-wrap">
       <form className="auth-card stack" onSubmit={submit}>
         <div className="auth-brand">
-          <div className="brand-logo">🔑</div>
+          <div className="brand-logo">
+            <KeyRound size={32} strokeWidth={1.8} />
+          </div>
           <div><div className="brand-title">Defina sua senha</div><div className="brand-sub">A senha temporária só pode ser usada no primeiro acesso</div></div>
         </div>
         {error && <div className="notice danger" role="alert">{error}</div>}

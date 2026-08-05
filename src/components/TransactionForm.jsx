@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ArrowDownLeft, ArrowUpRight, X } from 'lucide-react'
 import {
   PAYMENT_METHODS,
   RECURRENCE_OPTIONS,
@@ -96,14 +97,14 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
           <div className="modal-head">
             <div>
               <div className="card-title">
-                {isEditing ? '✏️ Editar lançamento' : '➕ Novo lançamento'}
+                {isEditing ? 'Editar lançamento' : 'Novo lançamento'}
               </div>
               <div className="card-sub">
                 {isEditing ? 'Altere os dados e salve' : 'Registre uma receita ou despesa'}
               </div>
             </div>
             <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar">
-              ✕
+              <X size={18} strokeWidth={2} />
             </button>
           </div>
 
@@ -114,14 +115,16 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                 className={form.type === 'expense' ? 'active-expense' : ''}
                 onClick={() => set({ type: 'expense' })}
               >
-                📤 Despesa
+                <ArrowUpRight size={16} strokeWidth={2} />
+                Despesa
               </button>
               <button
                 type="button"
                 className={form.type === 'income' ? 'active-income' : ''}
                 onClick={() => set({ type: 'income' })}
               >
-                📥 Receita
+                <ArrowDownLeft size={16} strokeWidth={2} />
+                Receita
               </button>
             </div>
 

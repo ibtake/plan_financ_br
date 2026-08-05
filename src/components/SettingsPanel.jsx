@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { AlertTriangle, Database, Download, FlaskConical, Moon, Palette, Sun, Upload } from 'lucide-react'
 import { importJSON } from '../utils/exporters.js'
 import AdminUserManagement from './AdminUserManagement.jsx'
 
@@ -51,7 +52,10 @@ export default function SettingsPanel({
         <section className="card">
           <div className="card-head">
             <div>
-              <div className="card-title">🎨 Aparência</div>
+              <div className="card-title">
+                <Palette size={18} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }} />
+                Aparência
+              </div>
               <div className="card-sub">Personalize como o planejador é exibido</div>
             </div>
           </div>
@@ -61,7 +65,17 @@ export default function SettingsPanel({
               <div className="text-sm text-muted">A preferência fica salva neste navegador.</div>
             </div>
             <button className="btn" onClick={onToggleTheme}>
-              {theme === 'dark' ? '☀️ Usar tema claro' : '🌙 Usar tema escuro'}
+              {theme === 'dark' ? (
+                <>
+                  <Sun size={16} strokeWidth={2} />
+                  Usar tema claro
+                </>
+              ) : (
+                <>
+                  <Moon size={16} strokeWidth={2} />
+                  Usar tema escuro
+                </>
+              )}
             </button>
           </div>
         </section>
@@ -69,7 +83,10 @@ export default function SettingsPanel({
         <section className="card">
           <div className="card-head">
             <div>
-              <div className="card-title">📦 Seus dados</div>
+              <div className="card-title">
+                <Database size={18} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }} />
+                Seus dados
+              </div>
               <div className="card-sub">Dados sincronizados com segurança na sua conta</div>
             </div>
           </div>
@@ -84,13 +101,22 @@ export default function SettingsPanel({
       <section className="card">
         <div className="card-head">
           <div>
-            <div className="card-title">💾 Backup e restauração</div>
+            <div className="card-title">
+              <Database size={18} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }} />
+              Backup e restauração
+            </div>
             <div className="card-sub">Exporte regularmente para não perder seu histórico</div>
           </div>
         </div>
         <div className="settings-actions">
-          <button className="btn btn-primary" onClick={onExportJSON}>⬇️ Baixar backup JSON</button>
-          <button className="btn" onClick={() => inputRef.current?.click()}>⬆️ Importar backup</button>
+          <button className="btn btn-primary" onClick={onExportJSON}>
+            <Download size={16} strokeWidth={2} />
+            Baixar backup JSON
+          </button>
+          <button className="btn" onClick={() => inputRef.current?.click()}>
+            <Upload size={16} strokeWidth={2} />
+            Importar backup
+          </button>
           <input ref={inputRef} type="file" accept="application/json,.json" hidden onChange={handleFile} />
         </div>
         <p className="hint" style={{ marginTop: 12 }}>
@@ -101,7 +127,10 @@ export default function SettingsPanel({
       <section className="card">
         <div className="card-head">
           <div>
-            <div className="card-title">🧪 Dados de demonstração</div>
+            <div className="card-title">
+              <FlaskConical size={18} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }} />
+              Dados de demonstração
+            </div>
             <div className="card-sub">Explore gráficos e recursos sem cadastrar tudo manualmente</div>
           </div>
           <button className="btn" onClick={loadSample}>Carregar exemplo</button>
@@ -111,7 +140,10 @@ export default function SettingsPanel({
       <section className="card danger-zone">
         <div className="card-head">
           <div>
-            <div className="card-title">⚠️ Zona de perigo</div>
+            <div className="card-title">
+              <AlertTriangle size={18} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }} />
+              Zona de perigo
+            </div>
             <div className="card-sub">Limpe todos os dados financeiros da sua conta</div>
           </div>
           <button className="btn btn-danger" onClick={clear}>Apagar todos os dados</button>

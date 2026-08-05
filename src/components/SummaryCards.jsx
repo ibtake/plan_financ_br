@@ -1,90 +1,118 @@
-import AppIcon from './AppIcon.jsx'
+import { TrendingUp, TrendingDown, Minus, ArrowDownToLine, ArrowUpFromLine, Wallet, AlertTriangle, PiggyBank } from 'lucide-react'
 import { formatCurrency, formatPercent } from '../utils/format.js'
 
+/**
+ * Indicador de variação mensal.
+ *
+ * Para despesas, subir é negativo (invert=true).
+ */
 function Delta({ value, invert = false }) {
   const rounded = Math.round(value)
   if (!Number.isFinite(rounded) || rounded === 0) {
-    return <span className="delta flat">— estável</span>
+    return (
+      <span className="delta flat">
+        <Minus size={12} strokeWidth={2.5} />
+        estável
+      </span>
+    )
   }
   const positive = rounded > 0
-  // Para despesas, subir é ruim (invert)
   const good = invert ? !positive : positive
   return (
     <span className={`delta ${good ? 'up' : 'down'}`}>
-      {positive ? '▲' : '▼'} {formatPercent(Math.abs(rounded))}
+      {positive ? <TrendingUp size={12} strokeWidth={2.5} /> : <TrendingDown size={12} strokeWidth={2.5} />}
+      {formatPercent(Math.abs(rounded))}
     </span>
   )
 }
 
-function Card({ accent, icon, label, value, children }) {
+/**
+ * Card KPI individual.
+ *
+ * Estrutura: ícone, label, valor principal, rodapé com delta e texto.
+ */
+function KPI({ icon: Icon, label, value, accentColor, accentSoft, children }) {
   return (
-    <div className="summary-card" style={{ '--accent': accent }}>
-      <div className="summary-label">
-        <AppIcon emoji={icon} />
-        {label}
+    <div className="kpi" style={{ '--accent': accentColor, '--accent-soft': accentSoft }}>
+      <div className="kpi-top">
+        <div className="kpi-label">{label}</div>
+        <div className="kpi-icon">
+          <Icon size={17} strokeWidth={2} />
+        </div>
       </div>
-      <div className="summary-value">{value}</div>
-      <div className="summary-foot">{children}</div>
+      <div className="kpi-value">{value}</div>
+      <div className="kpi-foot">{children}</div>
     </div>
   )
 }
 
+/**
+ * Grid de 4 KPIs: receitas, despesas, saldo e taxa de poupança.
+ *
+ * Recebe dados consolidados do mês (`summary`) e as variações em relação
+ * ao mês anterior (`change`).
+ */
 export default function SummaryCards({ summary, change }) {
   const { income, expense, balance, savingsRate, pendingExpense } = summary
 
   return (
     <div className="grid-4">
-      <Card
-        accent="var(--income)"
-        icon="📥"
+      <KPI
+        icon={ArrowDownToLine}
         label="Receitas"
         value={formatCurrency(income)}
+        accentColor="var(--income)"
+        accentSoft="var(--income-soft)"
       >
         <Delta value={change.income} />
         <span>vs. mês anterior</span>
-      </Card>
+      </KPI>
 
-      <Card
-        accent="var(--expense)"
-        icon="📤"
+      <KPI
+        icon={ArrowUpFromLine}
         label="Despesas"
         value={formatCurrency(expense)}
+        accentColor="var(--expense)"
+        accentSoft="var(--expense-soft)"
       >
         <Delta value={change.expense} invert />
         <span>vs. mês anterior</span>
-      </Card>
+      </KPI>
 
-      <Card
-        accent={balance >= 0 ? 'var(--primary)' : 'var(--expense)'}
-        icon={balance >= 0 ? '💙' : '⚠️'}
+      <KPI
+        icon={balance >= 0 ? Wallet : AlertTriangle}
         label="Saldo do mês"
         value={formatCurrency(balance)}
+        accentColor={balance >= 0 ? 'var(--primary)' : 'var(--expense)'}
+        accentSoft={balance >= 0 ? 'var(--primary-soft)' : 'var(--expense-soft)'}
       >
         {pendingExpense > 0 ? (
-          <span className="chip warning">
-            {formatCurrency(pendingExpense)} a pagar
-          </span>
+          <>
+            <span className="chip warning">{formatCurrency(pendingExpense)}</span>
+            <span>a pagar</span>
+          </>
         ) : (
           <span>{balance >= 0 ? 'Você fechou no azul' : 'Atenção: saldo negativo'}</span>
         )}
-      </Card>
+      </KPI>
 
-      <Card
-        accent={savingsRate >= 20 ? 'var(--income)' : savingsRate >= 0 ? 'var(--warning)' : 'var(--expense)'}
-        icon="🐖"
+      <KPI
+        icon={PiggyBank}
         label="Taxa de poupança"
         value={formatPercent(savingsRate, 1)}
+        accentColor={savingsRate >= 20 ? 'var(--income)' : savingsRate >= 0 ? 'var(--warning)' : 'var(--expense)'}
+        accentSoft={savingsRate >= 20 ? 'var(--income-soft)' : savingsRate >= 0 ? 'var(--warning-soft)' : 'var(--expense-soft)'}
       >
         <span>
           {savingsRate >= 20
             ? 'Excelente!'
             : savingsRate >= 10
-              ? 'Bom, dá pra melhorar'
+              ? 'Bom, pode melhorar'
               : savingsRate >= 0
-                ? 'Abaixo do ideal (20%)'
+                ? 'Abaixo do ideal'
                 : 'Gastando mais que ganha'}
         </span>
-      </Card>
+      </KPI>
     </div>
   )
 }

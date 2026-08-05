@@ -1,7 +1,10 @@
 import { useState } from 'react'
+import { CalendarClock, Lightbulb, PartyPopper, Pencil, Plus, Trash2, Trophy } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { formatCurrency, formatDate, formatPercent, parseAmount } from '../utils/format.js'
 
+// Ícones e cores gravados junto da meta no banco — continuam sendo dados,
+// não decoração de interface.
 const ICONS = ['🎯', '🛟', '✈️', '🏠', '🚗', '💻', '🎓', '💍', '🏖️', '📱', '🐣', '🎁']
 const COLORS = ['#6366f1', '#22c55e', '#0ea5e9', '#f97316', '#ec4899', '#8b5cf6', '#14b8a6', '#f59e0b']
 
@@ -73,46 +76,39 @@ function GoalForm({ initial, onSave, onCancel }) {
             onChange={(e) => set({ deadline: e.target.value })}
           />
         </div>
-        <div className="field">
+        <div className="field span-2">
           <label className="label">Ícone e cor</label>
-          <div className="row" style={{ flexWrap: 'wrap', gap: 5 }}>
+          <div className="swatch-grid">
             {ICONS.map((ic) => (
               <button
                 type="button"
                 key={ic}
-                className="icon-btn"
+                className={`swatch${form.icon === ic ? ' selected' : ''}`}
                 onClick={() => set({ icon: ic })}
-                style={{
-                  background: form.icon === ic ? 'var(--primary-soft)' : 'transparent',
-                  outline: form.icon === ic ? '2px solid var(--primary)' : 'none',
-                }}
+                aria-label={`Ícone ${ic}`}
+                aria-pressed={form.icon === ic}
               >
                 <AppIcon emoji={ic} />
               </button>
             ))}
           </div>
-          <div className="row" style={{ flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+          <div className="swatch-grid" style={{ marginTop: 8 }}>
             {COLORS.map((c) => (
               <button
                 type="button"
                 key={c}
+                className={`color-dot${form.color === c ? ' selected' : ''}`}
                 onClick={() => set({ color: c })}
                 aria-label={`Cor ${c}`}
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: '50%',
-                  background: c,
-                  border: form.color === c ? '3px solid var(--text)' : '2px solid transparent',
-                  cursor: 'pointer',
-                }}
+                aria-pressed={form.color === c}
+                style={{ background: c }}
               />
             ))}
           </div>
         </div>
       </div>
 
-      <div className="row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
+      <div className="row" style={{ justifyContent: 'flex-end', marginTop: 18 }}>
         <button type="button" className="btn" onClick={onCancel}>
           Cancelar
         </button>
@@ -142,30 +138,42 @@ function GoalCard({ goal, onUpdate, onDelete, onEdit }) {
 
   return (
     <div className="goal-card">
-      <div className="row-between">
-        <div className="row">
+      <div className="row-between" style={{ gap: 10 }}>
+        <div className="row" style={{ minWidth: 0 }}>
           <div className="goal-icon" style={{ background: `${goal.color}22`, color: goal.color }}>
             <AppIcon emoji={goal.icon} />
           </div>
-          <div>
-            <div className="fw-600">{goal.name}</div>
+          <div style={{ minWidth: 0 }}>
+            <div className="fw-600 truncate">{goal.name}</div>
             <div className="text-xs text-muted">
               {goal.deadline ? `Prazo: ${formatDate(goal.deadline)}` : 'Sem prazo definido'}
             </div>
           </div>
         </div>
-        <div className="row">
-          <button className="icon-btn" onClick={() => onEdit(goal)} title="Editar">
-            ✏️
+        <div className="row" style={{ flex: 'none' }}>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => onEdit(goal)}
+            title="Editar"
+            aria-label={`Editar meta ${goal.name}`}
+          >
+            <Pencil size={15} strokeWidth={1.9} />
           </button>
-          <button className="icon-btn danger" onClick={() => onDelete(goal.id)} title="Excluir">
-            🗑️
+          <button
+            type="button"
+            className="icon-btn danger"
+            onClick={() => onDelete(goal.id)}
+            title="Excluir"
+            aria-label={`Excluir meta ${goal.name}`}
+          >
+            <Trash2 size={15} strokeWidth={1.9} />
           </button>
         </div>
       </div>
 
       <div>
-        <div className="row-between text-sm" style={{ marginBottom: 6 }}>
+        <div className="row-between text-sm" style={{ marginBottom: 7, gap: 8 }}>
           <span className="mono fw-700" style={{ color: goal.color }}>
             {formatCurrency(goal.current)}
           </span>
@@ -180,10 +188,13 @@ function GoalCard({ goal, onUpdate, onDelete, onEdit }) {
             }}
           />
         </div>
-        <div className="row-between text-xs text-muted" style={{ marginTop: 6 }}>
+        <div className="row-between text-xs text-muted" style={{ marginTop: 7, gap: 8 }}>
           <span>{formatPercent(percent, 1)} concluído</span>
           {done ? (
-            <span className="text-income fw-600">🎉 Meta alcançada!</span>
+            <span className="text-income fw-600 row" style={{ gap: 5 }}>
+              <PartyPopper size={12} strokeWidth={2.2} />
+              Meta alcançada!
+            </span>
           ) : (
             <span>Faltam {formatCurrency(remaining)}</span>
           )}
@@ -192,8 +203,14 @@ function GoalCard({ goal, onUpdate, onDelete, onEdit }) {
 
       {!done && left !== null && (
         <div className={`insight ${left <= 0 ? 'danger' : left <= 2 ? 'warning' : 'info'}`}>
-          <span className="insight-icon">{left <= 0 ? '⏰' : '💡'}</span>
-          <div>
+          <span className="insight-icon">
+            {left <= 0 ? (
+              <CalendarClock size={16} strokeWidth={2} />
+            ) : (
+              <Lightbulb size={16} strokeWidth={2} />
+            )}
+          </span>
+          <div style={{ minWidth: 0 }}>
             <div className="insight-title">
               {left <= 0
                 ? 'Prazo vencido'
@@ -215,9 +232,11 @@ function GoalCard({ goal, onUpdate, onDelete, onEdit }) {
           value={contribution}
           onChange={(e) => setContribution(e.target.value)}
           inputMode="decimal"
+          aria-label={`Aportar valor na meta ${goal.name}`}
         />
         <button className="btn btn-primary btn-sm" type="submit">
-          ➕ Aportar
+          <Plus size={15} strokeWidth={2.2} />
+          Aportar
         </button>
       </form>
     </div>
@@ -243,7 +262,7 @@ export default function GoalsPanel({ goals, onAdd, onUpdate, onDelete }) {
     <div className="stack">
       <div className="card">
         <div className="card-head">
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div className="card-title">Metas de economia</div>
             <div className="card-sub">
               {goals.length
@@ -253,13 +272,15 @@ export default function GoalsPanel({ goals, onAdd, onUpdate, onDelete }) {
           </div>
           {!showForm && (
             <button
+              type="button"
               className="btn btn-primary btn-sm"
               onClick={() => {
                 setEditing(null)
                 setShowForm(true)
               }}
             >
-              ➕ Nova meta
+              <Plus size={15} strokeWidth={2.2} />
+              Nova meta
             </button>
           )}
         </div>
@@ -296,7 +317,9 @@ export default function GoalsPanel({ goals, onAdd, onUpdate, onDelete }) {
       {goals.length === 0 && !showForm ? (
         <div className="card">
           <div className="empty">
-            <div className="empty-icon">🏆</div>
+            <div className="empty-icon">
+              <Trophy size={22} strokeWidth={1.6} />
+            </div>
             <div className="empty-title">Nenhuma meta cadastrada</div>
             <div className="text-sm">
               Crie metas como reserva de emergência, viagem ou troca de carro.

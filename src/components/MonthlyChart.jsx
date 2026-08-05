@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { BarChart3 } from 'lucide-react'
 import {
   Bar,
   BarChart,
@@ -92,7 +93,9 @@ export default function MonthlyChart({ history }) {
         </div>
       ) : (
         <div className="empty">
-          <div className="empty-icon">📊</div>
+          <div className="empty-icon">
+            <BarChart3 size={22} strokeWidth={1.6} />
+          </div>
           <div className="empty-title">Sem histórico ainda</div>
           <div className="text-sm">Cadastre lançamentos para acompanhar a evolução.</div>
         </div>

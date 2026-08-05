@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { CHART_PALETTE, categoriesByType } from '../utils/categories.js'
 import { formatCurrency } from '../utils/format.js'
@@ -48,17 +49,15 @@ function CategoryForm({ initial, onSave, onCancel }) {
 
         <div className="field span-2">
           <label className="label">Ícone</label>
-          <div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>
+          <div className="swatch-grid">
             {ICON_OPTIONS.map((ic) => (
               <button
                 type="button"
                 key={ic}
-                className="icon-btn"
+                className={`swatch${form.icon === ic ? ' selected' : ''}`}
                 onClick={() => set({ icon: ic })}
-                style={{
-                  background: form.icon === ic ? 'var(--primary-soft)' : 'transparent',
-                  outline: form.icon === ic ? '2px solid var(--primary)' : 'none',
-                }}
+                aria-label={`Ícone ${ic}`}
+                aria-pressed={form.icon === ic}
               >
                 <AppIcon emoji={ic} />
               </button>
@@ -68,21 +67,16 @@ function CategoryForm({ initial, onSave, onCancel }) {
 
         <div className="field span-2">
           <label className="label">Cor</label>
-          <div className="row" style={{ flexWrap: 'wrap', gap: 7 }}>
+          <div className="swatch-grid">
             {CHART_PALETTE.map((c) => (
               <button
                 type="button"
                 key={c}
+                className={`color-dot${form.color === c ? ' selected' : ''}`}
                 onClick={() => set({ color: c })}
                 aria-label={`Cor ${c}`}
-                style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: '50%',
-                  background: c,
-                  border: form.color === c ? '3px solid var(--text)' : '2px solid transparent',
-                  cursor: 'pointer',
-                }}
+                aria-pressed={form.color === c}
+                style={{ background: c }}
               />
             ))}
           </div>
@@ -129,10 +123,10 @@ function CategoryRow({ category, usage, onEdit, onDelete }) {
       </div>
       <div className="tx-actions">
         <button className="icon-btn" onClick={() => onEdit(category)} title="Editar">
-          <AppIcon emoji="✏️" />
+          <Pencil size={15} strokeWidth={1.9} />
         </button>
         <button className="icon-btn danger" onClick={() => onDelete(category)} title="Excluir">
-          <AppIcon emoji="🗑️" />
+          <Trash2 size={15} strokeWidth={1.9} />
         </button>
       </div>
     </div>
@@ -196,7 +190,8 @@ export default function CategoryManager({
                 setShowForm(true)
               }}
             >
-              ➕ Nova categoria
+              <Plus size={15} strokeWidth={2.2} />
+              Nova categoria
             </button>
           )}
         </div>
@@ -216,7 +211,7 @@ export default function CategoryManager({
       <div className="grid-2">
         <div className="card">
           <div className="card-head">
-            <div className="card-title">📤 Despesas</div>
+            <div className="card-title">Despesas</div>
           </div>
           {expenses.map((c) => (
             <CategoryRow
@@ -235,7 +230,7 @@ export default function CategoryManager({
 
         <div className="card">
           <div className="card-head">
-            <div className="card-title">📥 Receitas</div>
+            <div className="card-title">Receitas</div>
           </div>
           {incomes.map((c) => (
             <CategoryRow

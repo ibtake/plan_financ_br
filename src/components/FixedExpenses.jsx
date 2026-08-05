@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { AlertTriangle, Check, ReceiptText } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { getCategory } from '../utils/categories.js'
 import { isRecurring } from '../utils/recurrence.js'
@@ -20,7 +21,7 @@ export default function FixedExpenses({ occurrences, categories, onTogglePaid })
   return (
     <div className="card">
       <div className="card-head">
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div className="card-title">Contas do mês</div>
           <div className="card-sub">
             Fixas e pendentes • {formatCurrency(total)} no total
@@ -36,14 +37,16 @@ export default function FixedExpenses({ occurrences, categories, onTogglePaid })
 
       {items.length === 0 ? (
         <div className="empty">
-          <div className="empty-icon">🧾</div>
+          <div className="empty-icon">
+            <ReceiptText size={22} strokeWidth={1.6} />
+          </div>
           <div className="empty-title">Nenhuma conta fixa ou pendente</div>
           <div className="text-sm">
             Marque um lançamento como recorrente para acompanhá-lo aqui.
           </div>
         </div>
       ) : (
-        <div>
+        <div className="tx-list">
           {items.map((tx) => {
             const cat = getCategory(categories, tx.categoryId)
             const days = daysUntil(tx.date)
@@ -51,19 +54,19 @@ export default function FixedExpenses({ occurrences, categories, onTogglePaid })
             const soon = !tx.paid && days >= 0 && days <= 5
 
             return (
-              <div className="tx" key={tx.id} style={{ padding: '10px 4px' }}>
+              <div className="tx" key={tx.id}>
                 <button
-                  className="tx-icon"
+                  type="button"
+                  className="tx-icon tx-icon-btn"
                   onClick={() => onTogglePaid(tx)}
                   title={tx.paid ? 'Marcar como pendente' : 'Marcar como pago'}
+                  aria-label={tx.paid ? 'Marcar como pendente' : 'Marcar como pago'}
                   style={{
                     background: tx.paid ? 'var(--income-soft)' : `${cat.color}22`,
                     color: tx.paid ? 'var(--income)' : cat.color,
-                    border: 'none',
-                    cursor: 'pointer',
                   }}
                 >
-                  <AppIcon emoji={tx.paid ? '✅' : cat.icon} />
+                  {tx.paid ? <Check size={17} strokeWidth={2.6} /> : <AppIcon emoji={cat.icon} />}
                 </button>
 
                 <div className="tx-main">
@@ -72,7 +75,12 @@ export default function FixedExpenses({ occurrences, categories, onTogglePaid })
                   </div>
                   <div className="tx-meta">
                     <span>vence {formatDate(tx.date)}</span>
-                    {overdue && <span className="chip expense">⚠️ atrasada</span>}
+                    {overdue && (
+                      <span className="chip expense">
+                        <AlertTriangle size={11} strokeWidth={2.2} />
+                        atrasada
+                      </span>
+                    )}
                     {soon && (
                       <span className="chip warning">
                         {days === 0 ? 'vence hoje' : `em ${days} ${days === 1 ? 'dia' : 'dias'}`}

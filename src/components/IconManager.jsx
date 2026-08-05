@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { SearchX } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { useIcons } from '../contexts/IconContext.jsx'
 import { ICON_CATALOG, ICON_GROUPS, TOTAL_ICONS } from '../utils/iconRegistry.js'
@@ -186,7 +187,7 @@ export default function IconManager() {
 
       {visible.length === 0 && (
         <div className="card empty-state">
-          <AppIcon emoji="🔍" size={34} />
+          <SearchX size={34} strokeWidth={1.6} />
           <div>Nenhum ícone corresponde ao filtro.</div>
         </div>
       )}

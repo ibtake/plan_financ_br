@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import Header from './components/Header.jsx'
-import Tabs from './components/Tabs.jsx'
+import { Plus } from 'lucide-react'
+import Sidebar from './components/Sidebar.jsx'
+import BottomNav from './components/BottomNav.jsx'
+import Topbar from './components/Topbar.jsx'
 import SummaryCards from './components/SummaryCards.jsx'
 import TransactionForm from './components/TransactionForm.jsx'
 import TransactionList from './components/TransactionList.jsx'
@@ -18,7 +20,7 @@ import RequiredPasswordChange from './components/auth/RequiredPasswordChange.jsx
 import { useAuth } from './contexts/AuthContext.jsx'
 import { useMonthlyData } from './hooks/useFinance.js'
 import { useSupabaseFinance } from './hooks/useSupabaseFinance.js'
-import { currentMonthKey, isoDateInMonth } from './utils/format.js'
+import { currentMonthKey, isoDateInMonth, monthLabel } from './utils/format.js'
 import { exportCSV, exportJSON } from './utils/exporters.js'
 import { buildSampleData } from './utils/sampleData.js'
 
@@ -42,6 +44,18 @@ function ChartFallback({ height = 240 }) {
   )
 }
 
+/** Titulo e descricao exibidos no topo de cada painel */
+const PAGE_META = {
+  overview: { title: 'Visão geral', sub: 'Resumo do mês, gráficos e alertas' },
+  transactions: { title: 'Lançamentos', sub: 'Todas as entradas e saídas do período' },
+  budget: { title: 'Orçamento', sub: 'Limites por categoria e acompanhamento' },
+  goals: { title: 'Metas', sub: 'Objetivos financeiros e progresso' },
+  categories: { title: 'Categorias', sub: 'Organize seus lançamentos' },
+  icons: { title: 'Ícones', sub: 'Personalize os ícones do aplicativo' },
+  security: { title: 'Segurança', sub: 'Sessões, autenticação e atividade da conta' },
+  settings: { title: 'Configurações', sub: 'Preferências, backup e dados' },
+}
+
 export default function App() {
   const auth = useAuth()
 
@@ -62,6 +76,9 @@ function AuthenticatedApp() {
   const [activeTab, setActiveTab] = useState('overview')
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  // Busca do topo: o mesmo filtro que ja existia na lista, agora acessivel
+  // de qualquer painel.
+  const [search, setSearch] = useState('')
   const monthly = useMonthlyData(finance.transactions, monthKey)
 
   useEffect(() => {
@@ -87,10 +104,21 @@ function AuthenticatedApp() {
     }
   }
 
-  const pendingCount = useMemo(
-    () => monthly.occurrences.filter((item) => !item.paid).length,
+  const pending = useMemo(
+    () => monthly.occurrences.filter((item) => !item.paid),
     [monthly.occurrences],
   )
+  const pendingCount = pending.length
+  const pendingTotal = useMemo(
+    () => pending.reduce((sum, item) => sum + (item.type === 'income' ? 0 : item.amount), 0),
+    [pending],
+  )
+
+  // Buscar leva direto para a lista, unico painel que consome o filtro
+  const handleSearch = (value) => {
+    setSearch(value)
+    if (value && activeTab !== 'transactions') setActiveTab('transactions')
+  }
 
   const insightProps = {
     summary: monthly.summary,
@@ -131,55 +159,98 @@ function AuthenticatedApp() {
     return <div className="app-loading"><div className="spinner" /><span>Carregando seus dados...</span></div>
   }
 
+  const page = PAGE_META[activeTab] || PAGE_META.overview
+
   return (
     <div className="app-shell">
-      <Header monthKey={monthKey} onMonthChange={setMonthKey} theme={finance.theme} onToggleTheme={toggleTheme} user={auth.user} onSignOut={() => auth.signOut()} />
-      <main className="container main-content">
-        {finance.error && <div className="notice danger" style={{ marginBottom: 14 }}>{finance.error} Os dados foram recarregados do servidor.</div>}
-        <div className="page-toolbar">
-          <Tabs active={activeTab} onChange={setActiveTab} badges={{ transactions: pendingCount }} />
-          <button className="btn btn-primary add-main" onClick={openNew}>➕ Novo lançamento</button>
-        </div>
+      <Sidebar active={activeTab} onChange={setActiveTab} badges={{ transactions: pendingCount }} />
 
-        {activeTab === 'overview' && overview}
-        {activeTab === 'transactions' && (
-          <TransactionList
-            occurrences={monthly.occurrences}
-            categories={finance.categories}
-            monthKey={monthKey}
-            onEdit={openEdit}
-            onDelete={deleteTransaction}
-            onDuplicate={finance.duplicateTransaction}
-            onTogglePaid={finance.togglePaid}
-            onNew={openNew}
-            onExportCSV={(rows) => exportCSV(rows, finance.categories, `lancamentos-${monthKey}.csv`)}
-          />
-        )}
-        {activeTab === 'budget' && (
-          <BudgetPanel budgets={finance.budgets} byCategory={monthly.byCategory} categories={finance.categories} monthKey={monthKey} onSetBudget={finance.setBudget} />
-        )}
-        {activeTab === 'goals' && (
-          <GoalsPanel goals={finance.goals} onAdd={finance.addGoal} onUpdate={finance.updateGoal} onDelete={finance.deleteGoal} />
-        )}
-        {activeTab === 'categories' && (
-          <CategoryManager categories={finance.categories} transactions={finance.transactions} onAdd={finance.addCategory} onUpdate={finance.updateCategory} onDelete={finance.deleteCategory} />
-        )}
-        {activeTab === 'icons' && <IconManager />}
-        {activeTab === 'security' && <SecurityPanel />}
-        {activeTab === 'settings' && (
-          <SettingsPanel
-            theme={finance.theme}
-            transactionCount={finance.transactions.length}
-            categoryCount={finance.categories.length}
-            goalCount={finance.goals.length}
-            onToggleTheme={toggleTheme}
-            onExportJSON={() => exportJSON(finance.exportData())}
-            onImport={finance.importData}
-            onLoadSample={() => finance.importData(buildSampleData())}
-            onClearAll={finance.clearAll}
-          />
-        )}
-      </main>
+      <div className="app-main">
+        <Topbar
+          monthKey={monthKey}
+          onMonthChange={setMonthKey}
+          theme={finance.theme}
+          onToggleTheme={toggleTheme}
+          user={auth.user}
+          onSignOut={() => auth.signOut()}
+          search={search}
+          onSearch={handleSearch}
+          pending={pending}
+          pendingTotal={pendingTotal}
+          onOpenPending={() => setActiveTab('transactions')}
+        />
+
+        <main className="container main-content">
+          {finance.error && (
+            <div className="notice danger" style={{ marginBottom: 20 }}>
+              {finance.error} Os dados foram recarregados do servidor.
+            </div>
+          )}
+
+          <div className="page-head">
+            <div style={{ minWidth: 0 }}>
+              <h1 className="page-title">{page.title}</h1>
+              <p className="page-sub">
+                {activeTab === 'overview' ? `${page.sub} • ${monthLabel(monthKey)}` : page.sub}
+              </p>
+            </div>
+            <button type="button" className="btn btn-primary add-main" onClick={openNew}>
+              <Plus size={16} strokeWidth={2.2} />
+              Novo lançamento
+            </button>
+          </div>
+
+          {activeTab === 'overview' && overview}
+          {activeTab === 'transactions' && (
+            <TransactionList
+              occurrences={monthly.occurrences}
+              categories={finance.categories}
+              monthKey={monthKey}
+              onEdit={openEdit}
+              onDelete={deleteTransaction}
+              onDuplicate={finance.duplicateTransaction}
+              onTogglePaid={finance.togglePaid}
+              onNew={openNew}
+              onExportCSV={(rows) => exportCSV(rows, finance.categories, `lancamentos-${monthKey}.csv`)}
+              search={search}
+              onSearchChange={setSearch}
+            />
+          )}
+          {activeTab === 'budget' && (
+            <BudgetPanel budgets={finance.budgets} byCategory={monthly.byCategory} categories={finance.categories} monthKey={monthKey} onSetBudget={finance.setBudget} />
+          )}
+          {activeTab === 'goals' && (
+            <GoalsPanel goals={finance.goals} onAdd={finance.addGoal} onUpdate={finance.updateGoal} onDelete={finance.deleteGoal} />
+          )}
+          {activeTab === 'categories' && (
+            <CategoryManager categories={finance.categories} transactions={finance.transactions} onAdd={finance.addCategory} onUpdate={finance.updateCategory} onDelete={finance.deleteCategory} />
+          )}
+          {activeTab === 'icons' && <IconManager />}
+          {activeTab === 'security' && <SecurityPanel />}
+          {activeTab === 'settings' && (
+            <SettingsPanel
+              theme={finance.theme}
+              transactionCount={finance.transactions.length}
+              categoryCount={finance.categories.length}
+              goalCount={finance.goals.length}
+              onToggleTheme={toggleTheme}
+              onExportJSON={() => exportJSON(finance.exportData())}
+              onImport={finance.importData}
+              onLoadSample={() => finance.importData(buildSampleData())}
+              onClearAll={finance.clearAll}
+            />
+          )}
+
+          <footer className="footer">Planejador Financeiro • Dados privados e isolados por conta</footer>
+        </main>
+      </div>
+
+      <BottomNav
+        active={activeTab}
+        onChange={setActiveTab}
+        badges={{ transactions: pendingCount }}
+        onOpenNew={openNew}
+      />
 
       <TransactionForm
         open={formOpen}
@@ -189,7 +260,6 @@ function AuthenticatedApp() {
         categories={finance.categories}
         defaultDate={isoDateInMonth(monthKey, new Date().getDate())}
       />
-      <footer className="footer">Planejador Financeiro • Dados privados e isolados por conta</footer>
     </div>
   )
 }
