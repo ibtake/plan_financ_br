@@ -13,7 +13,10 @@ function corsHeaders(request: Request) {
   const allowOrigin = configured.includes(origin) ? origin : configured[0] || ''
   return {
     'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
+    // x-application-name e x-client-info sao injetados pelo cliente Supabase
+    // do frontend (src/lib/supabase.js). Sem declara-los aqui o preflight falha.
+    'Access-Control-Allow-Headers':
+      'authorization, apikey, content-type, x-client-info, x-application-name',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     Vary: 'Origin',
   }

@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { TrendingUp } from 'lucide-react'
 import {
   Area,
   AreaChart,
@@ -83,7 +84,9 @@ export default function TrendChart({ trend }) {
         </div>
       ) : (
         <div className="empty">
-          <div className="empty-icon">📈</div>
+          <div className="empty-icon">
+            <TrendingUp size={22} strokeWidth={1.6} />
+          </div>
           <div className="empty-title">Sem dados suficientes</div>
         </div>
       )}

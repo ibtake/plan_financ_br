@@ -3,6 +3,7 @@
 // =====================================================================
 
 import { useEffect, useMemo, useState } from 'react'
+import { Wallet } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 import { configurationProblem } from '../../lib/supabase.js'
 import CodeInput from './CodeInput.jsx'
@@ -46,7 +47,9 @@ export default function AuthScreen() {
       <div className="auth-wrap">
         <div className="auth-card">
           <div className="auth-brand">
-            <div className="brand-logo">💰</div>
+            <div className="brand-logo">
+              <Wallet size={32} strokeWidth={1.8} />
+            </div>
             <div>
               <div className="brand-title">Planejador Financeiro</div>
               <div className="brand-sub">Configuração pendente</div>
@@ -161,7 +164,9 @@ export default function AuthScreen() {
     <div className="auth-wrap">
       <div className="auth-card">
         <div className="auth-brand">
-          <div className="brand-logo">💰</div>
+          <div className="brand-logo">
+            <Wallet size={32} strokeWidth={1.8} />
+          </div>
           <div>
             <div className="brand-title">Planejador Financeiro</div>
             <div className="brand-sub">Suas finanças sob controle</div>
@@ -271,7 +276,7 @@ export default function AuthScreen() {
         {mode === 'mfa' && (
           <form className="stack" style={{ gap: 16, marginTop: 18 }} onSubmit={handleMfa}>
             <div className="notice info">
-              🔐 Digite o código de 6 dígitos exibido no seu aplicativo autenticador.
+              Digite o código de 6 dígitos exibido no seu aplicativo autenticador.
             </div>
 
             <CodeInput value={code} onChange={setCode} disabled={busy} />
@@ -299,7 +304,7 @@ export default function AuthScreen() {
       </div>
 
       <p className="auth-foot text-xs text-muted">
-        🔒 Seus dados são protegidos por políticas de acesso no banco de dados. Cada conta
+        Seus dados são protegidos por políticas de acesso no banco de dados. Cada conta
         enxerga exclusivamente os próprios lançamentos.
       </p>
     </div>

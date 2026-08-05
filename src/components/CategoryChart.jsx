@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
+import { PieChart as PieChartIcon } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { getCategory } from '../utils/categories.js'
 import { formatCurrency, formatPercent } from '../utils/format.js'
@@ -50,7 +51,9 @@ export default function CategoryChart({ byCategory, categories, total }) {
           </div>
         </div>
         <div className="empty">
-          <div className="empty-icon">🥧</div>
+          <div className="empty-icon">
+            <PieChartIcon size={22} strokeWidth={1.6} />
+          </div>
           <div className="empty-title">Nenhuma despesa neste mês</div>
           <div className="text-sm">Adicione lançamentos para ver o gráfico.</div>
         </div>

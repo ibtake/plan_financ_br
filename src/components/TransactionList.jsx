@@ -1,4 +1,18 @@
 import { useMemo, useState } from 'react'
+import {
+  Check,
+  Circle,
+  Copy,
+  Download,
+  Pencil,
+  Plus,
+  Repeat,
+  Search,
+  SlidersHorizontal,
+  StickyNote,
+  Trash2,
+  Inbox,
+} from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { getCategory, getPaymentMethod } from '../utils/categories.js'
 import { recurrenceLabel } from '../utils/recurrence.js'
@@ -32,14 +46,19 @@ export function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate,
         <div className="tx-desc">{tx.description}</div>
         <div className="tx-meta">
           <span>{formatDate(tx.date)}</span>
-          <span>•</span>
+          <span aria-hidden="true">•</span>
           <span>{cat.name}</span>
-          <span>•</span>
+          <span aria-hidden="true">•</span>
           <span title="Forma de pagamento">
-            {method.icon} {method.name}
+            <AppIcon emoji={method.icon} size={13} /> {method.name}
           </span>
           {tx.installmentLabel && <span className="chip info">{tx.installmentLabel}</span>}
-          {repeat && !tx.installmentLabel && <span className="chip primary">🔁 {repeat}</span>}
+          {repeat && !tx.installmentLabel && (
+            <span className="chip primary">
+              <Repeat size={11} strokeWidth={2.2} />
+              {repeat}
+            </span>
+          )}
           {!tx.paid && (
             <span className="chip warning">{isIncome ? 'A receber' : 'A pagar'}</span>
           )}
@@ -49,7 +68,12 @@ export function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate,
             </span>
           ))}
         </div>
-        {tx.note && <div className="text-xs text-muted" style={{ marginTop: 4 }}>📝 {tx.note}</div>}
+        {tx.note && (
+          <div className="tx-note text-xs text-muted">
+            <StickyNote size={12} strokeWidth={1.9} />
+            <span>{tx.note}</span>
+          </div>
+        )}
       </div>
 
       <div className={`tx-amount ${isIncome ? 'income' : 'expense'} mono`}>
@@ -58,20 +82,22 @@ export function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate,
 
       <div className="tx-actions">
         <button
-          className="icon-btn"
+          type="button"
+          className={`icon-btn${tx.paid ? ' success' : ''}`}
           onClick={() => onTogglePaid(tx)}
           title={tx.paid ? 'Marcar como pendente' : 'Marcar como pago'}
+          aria-label={tx.paid ? 'Marcar como pendente' : 'Marcar como pago'}
         >
-          {tx.paid ? '✅' : '⭕'}
+          {tx.paid ? <Check size={16} strokeWidth={2.4} /> : <Circle size={16} strokeWidth={2} />}
         </button>
-        <button className="icon-btn" onClick={() => onEdit(tx)} title="Editar">
-          ✏️
+        <button type="button" className="icon-btn" onClick={() => onEdit(tx)} title="Editar" aria-label="Editar">
+          <Pencil size={15} strokeWidth={1.9} />
         </button>
-        <button className="icon-btn" onClick={() => onDuplicate(tx)} title="Duplicar">
-          ⧉
+        <button type="button" className="icon-btn" onClick={() => onDuplicate(tx)} title="Duplicar" aria-label="Duplicar">
+          <Copy size={15} strokeWidth={1.9} />
         </button>
-        <button className="icon-btn danger" onClick={() => onDelete(tx)} title="Excluir">
-          🗑️
+        <button type="button" className="icon-btn danger" onClick={() => onDelete(tx)} title="Excluir" aria-label="Excluir">
+          <Trash2 size={15} strokeWidth={1.9} />
         </button>
       </div>
     </div>
@@ -88,12 +114,28 @@ export default function TransactionList({
   onTogglePaid,
   onNew,
   onExportCSV,
+  search: searchProp,
+  onSearchChange,
 }) {
-  const [search, setSearch] = useState('')
+  const [localSearch, setLocalSearch] = useState('')
   const [type, setType] = useState('all')
   const [categoryId, setCategoryId] = useState('all')
   const [status, setStatus] = useState('all')
   const [sort, setSort] = useState('date-desc')
+  // No mobile os filtros comecam recolhidos para nao empurrar a lista
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
+  // Quando App controla a busca (barra do topo), ela vence; caso contrario o
+  // componente segue funcionando sozinho com o estado local de antes.
+  const controlled = typeof onSearchChange === 'function'
+  const search = controlled ? (searchProp ?? '') : localSearch
+  const setSearch = controlled ? onSearchChange : setLocalSearch
+
+  const activeFilters =
+    (type !== 'all' ? 1 : 0) +
+    (categoryId !== 'all' ? 1 : 0) +
+    (status !== 'all' ? 1 : 0) +
+    (sort !== 'date-desc' ? 1 : 0)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -147,7 +189,7 @@ export default function TransactionList({
   return (
     <div className="card">
       <div className="card-head">
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div className="card-title">Lançamentos de {monthLabel(monthKey)}</div>
           <div className="card-sub">
             {totals.count} {totals.count === 1 ? 'registro' : 'registros'} • entradas{' '}
@@ -156,27 +198,42 @@ export default function TransactionList({
           </div>
         </div>
         <div className="row">
-          <button className="btn btn-sm" onClick={() => onExportCSV(filtered)} title="Exportar CSV">
-            ⬇️ CSV
+          <button type="button" className="btn btn-sm" onClick={() => onExportCSV(filtered)} title="Exportar CSV">
+            <Download size={15} strokeWidth={1.9} />
+            CSV
           </button>
-          <button className="btn btn-primary btn-sm" onClick={onNew}>
-            ➕ Novo
+          <button type="button" className="btn btn-primary btn-sm" onClick={onNew}>
+            <Plus size={15} strokeWidth={2.2} />
+            Novo
           </button>
         </div>
       </div>
 
-      <div className="filters">
+      {/* Botao que expande os filtros — visivel apenas no mobile */}
+      <button
+        type="button"
+        className="filters-toggle"
+        onClick={() => setFiltersOpen((open) => !open)}
+        aria-expanded={filtersOpen}
+      >
+        <SlidersHorizontal size={15} strokeWidth={1.9} />
+        <span>Filtros e ordenação</span>
+        {activeFilters > 0 && <span className="chip primary">{activeFilters}</span>}
+      </button>
+
+      <div className={`filters collapsible${filtersOpen ? ' open' : ''}`}>
         <div className="search-box">
-          <span aria-hidden="true">🔍</span>
+          <Search size={15} strokeWidth={2} aria-hidden="true" />
           <input
             className="input"
             placeholder="Buscar por descrição, categoria, tag..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            aria-label="Buscar lançamentos"
           />
         </div>
 
-        <select className="select" style={{ width: 'auto' }} value={type} onChange={(e) => setType(e.target.value)}>
+        <select className="select" value={type} onChange={(e) => setType(e.target.value)} aria-label="Tipo">
           <option value="all">Todos os tipos</option>
           <option value="income">Somente receitas</option>
           <option value="expense">Somente despesas</option>
@@ -184,9 +241,9 @@ export default function TransactionList({
 
         <select
           className="select"
-          style={{ width: 'auto' }}
           value={categoryId}
           onChange={(e) => setCategoryId(e.target.value)}
+          aria-label="Categoria"
         >
           <option value="all">Todas as categorias</option>
           {usedCategories.map((c) => (
@@ -198,16 +255,16 @@ export default function TransactionList({
 
         <select
           className="select"
-          style={{ width: 'auto' }}
           value={status}
           onChange={(e) => setStatus(e.target.value)}
+          aria-label="Situação"
         >
           <option value="all">Pagos e pendentes</option>
           <option value="paid">Somente pagos</option>
           <option value="pending">Somente pendentes</option>
         </select>
 
-        <select className="select" style={{ width: 'auto' }} value={sort} onChange={(e) => setSort(e.target.value)}>
+        <select className="select" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Ordenação">
           {SORTS.map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
@@ -220,7 +277,9 @@ export default function TransactionList({
 
       {filtered.length === 0 ? (
         <div className="empty">
-          <div className="empty-icon">🗒️</div>
+          <div className="empty-icon">
+            <Inbox size={22} strokeWidth={1.6} />
+          </div>
           <div className="empty-title">
             {occurrences.length === 0
               ? 'Nenhum lançamento neste mês'
@@ -233,7 +292,7 @@ export default function TransactionList({
           </div>
         </div>
       ) : (
-        <div>
+        <div className="tx-list">
           {filtered.map((tx) => (
             <TransactionItem
               key={tx.id}
