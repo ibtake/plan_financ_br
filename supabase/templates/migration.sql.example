@@ -1,0 +1,39 @@
+-- =====================================================================
+-- Migration: descreva o objetivo
+-- Created at (UTC): YYYY-MM-DD HH:MM:SS
+--
+-- Pre-conditions:
+--   - Descreva a estrutura esperada antes da execucao.
+-- Compatibility:
+--   - Explique por que o frontend atual continuara funcionando.
+-- Recovery:
+--   - Prefira uma nova migracao corretiva; descreva como preservar dados.
+-- =====================================================================
+
+begin;
+
+-- EXEMPLO: remova este bloco e escreva a alteracao real.
+-- Uma coluna nova deve ser opcional ou possuir um default seguro para as
+-- linhas existentes e para clientes que ainda nao enviam o novo campo.
+--
+-- alter table public.transactions
+--   add column if not exists favorite boolean not null default false;
+--
+-- Se criar tabela, habilite e force RLS, crie policies com verificacao de
+-- usuario/token/MFA e conceda somente os privileges necessarios.
+-- Se a consulta da aplicacao precisar, adicione indice com IF NOT EXISTS.
+
+commit;
+
+-- POST-CHECKS (execute e confira depois do commit):
+--
+-- select column_name, data_type, is_nullable, column_default
+-- from information_schema.columns
+-- where table_schema = 'public'
+--   and table_name = 'transactions'
+--   and column_name = 'favorite';
+--
+-- Confirme tambem RLS/policies quando uma tabela ou politica for alterada:
+-- select tablename, rowsecurity
+-- from pg_tables
+-- where schemaname = 'public' and tablename = 'NOME_DA_TABELA';

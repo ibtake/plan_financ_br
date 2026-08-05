@@ -7,7 +7,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "migrations:check": "node scripts/validate-migrations.mjs",
+    "check": "npm run build && npm run migrations:check",
+    "deploy:check": "npm run check"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.0",
