@@ -1,7 +1,7 @@
 // Exportacao de backup (JSON) e planilha (CSV)
 
 import { formatDate } from './format.js'
-import { getCategory, getPaymentMethod } from './categories.js'
+import { TYPE_META, getCategory, getPaymentMethod } from './categories.js'
 import { recurrenceLabel } from './recurrence.js'
 
 function download(filename, content, mime) {
@@ -57,7 +57,7 @@ export function exportCSV(rows, categories, filename = `planejador-${stamp()}.cs
     const cat = getCategory(categories, tx.categoryId)
     return [
       formatDate(tx.date),
-      tx.type === 'income' ? 'Receita' : 'Despesa',
+      TYPE_META[tx.type]?.label || 'Despesa',
       tx.description,
       cat.name,
       String(Number(tx.amount).toFixed(2)).replace('.', ','),

@@ -281,6 +281,9 @@ grant select on public.security_events to authenticated;
 --
 -- CORRECAO 1: search_path fixado para prevenir schema shadowing
 -- CORRECAO 3: Rate limiting implementado - max 50 eventos/hora por usuario
+-- V-04: eventos 'critical' escapam da cota; ao atingir o limite grava-se no
+--       maximo 1 resumo 'rate_limited' por hora em vez de silenciar tudo
+-- V-09 (REQ 8): retencao de 7 dias, expurgada na propria gravacao
 --
 -- SECURITY DEFINER permite gravar o evento mesmo em situacoes em que o
 -- usuario teria o insert negado. O search_path fixo e obrigatorio para
@@ -314,8 +317,24 @@ begin
   where user_id = v_uid
     and created_at > now() - interval '1 hour';
 
-  -- Aborta se ultrapassou o limite (protecao anti-DoS)
-  if v_event_count >= 50 then
+  -- V-04: nunca descartar eventos criticos; cota vale so para info/warning
+  if v_event_count >= 50 and coalesce(p_severity, 'info') <> 'critical' then
+    -- grava no maximo 1 resumo por hora, em vez de silenciar tudo
+    if not exists (
+      select 1 from public.security_events
+      where user_id = v_uid
+        and event_type = 'rate_limited'
+        and created_at > now() - interval '1 hour'
+    ) then
+      select email into v_email from auth.users where id = v_uid;
+      insert into public.security_events (
+        user_id, event_type, severity, email, user_agent, details
+      ) values (
+        v_uid, 'rate_limited', 'warning', v_email,
+        left(coalesce(p_user_agent, ''), 400),
+        jsonb_build_object('reason', 'hourly log quota reached')
+      );
+    end if;
     return;
   end if;
 
@@ -332,6 +351,12 @@ begin
     left(coalesce(p_user_agent, ''), 400),
     coalesce(p_details, '{}'::jsonb)
   );
+
+  -- V-09 (REQ 8): retencao de 7 dias. Restrito ao proprio usuario e apoiado
+  -- no indice (user_id, created_at desc), sem varredura da tabela.
+  delete from public.security_events
+  where user_id = v_uid
+    and created_at < now() - interval '7 days';
 end;
 $$;
 
@@ -397,11 +422,17 @@ create table if not exists public.categories (
   color       text not null default '#6366f1',
   icon        text not null default '📁',
   custom      boolean not null default true,
+  -- V-07 (REQ 6): meta percentual esperada da categoria. Usada apenas por
+  -- despesa/reinvestimento; receita mantem 0.
+  target_percentage numeric not null default 0,
   created_at  timestamptz not null default now(),
 
   primary key (user_id, id),
 
-  constraint categories_type_check check (type in ('income', 'expense')),
+  -- V-06 (REQ 3): 'reinvested' e saida de liquidez que acumula patrimonio
+  constraint categories_type_check check (type in ('income', 'expense', 'reinvested')),
+  constraint categories_target_percentage_check
+    check (target_percentage >= 0 and target_percentage <= 100),
   constraint categories_name_length check (char_length(name) between 1 and 60),
   constraint categories_color_format check (color ~ '^#[0-9a-fA-F]{6}$'),
   constraint categories_icon_length check (char_length(icon) <= 8)
@@ -468,7 +499,7 @@ create table if not exists public.transactions (
 
   primary key (user_id, id),
 
-  constraint transactions_type_check check (type in ('income', 'expense')),
+  constraint transactions_type_check check (type in ('income', 'expense', 'reinvested')),
   constraint transactions_amount_check check (amount >= 0 and amount < 1000000000),
   constraint transactions_desc_length check (char_length(description) between 1 and 200),
   constraint transactions_note_length check (note is null or char_length(note) <= 1000),
@@ -651,6 +682,77 @@ grant select, insert, update, delete on public.goals to authenticated;
 
 
 -- =====================================================================
+-- BLOCO 13.1 - Restauracao transacional de backup
+-- =====================================================================
+-- V-05/V-08: usada pelo frontend ao importar um backup. A substituicao das
+-- colecoes ocorre em uma unica transacao: se qualquer insert falhar, o
+-- PostgreSQL desfaz tudo e os dados anteriores do usuario permanecem intactos.
+-- A funcao usa o usuario autenticado, nunca um user_id recebido do navegador.
+
+create or replace function public.replace_my_data(p_data jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then
+    raise exception 'nao autenticado';
+  end if;
+
+  delete from public.transactions where user_id = v_uid;
+  delete from public.budgets where user_id = v_uid;
+  delete from public.goals where user_id = v_uid;
+  delete from public.categories where user_id = v_uid;
+
+  insert into public.categories (user_id, id, name, icon, color, type, target_percentage)
+  select v_uid, x.id, x.name, x.icon, x.color, x.type, coalesce(x.target_percentage, 0)
+  from jsonb_to_recordset(p_data->'categories')
+    as x(id text, name text, icon text, color text, type text, target_percentage numeric);
+
+  insert into public.transactions (
+    user_id, id, type, description, amount, category_id, date, method,
+    paid, recurrence, recurrence_end, installments, tags, note,
+    paid_occurrences, created_at, updated_at
+  )
+  select
+    v_uid, x.id, x.type, x.description, x.amount, x.category_id, x.date, x.method,
+    x.paid, x.recurrence, x.recurrence_end, x.installments, x.tags, x.note,
+    x.paid_occurrences, coalesce(x.created_at, now()), coalesce(x.updated_at, now())
+  from jsonb_to_recordset(p_data->'transactions')
+    as x(
+      id text, type text, description text, amount numeric, category_id text,
+      date date, method text, paid boolean, recurrence text, recurrence_end date,
+      installments integer, tags text[], note text, paid_occurrences jsonb,
+      created_at timestamptz, updated_at timestamptz
+    );
+
+  insert into public.budgets (user_id, category_id, limit_amount, created_at, updated_at)
+  select v_uid, x.category_id, x.limit_amount,
+    coalesce(x.created_at, now()), coalesce(x.updated_at, now())
+  from jsonb_to_recordset(p_data->'budgets')
+    as x(category_id text, limit_amount numeric, created_at timestamptz, updated_at timestamptz);
+
+  insert into public.goals (
+    user_id, id, name, target, current, deadline, icon, color, created_at, updated_at
+  )
+  select v_uid, x.id, x.name, x.target, x.current, x.deadline, x.icon, x.color,
+    coalesce(x.created_at, now()), coalesce(x.updated_at, now())
+  from jsonb_to_recordset(p_data->'goals')
+    as x(
+      id text, name text, target numeric, current numeric, deadline date,
+      icon text, color text, created_at timestamptz, updated_at timestamptz
+    );
+end;
+$$;
+
+revoke execute on function public.replace_my_data(jsonb) from public, anon;
+grant execute on function public.replace_my_data(jsonb) to authenticated;
+
+
+-- =====================================================================
 -- BLOCO 14 - Provisionamento automatico de novos usuarios
 -- =====================================================================
 -- Ao criar a conta, o usuario recebe automaticamente o perfil e as
@@ -686,6 +788,10 @@ begin
     ('dividas',       new.id, 'Dívidas',           'expense', '#dc2626', '💳', false),
     ('impostos',      new.id, 'Impostos',          'expense', '#64748b', '🧾', false),
     ('outros-d',      new.id, 'Outros',            'expense', '#94a3b8', '📦', false),
+    -- V-10 (REQ 3): categorias do tipo reinvestido, para que o usuario consiga
+    -- lancar reinvestimento sem precisar cadastrar categoria antes
+    ('aportes',       new.id, 'Aportes e investimentos', 'reinvested', '#8b5cf6', '📈', false),
+    ('outros-ri',     new.id, 'Outros reinvestimentos',  'reinvested', '#a855f7', '📦', false),
     ('salario',       new.id, 'Salário',           'income',  '#22c55e', '💼', false),
     ('freelance',     new.id, 'Freelance',         'income',  '#10b981', '💻', false),
     ('investimentos', new.id, 'Investimentos',     'income',  '#0d9488', '📈', false),

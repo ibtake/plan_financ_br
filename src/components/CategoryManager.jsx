@@ -1,24 +1,153 @@
-import { useMemo, useState } from 'react'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { Pencil, Plus, Trash2, Upload } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
-import { CHART_PALETTE, categoriesByType } from '../utils/categories.js'
+import { useIcons } from '../contexts/IconContext.jsx'
+import { CHART_PALETTE, TYPE_META, categoriesByType } from '../utils/categories.js'
+import { ICON_CATALOG, ICON_GROUPS } from '../utils/iconRegistry.js'
+import { readIconFile } from '../utils/iconUpload.js'
 import { formatCurrency } from '../utils/format.js'
 
-const ICON_OPTIONS = [
-  '🏠', '🍽️', '🛒', '🚗', '💊', '📚', '🎬', '📺', '🛍️', '🐾', '💳', '🧾',
-  '📦', '💼', '💻', '📈', '🎁', '✈️', '⚽', '🎵', '👕', '🔧', '☕', '🍺',
-]
+/** Tipos que aceitam meta percentual (REQ 6): receita fica de fora */
+const TARGET_TYPES = ['expense', 'reinvested']
 
-function CategoryForm({ initial, onSave, onCancel }) {
+/**
+ * REQ 5: seletor de ícone com todo o catálogo, agrupado, mais o envio de um
+ * PNG personalizado.
+ *
+ * O PNG enviado vira um override do emoji selecionado (mesmo mecanismo da aba
+ * Ícones), então ele passa a valer em qualquer tela que use <AppIcon>, e a
+ * categoria continua guardando apenas o caractere do emoji no banco.
+ */
+function IconPicker({ value, onChange }) {
+  const { setOverride, hasOverride } = useIcons()
+  const inputRef = useRef(null)
+  const [search, setSearch] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const grouped = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    const buckets = new Map()
+    for (const item of ICON_CATALOG) {
+      if (term && !item.label.toLowerCase().includes(term) && item.emoji !== term) continue
+      if (!buckets.has(item.group)) buckets.set(item.group, [])
+      buckets.get(item.group).push(item)
+    }
+    return buckets
+  }, [search])
+
+  const handleUpload = async (file) => {
+    setBusy(true)
+    setError('')
+    try {
+      const dataUrl = await readIconFile(file)
+      setOverride(value, dataUrl)
+    } catch (uploadError) {
+      setError(uploadError.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="icon-picker">
+      <div className="icon-picker-head">
+        <div className="icon-picker-current">
+          <AppIcon emoji={value} size={26} />
+          <span className="text-xs text-muted">
+            {hasOverride(value) ? 'PNG personalizado aplicado' : 'Ícone selecionado'}
+          </span>
+        </div>
+        <input
+          className="input icon-picker-search"
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Buscar ícone..."
+          aria-label="Buscar ícone"
+        />
+      </div>
+
+      <div className="icon-picker-body">
+        {ICON_GROUPS.filter((group) => grouped.has(group.id)).map((group) => (
+          <div className="icon-picker-group" key={group.id}>
+            <div className="icon-picker-group-title">{group.name}</div>
+            <div className="swatch-grid">
+              {grouped.get(group.id).map((item) => (
+                <button
+                  type="button"
+                  key={item.emoji}
+                  className={`swatch${value === item.emoji ? ' selected' : ''}`}
+                  onClick={() => onChange(item.emoji)}
+                  title={item.label}
+                  aria-label={`Ícone ${item.label}`}
+                  aria-pressed={value === item.emoji}
+                >
+                  <AppIcon emoji={item.emoji} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        {grouped.size === 0 && (
+          <div className="text-xs text-muted">Nenhum ícone corresponde à busca.</div>
+        )}
+      </div>
+
+      <div className="icon-picker-upload">
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/webp"
+          className="sr-only"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) void handleUpload(file)
+            event.target.value = ''
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          <Upload size={14} strokeWidth={2} />
+          {hasOverride(value) ? 'Trocar PNG do ícone' : 'Enviar PNG personalizado'}
+        </button>
+        <span className="hint">
+          O PNG substitui o ícone selecionado em todas as telas. Quadrado, até 1 MB.
+        </span>
+      </div>
+
+      {error && <div className="notice danger">{error}</div>}
+    </div>
+  )
+}
+
+function CategoryForm({ initial, onSave, onCancel, otherTargetTotal }) {
   const [form, setForm] = useState(
-    initial || { name: '', type: 'expense', color: CHART_PALETTE[0], icon: '📦' },
+    initial || {
+      name: '',
+      type: 'expense',
+      color: CHART_PALETTE[0],
+      icon: '📦',
+      targetPercentage: 0,
+    },
   )
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
+
+  const showTarget = TARGET_TYPES.includes(form.type)
+  const target = Math.max(0, Math.min(100, Number(form.targetPercentage) || 0))
+  // REQ 6: a soma das metas de despesa + reinvestimento não pode passar de 100%
+  const totalTarget = otherTargetTotal + (showTarget ? target : 0)
+  const overLimit = totalTarget > 100
 
   const submit = (e) => {
     e.preventDefault()
     if (!form.name.trim()) return
-    onSave(form)
+    if (overLimit) return
+    onSave({ ...form, targetPercentage: showTarget ? target : 0 })
   }
 
   return (
@@ -43,26 +172,46 @@ function CategoryForm({ initial, onSave, onCancel }) {
             disabled={Boolean(initial)}
           >
             <option value="expense">Despesa</option>
+            <option value="reinvested">Despesa Reinvestida</option>
             <option value="income">Receita</option>
           </select>
+          {form.type === 'reinvested' && (
+            <span className="hint">Sai da liquidez, mas acumula patrimônio.</span>
+          )}
         </div>
+
+        {showTarget && (
+          <div className="field span-2">
+            <label className="label" htmlFor="cat-target">
+              % esperada do total (meta)
+            </label>
+            <input
+              id="cat-target"
+              type="number"
+              min="0"
+              max="100"
+              step="0.5"
+              className={`input mono${overLimit ? ' input-invalid' : ''}`}
+              value={form.targetPercentage ?? 0}
+              onChange={(e) => set({ targetPercentage: e.target.value })}
+            />
+            {overLimit ? (
+              <span className="field-error">
+                A soma das metas chegaria a {totalTarget.toFixed(1)}%. Reduza para no máximo{' '}
+                {(100 - otherTargetTotal).toFixed(1)}% nesta categoria.
+              </span>
+            ) : (
+              <span className="hint">
+                Já distribuídos: {totalTarget.toFixed(1)}% de 100% — restam{' '}
+                {(100 - totalTarget).toFixed(1)}%.
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="field span-2">
           <label className="label">Ícone</label>
-          <div className="swatch-grid">
-            {ICON_OPTIONS.map((ic) => (
-              <button
-                type="button"
-                key={ic}
-                className={`swatch${form.icon === ic ? ' selected' : ''}`}
-                onClick={() => set({ icon: ic })}
-                aria-label={`Ícone ${ic}`}
-                aria-pressed={form.icon === ic}
-              >
-                <AppIcon emoji={ic} />
-              </button>
-            ))}
-          </div>
+          <IconPicker value={form.icon} onChange={(icon) => set({ icon })} />
         </div>
 
         <div className="field span-2">
@@ -87,7 +236,7 @@ function CategoryForm({ initial, onSave, onCancel }) {
         <button type="button" className="btn" onClick={onCancel}>
           Cancelar
         </button>
-        <button type="submit" className="btn btn-primary">
+        <button type="submit" className="btn btn-primary" disabled={overLimit}>
           Salvar categoria
         </button>
       </div>
@@ -96,6 +245,12 @@ function CategoryForm({ initial, onSave, onCancel }) {
 }
 
 function CategoryRow({ category, usage, onEdit, onDelete }) {
+  const meta = TYPE_META[category.type] || TYPE_META.expense
+  const target = Number(category.targetPercentage) || 0
+  // Categorias padrão do sistema não são excluíveis (o backend recusa). Sem
+  // isso o botão falhava em silêncio, que era a queixa do REQ 4.
+  const removable = category.custom !== false
+
   return (
     <div className="tx" style={{ padding: '10px 4px' }}>
       <div
@@ -107,9 +262,9 @@ function CategoryRow({ category, usage, onEdit, onDelete }) {
       <div className="tx-main">
         <div className="tx-desc">{category.name}</div>
         <div className="tx-meta">
-          <span className={`chip ${category.type === 'income' ? 'income' : 'expense'}`}>
-            {category.type === 'income' ? 'Receita' : 'Despesa'}
-          </span>
+          <span className={`chip ${meta.chip}`}>{meta.label}</span>
+          {target > 0 && <span className="chip">meta {target.toFixed(1)}%</span>}
+          {!removable && <span className="chip">padrão</span>}
           <span>
             {usage.count} {usage.count === 1 ? 'lançamento' : 'lançamentos'}
           </span>
@@ -125,7 +280,16 @@ function CategoryRow({ category, usage, onEdit, onDelete }) {
         <button className="icon-btn" onClick={() => onEdit(category)} title="Editar">
           <Pencil size={15} strokeWidth={1.9} />
         </button>
-        <button className="icon-btn danger" onClick={() => onDelete(category)} title="Excluir">
+        <button
+          className="icon-btn danger"
+          onClick={() => onDelete(category)}
+          disabled={!removable}
+          title={
+            removable
+              ? 'Excluir'
+              : 'Categoria padrão do sistema: não pode ser excluída, apenas editada'
+          }
+        >
           <Trash2 size={15} strokeWidth={1.9} />
         </button>
       </div>
@@ -155,7 +319,18 @@ export default function CategoryManager({
   }, [transactions])
 
   const expenses = categoriesByType(categories, 'expense')
+  const reinvested = categoriesByType(categories, 'reinvested')
   const incomes = categoriesByType(categories, 'income')
+
+  // REQ 6: soma das metas já cadastradas, ignorando a categoria em edição —
+  // é o teto que o formulário usa para validar o valor digitado.
+  const otherTargetTotal = useMemo(
+    () =>
+      categories
+        .filter((c) => TARGET_TYPES.includes(c.type) && c.id !== editing?.id)
+        .reduce((sum, c) => sum + (Number(c.targetPercentage) || 0), 0),
+    [categories, editing],
+  )
 
   const handleSave = (data) => {
     if (editing) onUpdate(editing.id, data)
@@ -165,12 +340,31 @@ export default function CategoryManager({
   }
 
   const handleDelete = (category) => {
+    if (category.custom === false) {
+      window.alert(
+        `"${category.name}" é uma categoria padrão do sistema e não pode ser excluída. ` +
+          'Você pode renomeá-la, trocar o ícone ou a cor pelo botão de editar.',
+      )
+      return
+    }
     const used = usage[category.id]?.count || 0
     const message = used
       ? `A categoria "${category.name}" é usada em ${used} lançamento(s). Eles serão movidos para "Outros". Continuar?`
       : `Excluir a categoria "${category.name}"?`
     if (window.confirm(message)) onDelete(category.id)
   }
+
+  const startEdit = (cat) => {
+    setEditing(cat)
+    setShowForm(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const sections = [
+    { key: 'expense', title: 'Despesas', items: expenses },
+    { key: 'reinvested', title: 'Despesas reinvestidas', items: reinvested },
+    { key: 'income', title: 'Receitas', items: incomes },
+  ]
 
   return (
     <div className="stack">
@@ -179,7 +373,9 @@ export default function CategoryManager({
           <div>
             <div className="card-title">Categorias</div>
             <div className="card-sub">
-              {expenses.length} de despesa • {incomes.length} de receita
+              {expenses.length} de despesa • {reinvested.length} reinvestida
+              {reinvested.length === 1 ? '' : 's'} • {incomes.length} de receita
+              {otherTargetTotal > 0 && ` • metas somam ${otherTargetTotal.toFixed(1)}%`}
             </div>
           </div>
           {!showForm && (
@@ -200,6 +396,7 @@ export default function CategoryManager({
       {showForm && (
         <CategoryForm
           initial={editing}
+          otherTargetTotal={otherTargetTotal}
           onSave={handleSave}
           onCancel={() => {
             setShowForm(false)
@@ -209,43 +406,26 @@ export default function CategoryManager({
       )}
 
       <div className="grid-2">
-        <div className="card">
-          <div className="card-head">
-            <div className="card-title">Despesas</div>
+        {sections.map((section) => (
+          <div className="card" key={section.key}>
+            <div className="card-head">
+              <div className="card-title">{section.title}</div>
+            </div>
+            {section.items.length === 0 ? (
+              <div className="text-sm text-muted">Nenhuma categoria neste grupo ainda.</div>
+            ) : (
+              section.items.map((c) => (
+                <CategoryRow
+                  key={c.id}
+                  category={c}
+                  usage={usage[c.id] || { count: 0, total: 0 }}
+                  onEdit={startEdit}
+                  onDelete={handleDelete}
+                />
+              ))
+            )}
           </div>
-          {expenses.map((c) => (
-            <CategoryRow
-              key={c.id}
-              category={c}
-              usage={usage[c.id] || { count: 0, total: 0 }}
-              onEdit={(cat) => {
-                setEditing(cat)
-                setShowForm(true)
-                window.scrollTo({ top: 0, behavior: 'smooth' })
-              }}
-              onDelete={handleDelete}
-            />
-          ))}
-        </div>
-
-        <div className="card">
-          <div className="card-head">
-            <div className="card-title">Receitas</div>
-          </div>
-          {incomes.map((c) => (
-            <CategoryRow
-              key={c.id}
-              category={c}
-              usage={usage[c.id] || { count: 0, total: 0 }}
-              onEdit={(cat) => {
-                setEditing(cat)
-                setShowForm(true)
-                window.scrollTo({ top: 0, behavior: 'smooth' })
-              }}
-              onDelete={handleDelete}
-            />
-          ))}
-        </div>
+        ))}
       </div>
     </div>
   )

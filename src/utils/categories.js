@@ -1,5 +1,37 @@
 // Categorias padrao de receitas e despesas
 
+/**
+ * Tipos aceitos de categoria/lancamento.
+ *   income      -> Receita (entrada de liquidez)
+ *   expense     -> Despesa (saida de liquidez, consumo)
+ *   reinvested  -> Despesa Reinvestida: sai da liquidez como saida, mas NAO e
+ *                  consumo — acumula patrimonio. Entra na taxa de poupanca.
+ */
+export const TX_TYPES = ['income', 'expense', 'reinvested']
+
+export const TYPE_META = {
+  income: { label: 'Receita', chip: 'income' },
+  expense: { label: 'Despesa', chip: 'expense' },
+  reinvested: { label: 'Despesa Reinvestida', chip: 'reinvested' },
+}
+
+/** Garante um tipo valido; desconhecido cai em despesa (mais conservador). */
+export function normalizeType(type) {
+  return TX_TYPES.includes(type) ? type : 'expense'
+}
+
+/** Tipos que representam saida de liquidez (despesa comum + reinvestida). */
+export function isOutflowType(type) {
+  return type === 'expense' || type === 'reinvested'
+}
+
+/** Categoria "Outros" padrao usada como destino ao excluir uma categoria. */
+export function fallbackCategoryId(type) {
+  if (type === 'income') return 'outros-r'
+  if (type === 'reinvested') return 'outros-ri'
+  return 'outros-d'
+}
+
 export const DEFAULT_CATEGORIES = [
   // Despesas
   { id: 'moradia', name: 'Moradia', type: 'expense', color: '#6366f1', icon: '🏠' },
@@ -15,6 +47,10 @@ export const DEFAULT_CATEGORIES = [
   { id: 'dividas', name: 'Dívidas', type: 'expense', color: '#dc2626', icon: '💳' },
   { id: 'impostos', name: 'Impostos', type: 'expense', color: '#64748b', icon: '🧾' },
   { id: 'outros-d', name: 'Outros', type: 'expense', color: '#94a3b8', icon: '📦' },
+
+  // Despesas reinvestidas (saem do caixa, viram patrimonio)
+  { id: 'aportes', name: 'Aportes e investimentos', type: 'reinvested', color: '#8b5cf6', icon: '📈' },
+  { id: 'outros-ri', name: 'Outros reinvestimentos', type: 'reinvested', color: '#a855f7', icon: '📦' },
 
   // Receitas
   { id: 'salario', name: 'Salário', type: 'income', color: '#22c55e', icon: '💼' },

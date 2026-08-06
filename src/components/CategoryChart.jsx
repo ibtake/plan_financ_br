@@ -18,10 +18,26 @@ function TooltipContent({ active, payload }) {
         <strong>{formatCurrency(item.value)}</strong>
         <span>({formatPercent(item.share, 1)})</span>
       </div>
+      {item.target > 0 && (
+        <div className="chart-tooltip-row text-muted">
+          <span>
+            Esperado {formatCurrency(item.expected)} ({formatPercent(item.target, 1)})
+          </span>
+        </div>
+      )}
     </div>
   )
 }
 
+/**
+ * Distribuição das saídas do mês por categoria.
+ *
+ * REQ 6: cada categoria pode ter uma meta percentual (`targetPercentage`). O
+ * valor Esperado é essa porcentagem aplicada ao total de saídas do mês. Na
+ * legenda o Realizado fica em destaque (negrito) e o Esperado em fonte normal,
+ * com cor sutil — em telas pequenas as duas informações ficam empilhadas na
+ * mesma linha, sem coluna extra.
+ */
 export default function CategoryChart({ byCategory, categories, total }) {
   const data = useMemo(() => {
     const entries = Object.entries(byCategory)
@@ -30,6 +46,7 @@ export default function CategoryChart({ byCategory, categories, total }) {
 
     return entries.map(([id, value]) => {
       const cat = getCategory(categories, id)
+      const target = Math.max(0, Math.min(100, Number(cat.targetPercentage) || 0))
       return {
         id,
         name: cat.name,
@@ -37,24 +54,28 @@ export default function CategoryChart({ byCategory, categories, total }) {
         color: cat.color,
         value,
         share: total > 0 ? (value / total) * 100 : 0,
+        target,
+        expected: (target / 100) * total,
       }
     })
   }, [byCategory, categories, total])
+
+  const hasTargets = data.some((item) => item.target > 0)
 
   if (!data.length) {
     return (
       <div className="card">
         <div className="card-head">
           <div>
-            <div className="card-title">Despesas por categoria</div>
-            <div className="card-sub">Distribuição dos gastos do mês</div>
+            <div className="card-title">Saídas por categoria</div>
+            <div className="card-sub">Distribuição dos gastos e reinvestimentos do mês</div>
           </div>
         </div>
         <div className="empty">
           <div className="empty-icon">
             <PieChartIcon size={22} strokeWidth={1.6} />
           </div>
-          <div className="empty-title">Nenhuma despesa neste mês</div>
+          <div className="empty-title">Nenhuma saída neste mês</div>
           <div className="text-sm">Adicione lançamentos para ver o gráfico.</div>
         </div>
       </div>
@@ -65,8 +86,11 @@ export default function CategoryChart({ byCategory, categories, total }) {
     <div className="card">
       <div className="card-head">
         <div>
-          <div className="card-title">Despesas por categoria</div>
-          <div className="card-sub">Total de {formatCurrency(total)} no mês</div>
+          <div className="card-title">Saídas por categoria</div>
+          <div className="card-sub">
+            Total de {formatCurrency(total)} no mês
+            {hasTargets && ' • realizado em destaque, esperado em cinza'}
+          </div>
         </div>
       </div>
 
@@ -100,8 +124,19 @@ export default function CategoryChart({ byCategory, categories, total }) {
             <span className="grow">
               <AppIcon emoji={item.icon} /> {item.name}
             </span>
-            <span className="text-muted text-xs">{formatPercent(item.share)}</span>
-            <span className="legend-value mono">{formatCurrency(item.value)}</span>
+            <span className="legend-figures">
+              <span className="legend-value mono">{formatCurrency(item.value)}</span>
+              {item.target > 0 ? (
+                <span
+                  className={`legend-expected mono${item.share > item.target ? ' over' : ''}`}
+                  title={`Esperado: ${formatPercent(item.target, 1)} do total`}
+                >
+                  {formatPercent(item.share, 1)} · meta {formatCurrency(item.expected)}
+                </span>
+              ) : (
+                <span className="legend-expected mono">{formatPercent(item.share, 1)}</span>
+              )}
+            </span>
           </div>
         ))}
         {data.length > 6 && (
