@@ -165,7 +165,7 @@ export function AuthProvider({ children }) {
 
   // ---------- Login ----------
 
-  const signIn = useCallback(async ({ email, password }) => {
+  const signIn = useCallback(async ({ email, password, captchaToken }) => {
     if (!supabase) return { error: 'Supabase nao configurado.' }
 
     const lock = getLoginLock()
@@ -177,6 +177,7 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signInWithPassword({
       email: String(email || '').trim().toLowerCase(),
       password,
+      options: captchaToken ? { captchaToken } : undefined,
     })
 
     if (error) {
@@ -203,11 +204,11 @@ export function AuthProvider({ children }) {
     return { data }
   }, [refreshAssurance])
 
-  const resetPassword = useCallback(async (email) => {
+  const resetPassword = useCallback(async (email, captchaToken) => {
     if (!supabase) return { error: 'Supabase nao configurado.' }
     const { error } = await supabase.auth.resetPasswordForEmail(
       String(email || '').trim().toLowerCase(),
-      { redirectTo: `${window.location.origin}/` },
+      { redirectTo: `${window.location.origin}/`, ...(captchaToken ? { captchaToken } : {}) },
     )
     if (error) return { error: translateAuthError(error) }
     await logEvent(EVENTS.PASSWORD_RESET, 'warning', {})

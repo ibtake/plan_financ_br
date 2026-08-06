@@ -687,7 +687,8 @@ grant select, insert, update, delete on public.goals to authenticated;
 -- V-05/V-08: usada pelo frontend ao importar um backup. A substituicao das
 -- colecoes ocorre em uma unica transacao: se qualquer insert falhar, o
 -- PostgreSQL desfaz tudo e os dados anteriores do usuario permanecem intactos.
--- A funcao usa o usuario autenticado, nunca um user_id recebido do navegador.
+-- A funcao usa o usuario autenticado, nunca um user_id recebido do navegador,
+-- e repete as verificacoes de token e AAL/MFA porque SECURITY DEFINER ignora RLS.
 
 create or replace function public.replace_my_data(p_data jsonb)
 returns void
@@ -698,8 +699,8 @@ as $$
 declare
   v_uid uuid := auth.uid();
 begin
-  if v_uid is null then
-    raise exception 'nao autenticado';
+  if v_uid is null or not public.is_token_valid() or not public.has_required_aal() then
+    raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode = '28000';
   end if;
 
   delete from public.transactions where user_id = v_uid;
@@ -816,7 +817,7 @@ create trigger on_auth_user_created
 -- =====================================================================
 -- Usada pelo botao "Apagar todos os dados". Restrita ao usuario
 -- autenticado: nao aceita parametro de id, logo nao ha como apagar
--- dados de terceiros.
+-- dados de terceiros. Como e SECURITY DEFINER, tambem exige token valido e AAL/MFA.
 -- =====================================================================
 
 create or replace function public.delete_my_data()
@@ -828,8 +829,8 @@ as $$
 declare
   v_uid uuid := auth.uid();
 begin
-  if v_uid is null then
-    raise exception 'Nao autenticado';
+  if v_uid is null or not public.is_token_valid() or not public.has_required_aal() then
+    raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode = '28000';
   end if;
 
   delete from public.transactions where user_id = v_uid;

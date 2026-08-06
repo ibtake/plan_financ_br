@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 import { configurationProblem } from '../../lib/supabase.js'
 import CodeInput from './CodeInput.jsx'
+import TurnstileCaptcha, { isTurnstileConfigured } from './TurnstileCaptcha.jsx'
 
 export default function AuthScreen() {
   const auth = useAuth()
@@ -19,8 +20,10 @@ export default function AuthScreen() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [captchaToken, setCaptchaToken] = useState(null)
 
   const missingConfig = useMemo(() => configurationProblem(), [])
+  const captchaEnabled = isTurnstileConfigured()
 
   useEffect(() => {
     if (auth.mfaStage === 'required') setMode('mfa')
@@ -36,6 +39,7 @@ export default function AuthScreen() {
   const switchMode = (next) => {
     resetMessages()
     setCode('')
+    setCaptchaToken(null)
     setMode(next)
   }
 
@@ -94,8 +98,12 @@ export default function AuthScreen() {
   const handleLogin = async (event) => {
     event.preventDefault()
     resetMessages()
+    if (captchaEnabled && !captchaToken) {
+      setError('Conclua a verificação anti-bot antes de entrar.')
+      return
+    }
     setBusy(true)
-    const result = await auth.signIn({ email: form.email, password: form.password })
+    const result = await auth.signIn({ email: form.email, password: form.password, captchaToken })
     setBusy(false)
 
     if (result.error) {
@@ -112,8 +120,12 @@ export default function AuthScreen() {
   const handleForgot = async (event) => {
     event.preventDefault()
     resetMessages()
+    if (captchaEnabled && !captchaToken) {
+      setError('Conclua a verificação anti-bot antes de solicitar a recuperação.')
+      return
+    }
     setBusy(true)
-    const result = await auth.resetPassword(form.email)
+    const result = await auth.resetPassword(form.email, captchaToken)
     setBusy(false)
 
     if (result.error) {
@@ -224,7 +236,9 @@ export default function AuthScreen() {
               />
             </div>
 
-            <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
+            <TurnstileCaptcha onTokenChange={setCaptchaToken} />
+
+            <button className="btn btn-primary btn-block" type="submit" disabled={busy || (captchaEnabled && !captchaToken)}>
               {busy ? 'Entrando...' : 'Entrar'}
             </button>
 
@@ -259,7 +273,9 @@ export default function AuthScreen() {
               />
             </div>
 
-            <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
+            <TurnstileCaptcha onTokenChange={setCaptchaToken} />
+
+            <button className="btn btn-primary btn-block" type="submit" disabled={busy || (captchaEnabled && !captchaToken)}>
               {busy ? 'Enviando...' : 'Enviar link de recuperação'}
             </button>
 

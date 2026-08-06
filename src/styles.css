@@ -2481,6 +2481,12 @@ canvas {
   flex-wrap: wrap;
 }
 
+.turnstile-wrap {
+  min-height: 65px;
+  display: flex;
+  justify-content: center;
+}
+
 .auth-foot {
   width: min(100%, 480px);
   margin: 16px auto 0;
