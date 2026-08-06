@@ -79,29 +79,53 @@ export function AuthProvider({ children }) {
 
     let active = true
 
-    supabase.auth.getSession().then(async ({ data }) => {
+    const applySession = async (nextSession) => {
       if (!active) return
-      setSession(data.session)
-      setUser(data.session?.user || null)
-      if (data.session) await refreshAssurance()
-      setLoading(false)
-    })
-
-    const { data: listener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      if (!active) return
-      setSession(newSession)
-      setUser(newSession?.user || null)
-      if (newSession) await refreshAssurance()
+      setSession(nextSession || null)
+      setUser(nextSession?.user || null)
+      if (nextSession) await refreshAssurance()
       else {
         setMfaStage('none')
         setAssuranceLevel(null)
       }
-      if (event === 'SIGNED_OUT') setLoading(false)
+      if (active) setLoading(false)
+    }
+
+    supabase.auth.getSession().then(({ data }) => applySession(data.session))
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      void applySession(newSession)
     })
+
+    // O Safari em modo app pode congelar a renovação automática do token em
+    // segundo plano. Ao retornar, a sessão é validada antes de reutilizar a
+    // Dashboard; uma sessão inválida volta para a tela de login.
+    const refreshSessionOnReturn = async () => {
+      if (!active || document.visibilityState !== 'visible') return
+      const { data: current } = await supabase.auth.getSession()
+      if (!current.session) {
+        await applySession(null)
+        return
+      }
+      const { data, error } = await supabase.auth.refreshSession()
+      if (error || !data.session) {
+        await applySession(null)
+        return
+      }
+      await applySession(data.session)
+    }
+
+    const handleVisibilityChange = () => { void refreshSessionOnReturn() }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('pageshow', handleVisibilityChange)
+    window.addEventListener('focus', handleVisibilityChange)
 
     return () => {
       active = false
       listener?.subscription?.unsubscribe()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pageshow', handleVisibilityChange)
+      window.removeEventListener('focus', handleVisibilityChange)
     }
   }, [refreshAssurance])
 

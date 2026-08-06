@@ -85,7 +85,7 @@ const toGoal = (goal, userId) => ({
 })
 
 export function useSupabaseFinance() {
-  const { user, signOut } = useAuth()
+  const { user, session, signOut } = useAuth()
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [budgets, setBudgets] = useState({})
@@ -100,7 +100,10 @@ export function useSupabaseFinance() {
   }, [])
 
   const load = useCallback(async () => {
-    if (!user || !supabase) return
+    if (!user || !supabase) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError('')
     const [txResult, catResult, budgetResult, goalResult] = await Promise.all([
@@ -118,13 +121,18 @@ export function useSupabaseFinance() {
         return
       }
       reportError(firstError)
+      // Uma falha de leitura não pode transformar a interface em uma
+      // Dashboard aparentemente válida, mas zerada. Os últimos dados são
+      // preservados até uma carga posterior bem-sucedida.
+      setLoading(false)
+      return
     }
     setTransactions((txResult.data || []).map(fromTxRow))
     setCategories((catResult.data || []).map(fromCategory))
     setBudgets(Object.fromEntries((budgetResult.data || []).map((row) => [row.category_id, Number(row.limit_amount)])))
     setGoals((goalResult.data || []).map(fromGoal))
     setLoading(false)
-  }, [reportError, signOut, user])
+  }, [reportError, session, signOut, user])
 
   useEffect(() => { load() }, [load])
 
