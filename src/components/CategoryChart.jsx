@@ -119,16 +119,19 @@ export default function CategoryChart({ byCategory, categories, total }) {
               <AppIcon emoji={item.icon} /> {item.name}
             </span>
             <span className="legend-figures">
-              <span className="legend-value mono">Real {formatPercent(item.share, 1)}</span>
+              <span className="legend-value mono">{formatCurrency(item.value)}</span>
               {item.target > 0 ? (
                 <span
                   className={`legend-expected mono${item.share > item.target ? ' over' : ''}`}
                   title={item.comparison.label}
                 >
-                  Meta {formatPercent(item.target, 1)} {item.comparison.symbol}
+                  <span className="legend-target">M {formatPercent(item.target, 1)}</span>
+                  {' | '}
+                  <span className="legend-actual">R {formatPercent(item.share, 1)}</span>
+                  {' '}{item.comparison.symbol}
                 </span>
               ) : (
-                <span className="legend-expected mono">{formatPercent(item.share, 1)}</span>
+                <span className="legend-expected mono"><span className="legend-actual">R {formatPercent(item.share, 1)}</span></span>
               )}
             </span>
           </div>

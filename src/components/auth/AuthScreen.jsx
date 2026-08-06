@@ -3,7 +3,6 @@
 // =====================================================================
 
 import { useEffect, useMemo, useState } from 'react'
-import { Wallet } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 import { configurationProblem } from '../../lib/supabase.js'
 import CodeInput from './CodeInput.jsx'
@@ -48,7 +47,7 @@ export default function AuthScreen() {
         <div className="auth-card">
           <div className="auth-brand">
             <div className="brand-logo">
-              <Wallet size={32} strokeWidth={1.8} />
+              <img className="brand-favicon" src="/favicon.png" alt="Planejador Financeiro" />
             </div>
             <div>
               <div className="brand-title">Planejador Financeiro</div>
@@ -165,7 +164,7 @@ export default function AuthScreen() {
       <div className="auth-card">
         <div className="auth-brand">
           <div className="brand-logo">
-            <Wallet size={32} strokeWidth={1.8} />
+            <img className="brand-favicon" src="/favicon.png" alt="Planejador Financeiro" />
           </div>
           <div>
             <div className="brand-title">Planejador Financeiro</div>

@@ -7,7 +7,6 @@ import {
   Moon,
   Search,
   Sun,
-  Wallet,
   X,
 } from 'lucide-react'
 import { addMonths, currentMonthKey, formatCurrency, formatDate, monthLabel, todayISO } from '../utils/format.js'
@@ -89,7 +88,7 @@ export default function Topbar({
     <header className="topbar">
       <div className="topbar-mobile-brand">
         <div className="brand-logo" style={{ width: 30, height: 30 }}>
-          <Wallet size={16} strokeWidth={2} />
+          <img className="brand-favicon" src="/favicon.png" alt="Planejador Financeiro" />
         </div>
       </div>
 
