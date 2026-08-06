@@ -254,12 +254,14 @@ create index if not exists security_events_user_created_idx
 alter table public.security_events enable row level security;
 alter table public.security_events force row level security;
 
--- Usuario le apenas os proprios eventos
+-- Usuario le apenas os proprios eventos.
+-- Alinhado as demais tabelas: exige token valido (TOCTOU) e AAL correto (MFA),
+-- para que um token antigo ou de nivel aal1 nao consiga ler o historico.
 drop policy if exists "own events select" on public.security_events;
 create policy "own events select"
   on public.security_events for select
   to authenticated
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id AND is_token_valid() AND has_required_aal());
 
 -- REMOVIDO: policy de INSERT direto. Agora apenas via RPC log_security_event()
 -- para permitir rate limiting e prevenir DoS.
@@ -479,6 +481,10 @@ create table if not exists public.transactions (
 
 create index if not exists transactions_user_date_idx
   on public.transactions (user_id, date desc);
+
+-- Otimiza os filtros por tipo (receita/despesa) usados no resumo mensal.
+create index if not exists transactions_user_type_date_idx
+  on public.transactions (user_id, type, date desc);
 
 alter table public.transactions enable row level security;
 alter table public.transactions force row level security;

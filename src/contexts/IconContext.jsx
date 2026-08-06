@@ -3,6 +3,25 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 const IconContext = createContext()
 
 /**
+ * V-11: so aceitamos data URL de PNG. O valor vive no localStorage e e usado
+ * direto como src de <img>; validar aqui impede que um valor adulterado
+ * (extensao, outra aba, script) injete um src arbitrario.
+ */
+export function isSafeIconDataUrl(value) {
+  return typeof value === 'string' && value.startsWith('data:image/png;base64,')
+}
+
+/** Remove qualquer entrada cujo valor nao seja um PNG data URL valido */
+function sanitizeOverrides(raw) {
+  if (!raw || typeof raw !== 'object') return {}
+  const clean = {}
+  for (const [emoji, dataUrl] of Object.entries(raw)) {
+    if (isSafeIconDataUrl(dataUrl)) clean[emoji] = dataUrl
+  }
+  return clean
+}
+
+/**
  * Contexto global para gerenciar os overrides de emoji → PNG.
  * Cada override e uma entrada { '🏠': 'data:image/png;base64,...', ... }
  * persistida em localStorage.
@@ -12,7 +31,7 @@ export function IconProvider({ children }) {
     try {
       const raw = window.localStorage.getItem('planejador:icon-overrides')
       if (!raw) return {}
-      return JSON.parse(raw)
+      return sanitizeOverrides(JSON.parse(raw))
     } catch {
       return {}
     }

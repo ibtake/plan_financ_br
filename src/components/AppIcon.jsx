@@ -1,4 +1,4 @@
-import { useIcons } from '../contexts/IconContext.jsx'
+import { useIcons, isSafeIconDataUrl } from '../contexts/IconContext.jsx'
 
 /**
  * Renderiza um icone da interface.
@@ -15,7 +15,10 @@ import { useIcons } from '../contexts/IconContext.jsx'
  */
 export default function AppIcon({ emoji, size, className = '', title, style }) {
   const { getOverride } = useIcons()
-  const src = getOverride(emoji)
+  // V-11: segunda barreira. So renderiza como <img> se for um PNG data URL;
+  // qualquer outro valor cai no fallback do emoji.
+  const override = getOverride(emoji)
+  const src = isSafeIconDataUrl(override) ? override : null
 
   const dimension = size ? `${size}px` : '1em'
 

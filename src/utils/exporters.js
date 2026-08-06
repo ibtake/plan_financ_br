@@ -31,7 +31,11 @@ export function exportJSON(data) {
 }
 
 function csvCell(value) {
-  const s = String(value ?? '')
+  let s = String(value ?? '')
+  // V-02: neutraliza CSV/formula injection. Valores iniciados por = + - @ TAB
+  // ou CR viram formula executavel ao abrir no Excel/LibreOffice; o apostrofo
+  // inicial forca o interpretador a trata-los como texto.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`
   return `"${s.replace(/"/g, '""')}"`
 }
 

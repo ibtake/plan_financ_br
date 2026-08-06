@@ -32,7 +32,7 @@ function IconRow({ item, replaced, onUpload, onClear, busy }) {
         <input
           ref={inputRef}
           type="file"
-          accept="image/png,image/webp,image/svg+xml"
+          accept="image/png,image/webp"
           className="sr-only"
           onChange={(event) => {
             const file = event.target.files?.[0]
