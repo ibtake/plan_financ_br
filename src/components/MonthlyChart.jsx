@@ -51,7 +51,7 @@ export default function MonthlyChart({ history }) {
       </div>
 
       {hasData ? (
-        <div className="chart-wrap">
+        <div className="chart-wrap monthly-chart-wrap">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />

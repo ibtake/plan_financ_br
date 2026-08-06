@@ -54,7 +54,7 @@ function KPI({ icon: Icon, label, value, accentColor, accentSoft, children }) {
  * (`accumulatedPatrimony`, somatório das despesas reinvestidas).
  */
 export default function SummaryCards({ summary, change, accumulatedPatrimony = 0, reinvestmentTargetPercentage = 0 }) {
-  const { income, expense, reinvested = 0, balance, savingsRate, pendingExpense } = summary
+  const { income, expense, balance, savingsRate, pendingExpense } = summary
 
   return (
     <div className="grid-4">
@@ -105,15 +105,9 @@ export default function SummaryCards({ summary, change, accumulatedPatrimony = 0
         accentColor="var(--reinvest)"
         accentSoft="var(--reinvest-soft)"
       >
-        {reinvested > 0 ? (
-          <>
-            <span className="chip reinvested">+ {formatCurrency(reinvested)}</span>
-            <span>{formatPercent(savingsRate, 1)} poupado no mês</span>
-          </>
-        ) : (
-          <span>{formatPercent(savingsRate, 1)} poupado no mês</span>
-        )}
-        <span className="kpi-target">Meta reinvestida: {formatPercent(reinvestmentTargetPercentage, 1)}</span>
+        <span className="kpi-savings-summary">
+          {formatPercent(savingsRate, 1)} poupado no mês | Meta {formatPercent(reinvestmentTargetPercentage, 1)}
+        </span>
       </KPI>
     </div>
   )
