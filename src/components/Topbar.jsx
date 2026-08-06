@@ -10,7 +10,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
-import { addMonths, currentMonthKey, formatCurrency, formatDate, monthLabel } from '../utils/format.js'
+import { addMonths, currentMonthKey, formatCurrency, formatDate, monthLabel, todayISO } from '../utils/format.js'
 
 /** Fecha o popover ao clicar fora ou apertar Esc */
 function useDismiss(ref, onDismiss, active) {
@@ -73,6 +73,7 @@ export default function Topbar({
 
   const isCurrent = monthKey === currentMonthKey()
   const count = pending.length
+  const orderedPending = [...pending].sort((a, b) => a.date.localeCompare(b.date))
 
   // Ao abrir a busca no mobile, foca o campo
   useEffect(() => {
@@ -179,16 +180,20 @@ export default function Topbar({
               {count === 0 ? (
                 <div className="popover-empty">Todos os lançamentos deste mês estão quitados.</div>
               ) : (
-                pending.slice(0, 6).map((item) => (
+                orderedPending.slice(0, 6).map((item) => {
+                  const isDueToday = item.date === todayISO()
+                  return (
                   <button
                     key={item.id}
                     type="button"
-                    className="popover-item"
+                    className={`popover-item${isDueToday ? ' due-today' : ''}`}
                     onClick={() => goToPending(item)}
                   >
                     <span className="grow" style={{ display: 'grid' }}>
                       <span className="tx-desc">{item.description}</span>
-                      <span className="text-xs text-muted">vence {formatDate(item.date)}</span>
+                      <span className={`text-xs${isDueToday ? ' text-expense fw-600' : ' text-muted'}`}>
+                        {isDueToday ? 'VENCE HOJE' : `vence ${formatDate(item.date)}`}
+                      </span>
                     </span>
                     <span
                       className={`mono fw-600 ${item.type === 'income' ? 'text-income' : 'text-expense'}`}
@@ -196,7 +201,8 @@ export default function Topbar({
                       {formatCurrency(item.amount)}
                     </span>
                   </button>
-                ))
+                  )
+                })
               )}
             </div>
           )}

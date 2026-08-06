@@ -76,6 +76,7 @@ function AuthenticatedApp() {
   const [activeTab, setActiveTab] = useState('overview')
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [notificationFocus, setNotificationFocus] = useState(null)
   // Busca do topo: o mesmo filtro que ja existia na lista, agora acessivel
   // de qualquer painel.
   const [search, setSearch] = useState('')
@@ -93,6 +94,10 @@ function AuthenticatedApp() {
   const saveTransaction = (data) => {
     if (editing) finance.updateTransaction(editing.sourceId || editing.id, data)
     else finance.addTransaction(data)
+    if (notificationFocus) {
+      setNotificationFocus(null)
+      setActiveTab('overview')
+    }
   }
 
   const deleteTransaction = (occurrence) => {
@@ -137,6 +142,7 @@ function AuthenticatedApp() {
         summary={monthly.summary}
         change={monthly.change}
         accumulatedPatrimony={monthly.accumulatedPatrimony}
+        reinvestmentTargetPercentage={finance.categories.filter((category) => category.type === 'reinvested').reduce((sum, category) => sum + (Number(category.targetPercentage) || 0), 0)}
       />
       <div className="grid-2 dashboard-grid">
         <Suspense fallback={<ChartFallback height={240} />}>
@@ -187,7 +193,7 @@ function AuthenticatedApp() {
           onSearch={handleSearch}
           pending={pending}
           pendingTotal={pendingTotal}
-          onOpenPending={() => setActiveTab('transactions')}
+          onOpenPending={(occurrence) => { setNotificationFocus(occurrence); setActiveTab('transactions') }}
         />
 
         <main className="container main-content">
@@ -224,6 +230,8 @@ function AuthenticatedApp() {
               onExportCSV={(rows) => exportCSV(rows, finance.categories, `lancamentos-${monthKey}.csv`)}
               search={search}
               onSearchChange={setSearch}
+              focusOccurrence={notificationFocus}
+              onFocusDone={() => { setNotificationFocus(null); setActiveTab('overview') }}
             />
           )}
           {activeTab === 'budget' && (

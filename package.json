@@ -13,7 +13,6 @@
     "deploy:check": "npm run check"
   },
   "dependencies": {
-    "@keelcode-ai/keelcode": "^0.1.15",
     "@supabase/supabase-js": "^2.112.0",
     "lucide-react": "^1.28.0",
     "react": "^18.3.1",

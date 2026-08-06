@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Passo a passo — Atualização Supabase + Vercel</title>
+<style>
+  :root{
+    --ink:#14181f; --muted:#5b6675; --line:#dfe4ec; --bg:#fff;
+    --accent:#1d4ed8; --warn-bg:#fff7e6; --warn-line:#e6a23c;
+    --danger-bg:#fdecec; --danger-line:#d9534f;
+    --ok-bg:#eaf7ee; --ok-line:#2f9e57;
+    --code-bg:#f4f6fa;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0 auto; padding:40px 32px 80px; max-width:900px; background:var(--bg);
+    color:var(--ink); font:16px/1.62 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  h1{font-size:30px; line-height:1.25; margin:0 0 6px; letter-spacing:-.02em}
+  h2{font-size:21px; margin:44px 0 12px; padding-top:16px; border-top:2px solid var(--line); letter-spacing:-.01em}
+  h3{font-size:16.5px; margin:26px 0 8px}
+  p,li{margin:8px 0}
+  ul,ol{padding-left:26px}
+  code{background:var(--code-bg); padding:2px 6px; border-radius:4px; font:14px/1.5 "Cascadia Mono",Consolas,monospace; word-break:break-word}
+  pre{background:var(--code-bg); border:1px solid var(--line); border-left:3px solid var(--accent);
+      padding:12px 14px; border-radius:6px; overflow-x:auto; font:13.5px/1.6 "Cascadia Mono",Consolas,monospace}
+  pre code{background:none; padding:0}
+  .sub{color:var(--muted); font-size:14.5px; margin:0 0 26px}
+  .box{border:1px solid var(--line); border-left:4px solid var(--accent); background:#f8fafd;
+       padding:12px 16px; border-radius:6px; margin:16px 0}
+  .warn{background:var(--warn-bg); border-left-color:var(--warn-line); border-color:#f0dcb8}
+  .danger{background:var(--danger-bg); border-left-color:var(--danger-line); border-color:#f3cfcf}
+  .ok{background:var(--ok-bg); border-left-color:var(--ok-line); border-color:#c9e6d3}
+  .box p:first-child{margin-top:0} .box p:last-child{margin-bottom:0}
+  .tag{display:inline-block; font-size:11.5px; font-weight:700; letter-spacing:.06em;
+       text-transform:uppercase; padding:2px 8px; border-radius:99px; background:#e8eefb; color:var(--accent)}
+  table{border-collapse:collapse; width:100%; margin:14px 0; font-size:14.5px}
+  th,td{border:1px solid var(--line); padding:8px 11px; text-align:left; vertical-align:top}
+  th{background:#f4f6fa; font-weight:600}
+  .chk{list-style:none; padding-left:2px}
+  .chk li{padding-left:30px; position:relative; margin:7px 0}
+  .chk li::before{content:""; position:absolute; left:0; top:3px; width:16px; height:16px;
+                  border:1.5px solid #8b96a8; border-radius:3px}
+  .path{font-family:"Cascadia Mono",Consolas,monospace; font-size:13.5px; color:#334}
+  .toc{border:1px solid var(--line); border-radius:8px; padding:14px 20px; background:#fafbfd}
+  .toc ol{margin:6px 0}
+  footer{margin-top:56px; padding-top:16px; border-top:1px solid var(--line);
+         color:var(--muted); font-size:13px}
+  @media print{
+    body{padding:0; max-width:none; font-size:11.5pt}
+    h2{page-break-after:avoid; page-break-before:auto}
+    pre,table,.box{page-break-inside:avoid}
+    .noprint{display:none}
+  }
+</style>
+</head>
+<body>
+
+<h1>Passo a passo — Atualização no Supabase e na Vercel</h1>
+<p class="sub">
+  Planejador Financeiro · versão com área administrativa, MFA obrigatório e cadastro público desativado.<br>
+  Execução <strong>manual</strong>, pelo painel. Nenhum comando deste manual publica segredo em repositório.
+</p>
+
+<div class="box warn noprint">
+  <p><strong>Para gerar o PDF:</strong> abra este arquivo no navegador e use <code>Ctrl</code>+<code>P</code> →
+  <em>Destino: Salvar como PDF</em> → <em>Margens: padrão</em> → <em>Gráficos de segundo plano: ativado</em>.</p>
+</div>
+
+<div class="toc">
+  <strong>Roteiro</strong>
+  <ol>
+    <li>Estado atual validado</li>
+    <li>Antes de começar (backup e UUID)</li>
+    <li>Supabase — desativar cadastro público</li>
+    <li>Supabase — banco de dados (SQL Editor)</li>
+    <li>Supabase — Edge Function <code>admin-users</code></li>
+    <li>Vercel — variáveis e publicação</li>
+    <li>Usar a área administrativa</li>
+    <li>Testes obrigatórios</li>
+    <li>Diagnóstico e rollback</li>
+    <li>Checklist final</li>
+  </ol>
+</div>
+
+<h2>1. Estado atual validado</h2>
+
+<p>Rodei as verificações locais no projeto antes de escrever este manual:</p>
+
+<table>
+  <tr><th>Verificação</th><th>Resultado</th></tr>
+  <tr><td><code>npm run build</code></td><td>Passou — 910 módulos, build em 4,23 s, saída em <code>dist/</code></td></tr>
+  <tr><td><code>npm run migrations:check</code></td><td>Passou — <strong>0 arquivos SQL</strong> em <code>supabase/migrations/</code></td></tr>
+  <tr><td>Código da Edge Function</td><td>Presente e coerente com o frontend</td></tr>
+  <tr><td>Repositório Git</td><td><strong>Não existe</strong> — <code>git status</code> retorna “not a git repository”</td></tr>
+  <tr><td>Segredos versionados</td><td>Nenhum. Só arquivos <code>.env.example</code> com placeholders</td></tr>
+</table>
+
+<div class="box">
+  <p><strong>Consequência prática:</strong> a pasta <code>supabase/migrations/</code> está vazia, então
+  <span class="tag">não há migração incremental para rodar</span>. A atualização do banco é feita aplicando
+  <span class="path">supabase/schema.sql</span>, que é idempotente — detalhado no passo 4.</p>
+</div>
+
+<h3>Correção em relação ao plano original</h3>
+<div class="box danger">
+  <p>O plano falava em cadastrar o secret <code>APP_ADMIN_USER_ID</code> (singular).
+  O código realmente implementado lê <strong><code>APP_ADMIN_USER_IDS</code></strong> (plural), em
+  <span class="path">supabase/functions/admin-users/index.ts</span>.
+  Se você cadastrar o nome no singular, <strong>nenhuma conta será reconhecida como administradora</strong>
+  e a área administrativa simplesmente não aparecerá.</p>
+</div>
+
+<h2>2. Antes de começar</h2>
+
+<h3>2.1 Backup</h3>
+<ol>
+  <li>Painel do Supabase → selecione o projeto → <strong>Database</strong> → <strong>Backups</strong>.</li>
+  <li>Confirme que existe um backup recente. Se o plano permitir, dispare um manual.</li>
+  <li>Exporte também pelo próprio app: aba <strong>Configurações</strong> → exportar dados, e guarde o arquivo fora do repositório.</li>
+</ol>
+
+<h3>2.2 Confirme o projeto correto</h3>
+<p>Anote a <em>Project Ref</em> em <strong>Project Settings → General</strong>. Ela aparece na URL da API
+como <code>https://&lt;PROJECT_REF&gt;.supabase.co</code>. Confira antes de cada passo — não misture homologação e produção.</p>
+
+<h3>2.3 Localize o UUID da sua conta</h3>
+<ol>
+  <li><strong>Authentication</strong> → <strong>Users</strong>.</li>
+  <li>Localize a linha do seu e-mail administrativo.</li>
+  <li>Clique na linha e copie o campo <strong>User UID</strong> — formato
+      <code>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</code>.</li>
+  <li>Cole apenas no campo de secret do Supabase. <strong>Não</strong> coloque em arquivo do projeto, commit, issue ou print.</li>
+</ol>
+
+<div class="box warn">
+  <p>Se a sua conta administrativa ainda não existe (porque o cadastro público será desligado), crie-a
+  <strong>agora</strong>, antes do passo 3: <strong>Authentication → Users → Add user → Create new user</strong>,
+  com e-mail e senha forte, marcando <em>Auto Confirm User</em>.</p>
+</div>
+
+<h2>3. Supabase — desativar o cadastro público</h2>
+
+<div class="box warn">
+  <p>O arquivo <span class="path">supabase/config.toml</span> já contém <code>enable_signup = false</code>,
+  mas esse arquivo só vale para ambiente local / CLI. <strong>No projeto hospedado, a chave é o painel.</strong>
+  Sem este passo, qualquer pessoa ainda consegue criar conta chamando a API direto.</p>
+</div>
+
+<ol>
+  <li><strong>Authentication</strong> → <strong>Sign In / Providers</strong> (ou <strong>Providers → Email</strong>).</li>
+  <li>Desmarque <strong>Allow new users to sign up</strong>. Salve.</li>
+  <li>Ainda em Authentication → <strong>URL Configuration</strong>:
+    <ul>
+      <li><strong>Site URL</strong>: a URL de produção da Vercel, ex. <code>https://seu-app.vercel.app</code></li>
+      <li><strong>Redirect URLs</strong>: adicione a URL de produção e <code>http://localhost:5173</code></li>
+    </ul>
+  </li>
+  <li>Em <strong>Providers → Email</strong>, mantenha <strong>Confirm email</strong> ativado.</li>
+</ol>
+
+<h3>Confirmar que o cadastro está bloqueado</h3>
+<p>Depois de salvar, teste no terminal (substitua os dois placeholders; a <code>anon key</code> é pública por natureza):</p>
+<pre><code>curl -s -X POST "https://&lt;PROJECT_REF&gt;.supabase.co/auth/v1/signup" \
+  -H "apikey: &lt;ANON_KEY&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"teste-bloqueio@example.com","password":"SenhaDeTeste!2026"}'</code></pre>
+<p>Resposta esperada: erro com <code>signup_disabled</code> / <em>“Signups not allowed for this instance”</em>.
+Se vier um usuário criado, o passo 3 não foi salvo — repita.</p>
+
+<h2>4. Supabase — banco de dados</h2>
+
+<h3>4.1 O que executar</h3>
+<p>Execute o arquivo <span class="path">supabase/schema.sql</span> inteiro. Ele traz, entre outras coisas:</p>
+<ul>
+  <li><code>is_token_valid()</code> — invalida token emitido antes da última troca de credenciais</li>
+  <li><code>has_required_aal()</code> — exige AAL2 no banco para quem tem MFA verificado</li>
+  <li>RLS + <code>force row level security</code> em <code>profiles</code>, <code>categories</code>,
+      <code>transactions</code>, <code>budgets</code>, <code>goals</code>, <code>security_events</code></li>
+  <li>Trigger <code>prevent_owner_change()</code> contra troca de dono de registro</li>
+  <li><code>log_security_event()</code> com rate limit de 50 eventos/hora</li>
+</ul>
+
+<div class="box ok">
+  <p><strong>É seguro rodar sobre banco já existente.</strong> Conferi instrução por instrução: o arquivo usa
+  <code>create table if not exists</code>, <code>create or replace function</code>,
+  <code>drop policy if exists</code> + recriação e <code>drop trigger if exists</code> + recriação.
+  <strong>Não há <code>drop table</code>, <code>truncate</code> nem <code>delete</code> de dados.</strong>
+  O próprio cabeçalho do arquivo declara todas as instruções idempotentes.</p>
+</div>
+
+<div class="box warn">
+  <p>O <span class="path">supabase/migrations/README.md</span> orienta a não usar <code>schema.sql</code>
+  no lugar de migração incremental. Essa regra vale para <em>alterações futuras</em>: daqui pra frente, cada
+  mudança deve virar um arquivo próprio em <code>supabase/migrations/</code>. Para <em>esta</em> atualização,
+  como não existe nenhum arquivo de migração, o <code>schema.sql</code> idempotente é o caminho correto.</p>
+</div>
+
+<h3>4.2 Como executar</h3>
+<ol>
+  <li>Painel do Supabase → <strong>SQL Editor</strong> → <strong>New query</strong>.</li>
+  <li>Confirme no topo que o projeto é o correto (homologação primeiro).</li>
+  <li>Abra <span class="path">supabase/schema.sql</span>, copie <strong>todo</strong> o conteúdo e cole.</li>
+  <li>Clique em <strong>Run</strong>.</li>
+</ol>
+<p>A última instrução do arquivo já é a verificação — o resultado deve listar as 6 tabelas com
+<code>rls_ativa = true</code> e contagem de políticas maior que zero.</p>
+
+<h3>4.3 Consultas de verificação</h3>
+<pre><code>-- 1. RLS ativa e forçada nas 6 tabelas
+select relname as tabela, relrowsecurity as rls, relforcerowsecurity as rls_forcada
+from pg_class
+where relnamespace = 'public'::regnamespace
+  and relname in ('profiles','categories','transactions','budgets','goals','security_events')
+order by relname;
+
+-- 2. Funções de segurança criadas
+select proname, prosecdef as security_definer
+from pg_proc
+where pronamespace = 'public'::regnamespace
+  and proname in ('is_token_valid','has_required_aal','log_security_event',
+                  'prevent_owner_change','set_updated_at','handle_new_user','delete_my_data')
+order by proname;
+
+-- 3. O papel anon não pode ter nenhum grant em public
+select grantee, table_name, privilege_type
+from information_schema.role_table_grants
+where table_schema = 'public' and grantee = 'anon';
+-- esperado: 0 linhas
+
+-- 4. Dados preservados (compare com o total anterior ao passo 4)
+select
+  (select count(*) from public.transactions) as lancamentos,
+  (select count(*) from public.categories)   as categorias,
+  (select count(*) from public.goals)        as metas,
+  (select count(*) from public.budgets)      as orcamentos,
+  (select count(*) from public.profiles)     as perfis;</code></pre>
+
+<div class="box danger">
+  <p><strong>Efeito colateral esperado e desejado:</strong> depois deste passo, quem tem MFA verificado
+  <em>só</em> enxerga os próprios dados com token AAL2. Se você entrar sem confirmar o código do autenticador,
+  as listas aparecerão vazias. Isso é a política <code>has_required_aal()</code> funcionando, não perda de dados —
+  a consulta 4 acima prova que as linhas continuam lá.</p>
+</div>
+
+<h2>5. Supabase — Edge Function <code>admin-users</code></h2>
+
+<h3>5.1 Secrets</h3>
+<p>Painel → <strong>Edge Functions</strong> → <strong>Secrets</strong> (ou <strong>Project Settings → Edge Functions</strong>).
+Cadastre <strong>exatamente estes dois</strong>:</p>
+
+<table>
+  <tr><th>Nome</th><th>Valor</th><th>Observação</th></tr>
+  <tr>
+    <td><code>APP_ADMIN_USER_IDS</code></td>
+    <td>UUID obtido no passo 2.3</td>
+    <td>Plural. Vários admins = separados por vírgula, sem espaço extra</td>
+  </tr>
+  <tr>
+    <td><code>APP_ALLOWED_ORIGINS</code></td>
+    <td><code>https://seu-app.vercel.app,http://localhost:5173</code></td>
+    <td>Origens exatas, com esquema, sem barra final. <strong>Nunca <code>*</code></strong></td>
+  </tr>
+</table>
+
+<div class="box ok">
+  <p><strong>Você não precisa cadastrar <code>SUPABASE_URL</code>, <code>SUPABASE_ANON_KEY</code> nem
+  <code>SUPABASE_SERVICE_ROLE_KEY</code>.</strong> O Supabase injeta as três automaticamente em toda Edge Function,
+  e nomes com prefixo <code>SUPABASE_</code> são reservados — a plataforma recusa o cadastro manual.
+  É exatamente por isso que a <em>service role key</em> fica só no servidor: ela nunca passa pelo seu
+  <code>.env</code>, pelo build do Vite nem pela Vercel.</p>
+</div>
+
+<div class="box danger">
+  <p>Se a URL de produção mudar (domínio próprio, novo projeto na Vercel), <strong>atualize
+  <code>APP_ALLOWED_ORIGINS</code></strong>. A função responde <code>403 Origem não autorizada</code> para
+  qualquer origem fora da lista — inclusive a sua.</p>
+</div>
+
+<h3>5.2 Publicar a função</h3>
+
+<p><strong>Opção A — pelo painel (sem instalar nada):</strong></p>
+<ol>
+  <li><strong>Edge Functions</strong> → <strong>Create a new function</strong>.</li>
+  <li>Nome: <code>admin-users</code> (exatamente assim — o frontend chama esse nome em
+      <span class="path">src/lib/adminApi.js</span>).</li>
+  <li>Cole o conteúdo de <span class="path">supabase/functions/admin-users/index.ts</span> no editor.</li>
+  <li>Mantenha <strong>Verify JWT</strong> <em>ativado</em>.</li>
+  <li><strong>Deploy</strong>.</li>
+</ol>
+
+<p><strong>Opção B — pela CLI:</strong></p>
+<pre><code>npx supabase login
+npx supabase link --project-ref &lt;PROJECT_REF&gt;
+npx supabase functions deploy admin-users</code></pre>
+
+<h3>5.3 Conferir</h3>
+<p>Em <strong>Edge Functions → admin-users → Logs</strong>, confirme deploy sem erro. Um teste rápido:</p>
+<pre><code>curl -s -i -X POST "https://&lt;PROJECT_REF&gt;.supabase.co/functions/v1/admin-users" \
+  -H "Origin: https://origem-invalida.example" \
+  -H "Content-Type: application/json" -d '{"action":"status"}'</code></pre>
+<p>Esperado: <code>403</code> com <em>“Origem não autorizada”</em>. Isso prova que o filtro de origem está ativo.</p>
+
+<h2>6. Vercel — variáveis e publicação</h2>
+
+<h3>6.1 Colocar o projeto sob Git</h3>
+<div class="box warn">
+  <p>O projeto ainda <strong>não é um repositório Git</strong>. Sem isso não há deploy por push nem rollback por commit.
+  O <code>.gitignore</code> já protege <code>.env</code>, <code>.env.*</code>, <code>*.key</code>, <code>*.pem</code>,
+  <code>.vercel</code> e <code>.supabase</code> — só <code>.env.example</code> é versionado.</p>
+</div>
+
+<pre><code>cd "C:/Users/igorp/Downloads/Planejador"
+git init
+git add .
+git status          # confira: nenhum .env, nenhuma chave na lista
+git commit -m "Area administrativa, MFA obrigatorio e cadastro publico desativado"
+git branch -M main
+git remote add origin https://github.com/&lt;SEU_USUARIO&gt;/&lt;SEU_REPO&gt;.git
+git push -u origin main</code></pre>
+
+<p>Crie o repositório no GitHub como <strong>privado</strong>. Rode o <code>git status</code> antes do commit
+e não siga adiante se aparecer qualquer arquivo <code>.env</code>.</p>
+
+<h3>6.2 Variáveis de ambiente na Vercel</h3>
+<p>Projeto na Vercel → <strong>Settings</strong> → <strong>Environment Variables</strong>. Apenas duas:</p>
+
+<table>
+  <tr><th>Nome</th><th>Valor</th><th>Ambientes</th></tr>
+  <tr><td><code>VITE_SUPABASE_URL</code></td><td><code>https://&lt;PROJECT_REF&gt;.supabase.co</code></td><td>Production, Preview, Development</td></tr>
+  <tr><td><code>VITE_SUPABASE_ANON_KEY</code></td><td>chave <strong>anon / public</strong></td><td>Production, Preview, Development</td></tr>
+</table>
+
+<div class="box danger">
+  <p><strong>Jamais cadastre como <code>VITE_*</code>:</strong> <code>SUPABASE_SERVICE_ROLE_KEY</code>,
+  qualquer <code>secret</code>, token de banco ou senha. Tudo com prefixo <code>VITE_</code> é
+  <strong>embutido em texto puro no JavaScript entregue ao navegador</strong>. Qualquer visitante lê o valor.
+  A <code>anon key</code> pode ir porque é pública por design — quem protege os dados é a RLS aplicada no passo 4.</p>
+</div>
+
+<h3>6.3 Publicar</h3>
+<ol>
+  <li>Importe o repositório na Vercel. O <span class="path">vercel.json</span> já define
+      build <code>npm run build</code>, saída <code>dist</code> e framework <code>vite</code>.</li>
+  <li>Deixe o deploy de <strong>Preview</strong> concluir e teste tudo do passo 8 na URL de preview.</li>
+  <li>Só então <strong>Promote to Production</strong>.</li>
+  <li>Volte ao Supabase e confirme que a URL de produção está em <code>APP_ALLOWED_ORIGINS</code>
+      (passo 5.1) e em <strong>Redirect URLs</strong> (passo 3).</li>
+</ol>
+
+<div class="box">
+  <p>Para testar a URL de <em>preview</em>, ela também precisa estar em <code>APP_ALLOWED_ORIGINS</code>.
+  Como cada preview gera um subdomínio novo, o mais prático é validar a área administrativa direto em
+  produção logo após a promoção, ou fixar um domínio de preview estável.</p>
+</div>
+
+<h2>7. Usar a área administrativa</h2>
+
+<h3>7.1 Ative o MFA na sua conta</h3>
+<ol>
+  <li>Entre no app com a conta administrativa.</li>
+  <li>Aba <strong>Segurança</strong> → ativar verificação em duas etapas.</li>
+  <li>Leia o QR no aplicativo autenticador e confirme o primeiro código.</li>
+  <li><strong>Saia e entre novamente</strong>, informando o código. Só assim a sessão vira AAL2.</li>
+</ol>
+
+<div class="box warn">
+  <p>Sem MFA <em>confirmado nesta sessão</em>, a área administrativa não aparece — e, por causa do
+  <code>has_required_aal()</code> do passo 4, seus próprios dados também ficam ocultos.</p>
+</div>
+
+<h3>7.2 Criar um usuário</h3>
+<ol>
+  <li>Abra a aba <strong>Configurações</strong>. O bloco <strong>“Administração de usuários”</strong>
+      aparece no fim da página, e <em>somente</em> para UUID listado em <code>APP_ADMIN_USER_IDS</code>.</li>
+  <li>Preencha <strong>Nome</strong> e <strong>E-mail</strong>.</li>
+  <li>Clique em <strong>Gerar</strong> para a senha temporária (gerada com <code>crypto.getRandomValues</code>).</li>
+  <li>Digite o <strong>código MFA atual</strong> no campo de confirmação.</li>
+  <li><strong>Criar usuário</strong>.</li>
+</ol>
+
+<div class="box">
+  <p>O código MFA é exigido de novo aqui de propósito: o servidor recusa a criação se a última confirmação
+  de MFA tiver mais de <strong>5 minutos</strong> (<code>fresh_mfa_required</code>). Se demorar preenchendo
+  o formulário, basta informar um código novo e reenviar.</p>
+</div>
+
+<h3>7.3 Entregar ao novo usuário</h3>
+<ul>
+  <li>Passe a senha temporária por <strong>canal seguro e separado</strong> — nunca no mesmo e-mail do login.</li>
+  <li>No primeiro acesso o app abre a tela <strong>“Defina sua senha”</strong> e não deixa avançar sem trocar.</li>
+  <li>Após salvar, a sessão é encerrada e a pessoa entra de novo com a senha definitiva.</li>
+  <li>Oriente a ativar o MFA em <strong>Segurança</strong> logo no primeiro acesso.</li>
+</ul>
+
+<h2>8. Testes obrigatórios</h2>
+
+<table>
+  <tr><th>#</th><th>Teste</th><th>Resultado esperado</th></tr>
+  <tr><td>1</td><td>Tela de login em janela anônima</td><td>Nenhum link ou aba de “criar conta”</td></tr>
+  <tr><td>2</td><td><code>curl</code> de <code>/auth/v1/signup</code> (passo 3)</td><td>Erro <code>signup_disabled</code></td></tr>
+  <tr><td>3</td><td>Login com usuário comum → aba Configurações</td><td>Bloco “Administração de usuários” <strong>ausente</strong></td></tr>
+  <tr><td>4</td><td>Login admin <em>sem</em> MFA confirmado</td><td>Área administrativa oculta ou aviso para ativar MFA</td></tr>
+  <tr><td>5</td><td>Login admin <em>com</em> MFA</td><td>Lista de usuários carrega em ordem de e-mail</td></tr>
+  <tr><td>6</td><td>Criar usuário sem digitar o código MFA</td><td>Recusado antes de chamar o servidor</td></tr>
+  <tr><td>7</td><td>Criar usuário com código MFA válido</td><td>Criado e visível na lista</td></tr>
+  <tr><td>8</td><td>Primeiro login do novo usuário</td><td>Tela “Defina sua senha”, sem como pular</td></tr>
+  <tr><td>9</td><td>Novo usuário após a troca</td><td>Entra normalmente; vê apenas as categorias padrão</td></tr>
+  <tr><td>10</td><td>Lançamento criado pelo usuário A</td><td>Invisível para o usuário B (RLS)</td></tr>
+  <tr><td>11</td><td>Requisição à função com <code>Origin</code> inválido</td><td><code>403 Origem não autorizada</code></td></tr>
+</table>
+
+<h3>Teste 10 em detalhe (isolamento por RLS)</h3>
+<ol>
+  <li>Com o usuário A, crie um lançamento identificável (ex.: <em>“teste-rls-A”</em>).</li>
+  <li>Saia, entre como usuário B, confirme o MFA se houver.</li>
+  <li>O lançamento de A <strong>não</strong> pode aparecer em nenhuma tela, gráfico ou exportação.</li>
+  <li>No SQL Editor, confirme que a linha existe e pertence a A:
+      <code>select user_id, description from public.transactions where description = 'teste-rls-A';</code></li>
+  <li>Apague o lançamento de teste.</li>
+</ol>
+
+<h2>9. Diagnóstico e rollback</h2>
+
+<h3>Erros comuns</h3>
+<table>
+  <tr><th>Sintoma</th><th>Causa provável</th><th>Correção</th></tr>
+  <tr>
+    <td>Área administrativa não aparece para o admin</td>
+    <td>Secret com nome errado (<code>APP_ADMIN_USER_ID</code>), UUID incorreto ou sessão sem AAL2</td>
+    <td>Confirme o nome <code>APP_ADMIN_USER_IDS</code>, revise o UUID, saia e entre confirmando o MFA</td>
+  </tr>
+  <tr>
+    <td><code>403 Origem não autorizada</code></td>
+    <td>URL fora de <code>APP_ALLOWED_ORIGINS</code>, ou com barra final</td>
+    <td>Ajuste o secret com a origem exata e republique a função</td>
+  </tr>
+  <tr>
+    <td><code>fresh_mfa_required</code></td>
+    <td>Mais de 5 min desde a última confirmação de MFA</td>
+    <td>Informe um código novo e reenvie o formulário</td>
+  </tr>
+  <tr>
+    <td><code>aal2_required</code></td>
+    <td>Sessão iniciada sem o segundo fator</td>
+    <td>Sair e entrar informando o código do autenticador</td>
+  </tr>
+  <tr>
+    <td>App abre em branco / “configuração incompleta”</td>
+    <td><code>VITE_SUPABASE_URL</code> ou <code>VITE_SUPABASE_ANON_KEY</code> ausentes no build</td>
+    <td>Cadastre na Vercel e <strong>refaça o deploy</strong> — variável nova não afeta build antigo</td>
+  </tr>
+  <tr>
+    <td>Listas vazias mesmo com dados no banco</td>
+    <td><code>has_required_aal()</code> exigindo AAL2, ou <code>is_token_valid()</code> após troca de senha</td>
+    <td>Sair, entrar de novo e confirmar o MFA</td>
+  </tr>
+  <tr>
+    <td>Erro de CSP no console do navegador</td>
+    <td>Domínio Supabase fora de <code>connect-src</code></td>
+    <td>O <code>vercel.json</code> já libera <code>https://*.supabase.co</code>; ajuste só se usar domínio próprio</td>
+  </tr>
+</table>
+
+<h3>Rollback do frontend</h3>
+<ol>
+  <li>Vercel → <strong>Deployments</strong>.</li>
+  <li>Escolha o último deploy bom conhecido → <strong>⋯</strong> → <strong>Promote to Production</strong>.</li>
+  <li>É instantâneo e não altera o banco.</li>
+</ol>
+
+<h3>Corrigir a Edge Function</h3>
+<p>Edite <span class="path">supabase/functions/admin-users/index.ts</span> e publique de novo (passo 5.2).
+Não existe “desfazer” de secret: para reverter, cadastre o valor anterior. Em emergência, apagar o secret
+<code>APP_ADMIN_USER_IDS</code> desliga toda a administração — usuários existentes seguem entrando normalmente.</p>
+
+<h3>Estratégia corretiva no banco</h3>
+<div class="box warn">
+  <p>Não edite um SQL já aplicado. Crie um novo arquivo em <code>supabase/migrations/</code> no formato
+  <code>YYYYMMDDHHMMSS_descricao.sql</code>, valide com <code>npm run migrations:check</code>, teste em
+  homologação e só então aplique em produção. Migração aplicada é imutável.</p>
+</div>
+
+<h3>Bloquear novas criações sem afetar quem já usa</h3>
+<ul>
+  <li><strong>Rápido:</strong> apague o secret <code>APP_ADMIN_USER_IDS</code>. A criação para; ninguém perde acesso.</li>
+  <li><strong>Total:</strong> confirme <em>Allow new users to sign up</em> desmarcado (passo 3) — fecha também a API direta.</li>
+</ul>
+
+<h2>10. Checklist final</h2>
+
+<h3>Homologação</h3>
+<ul class="chk">
+  <li>Backup verificado e exportação do app guardada</li>
+  <li>Project Ref conferido</li>
+  <li>UUID do administrador obtido (não versionado)</li>
+  <li><em>Allow new users to sign up</em> desmarcado</li>
+  <li>Site URL e Redirect URLs configuradas</li>
+  <li><code>curl</code> de signup retornou <code>signup_disabled</code></li>
+  <li><code>schema.sql</code> executado — 6 tabelas com <code>rls_ativa = true</code></li>
+  <li>Consultas de verificação 1 a 4 conferidas; contagens preservadas</li>
+  <li><code>APP_ADMIN_USER_IDS</code> cadastrado (plural)</li>
+  <li><code>APP_ALLOWED_ORIGINS</code> cadastrado, sem curinga</li>
+  <li>Função <code>admin-users</code> publicada com Verify JWT ativo</li>
+  <li>Origem inválida retornou <code>403</code></li>
+  <li>Repositório Git criado; <code>git status</code> sem <code>.env</code></li>
+  <li>Vercel com as duas variáveis <code>VITE_*</code> — e nada além disso</li>
+  <li>Testes 1 a 11 aprovados</li>
+</ul>
+
+<h3>Produção</h3>
+<ul class="chk">
+  <li>Backup de produção verificado</li>
+  <li>Project Ref de produção conferido</li>
+  <li>Passos 3, 4 e 5 repetidos no projeto de produção</li>
+  <li><code>APP_ALLOWED_ORIGINS</code> com a URL real de produção</li>
+  <li>Deploy promovido para Production</li>
+  <li>MFA ativo na conta administrativa</li>
+  <li>Testes 1 a 11 repetidos em produção</li>
+  <li>Lançamentos de teste removidos</li>
+</ul>
+
+<h3>Registro</h3>
+<table>
+  <tr><th>Campo</th><th>Valor</th></tr>
+  <tr><td>Versão publicada</td><td style="height:34px"></td></tr>
+  <tr><td>Data e hora</td><td></td></tr>
+  <tr><td>SQL aplicado</td><td><code>supabase/schema.sql</code> (idempotente)</td></tr>
+  <tr><td>Commit / Deployment ID</td><td></td></tr>
+  <tr><td>Responsável</td><td></td></tr>
+  <tr><td>Deploy anterior (rollback)</td><td></td></tr>
+</table>
+
+<footer>
+  Planejador Financeiro — manual de atualização Supabase + Vercel.<br>
+  Este documento usa apenas placeholders. Não contém UUID, e-mail, senha, token ou chave reais —
+  e nenhum desses valores deve ser escrito nele.
+</footer>
+
+</body>
+</html>

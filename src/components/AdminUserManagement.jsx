@@ -98,7 +98,7 @@ export default function AdminUserManagement() {
             <div className="field"><label className="label" htmlFor="admin-email">E-mail</label><input id="admin-email" className="input" type="email" value={form.email} onChange={set('email')} maxLength={254} autoComplete="off" required /></div>
             <div className="field">
               <label className="label" htmlFor="admin-password">Senha temporária</label>
-              <div className="input-action-row"><input id="admin-password" className="input" type="text" value={form.password} onChange={set('password')} minLength={10} maxLength={128} autoComplete="off" required /><button className="btn" type="button" onClick={generate}>Gerar</button></div>
+              <div className="input-action-row"><input id="admin-password" className="input" type="password" value={form.password} onChange={set('password')} minLength={10} maxLength={128} autoComplete="new-password" required /><button className="btn" type="button" onClick={generate}>Gerar</button></div>
             </div>
             <div className="field"><label className="label">Confirmação MFA</label><CodeInput value={code} onChange={setCode} disabled={busy} /></div>
             <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? 'Criando...' : 'Criar usuário'}</button>

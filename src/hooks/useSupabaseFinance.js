@@ -85,7 +85,7 @@ const toGoal = (goal, userId) => ({
 })
 
 export function useSupabaseFinance() {
-  const { user } = useAuth()
+  const { user, signOut } = useAuth()
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [budgets, setBudgets] = useState({})
@@ -110,13 +110,21 @@ export function useSupabaseFinance() {
       guarded(() => supabase.from('goals').select('*').order('created_at'), { table: 'goals', action: 'select' }),
     ])
     const firstError = [txResult, catResult, budgetResult, goalResult].find((r) => r.error)?.error
-    if (firstError) reportError(firstError)
+    if (firstError) {
+      const code = String(firstError.code || '')
+      const message = String(firstError.message || '').toLowerCase()
+      if (code === 'PGRST301' || message.includes('jwt expired') || message.includes('token is expired')) {
+        await signOut('session_expired')
+        return
+      }
+      reportError(firstError)
+    }
     setTransactions((txResult.data || []).map(fromTxRow))
     setCategories((catResult.data || []).map(fromCategory))
     setBudgets(Object.fromEntries((budgetResult.data || []).map((row) => [row.category_id, Number(row.limit_amount)])))
     setGoals((goalResult.data || []).map(fromGoal))
     setLoading(false)
-  }, [reportError, user])
+  }, [reportError, signOut, user])
 
   useEffect(() => { load() }, [load])
 
