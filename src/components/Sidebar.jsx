@@ -1,4 +1,3 @@
-import { Wallet } from 'lucide-react'
 import { NAV_GROUPS, NAV_ITEMS } from './navigation.js'
 
 /**
@@ -13,7 +12,7 @@ export default function Sidebar({ active, onChange, badges = {} }) {
     <aside className="sidebar">
       <div className="sidebar-brand">
         <div className="brand-logo">
-          <Wallet size={18} strokeWidth={2} />
+          <img className="brand-favicon" src="/favicon.png" alt="Planejador Financeiro" />
         </div>
         <div style={{ minWidth: 0 }}>
           <div className="brand-title">Planejador</div>
