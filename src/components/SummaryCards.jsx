@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, Minus, ArrowDownToLine, ArrowUpFromLine, Wallet, AlertTriangle, PiggyBank } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, ArrowDownToLine, ArrowUpFromLine, Wallet, AlertTriangle, PiggyBank, Landmark } from 'lucide-react'
 import { formatCurrency, formatPercent } from '../utils/format.js'
 
 /**
@@ -47,13 +47,14 @@ function KPI({ icon: Icon, label, value, accentColor, accentSoft, children }) {
 }
 
 /**
- * Grid de 4 KPIs: receitas, despesas, saldo e taxa de poupança.
+ * Grid de KPIs: receitas, despesas, saldo, patrimônio e taxa de poupança.
  *
- * Recebe dados consolidados do mês (`summary`) e as variações em relação
- * ao mês anterior (`change`).
+ * Recebe dados consolidados do mês (`summary`), as variações em relação
+ * ao mês anterior (`change`) e o patrimônio acumulado nos últimos meses
+ * (`accumulatedPatrimony`, somatório das despesas reinvestidas).
  */
-export default function SummaryCards({ summary, change }) {
-  const { income, expense, balance, savingsRate, pendingExpense } = summary
+export default function SummaryCards({ summary, change, accumulatedPatrimony = 0 }) {
+  const { income, expense, reinvested = 0, balance, savingsRate, pendingExpense } = summary
 
   return (
     <div className="grid-4">
@@ -96,6 +97,24 @@ export default function SummaryCards({ summary, change }) {
         )}
       </KPI>
 
+      {/* REQ 3: o reinvestimento sai da liquidez, mas fica acumulado aqui */}
+      <KPI
+        icon={Landmark}
+        label="Patrimônio acumulado"
+        value={formatCurrency(accumulatedPatrimony)}
+        accentColor="var(--reinvest)"
+        accentSoft="var(--reinvest-soft)"
+      >
+        {reinvested > 0 ? (
+          <>
+            <span className="chip reinvested">+ {formatCurrency(reinvested)}</span>
+            <span>reinvestido no mês</span>
+          </>
+        ) : (
+          <span>Nenhum reinvestimento neste mês</span>
+        )}
+      </KPI>
+
       <KPI
         icon={PiggyBank}
         label="Taxa de poupança"
@@ -104,13 +123,15 @@ export default function SummaryCards({ summary, change }) {
         accentSoft={savingsRate >= 20 ? 'var(--income-soft)' : savingsRate >= 0 ? 'var(--warning-soft)' : 'var(--expense-soft)'}
       >
         <span>
-          {savingsRate >= 20
-            ? 'Excelente!'
-            : savingsRate >= 10
-              ? 'Bom, pode melhorar'
-              : savingsRate >= 0
-                ? 'Abaixo do ideal'
-                : 'Gastando mais que ganha'}
+          {income <= 0
+            ? 'Sem receitas no mês'
+            : reinvested <= 0
+              ? 'Nada reinvestido ainda'
+              : savingsRate >= 20
+                ? 'Excelente!'
+                : savingsRate >= 10
+                  ? 'Bom, pode melhorar'
+                  : 'Abaixo do ideal'}
         </span>
       </KPI>
     </div>

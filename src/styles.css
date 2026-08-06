@@ -37,6 +37,9 @@
   --income-soft: #e5f5f1;
   --expense: #d13a3a;
   --expense-soft: #fdecec;
+  /* Despesa reinvestida: sai da liquidez, mas vira patrimônio */
+  --reinvest: #7c3aed;
+  --reinvest-soft: #f1ebfe;
   --warning: #b7791f;
   --warning-soft: #fdf3e3;
   --info: #2b6cb0;
@@ -83,6 +86,8 @@
   --income-soft: #102b25;
   --expense: #f0736f;
   --expense-soft: #2e1414;
+  --reinvest: #b39bf6;
+  --reinvest-soft: #211a35;
   --warning: #e0a03c;
   --warning-soft: #2b2110;
   --info: #66a5e8;
@@ -1177,7 +1182,9 @@ canvas {
 
 .type-toggle {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* 3 tipos: despesa, reinvestido e receita. No mobile o texto encolhe em vez
+     de estourar a linha. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
   background: var(--surface-2);
@@ -1198,6 +1205,13 @@ canvas {
   font-weight: 500;
   color: var(--text-soft);
   transition: var(--transition);
+  min-width: 0;
+}
+
+.type-toggle button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .type-toggle button:hover {
@@ -1216,6 +1230,21 @@ canvas {
   color: var(--income);
   font-weight: 600;
   box-shadow: var(--shadow-xs);
+}
+
+.type-toggle button.active-reinvested {
+  background: var(--surface);
+  color: var(--reinvest);
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
+}
+
+@media (max-width: 480px) {
+  .type-toggle button {
+    gap: 5px;
+    padding: 8px 4px;
+    font-size: 12.5px;
+  }
 }
 
 /* Seletor de ícone/cor */
@@ -1245,6 +1274,64 @@ canvas {
   border-color: var(--primary);
   background: var(--primary-soft);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+/* Seletor de ícone da categoria (catálogo completo + upload) */
+.icon-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.icon-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.icon-picker-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.icon-picker-search {
+  flex: 1;
+  min-width: 140px;
+}
+
+.icon-picker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* No mobile a lista completa não pode empurrar o formulário */
+  max-height: 220px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.icon-picker-group-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 6px;
+}
+
+.icon-picker-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 .color-dot {
@@ -1536,6 +1623,10 @@ canvas {
   color: var(--expense);
 }
 
+.tx-amount.reinvested {
+  color: var(--reinvest);
+}
+
 .tx-actions {
   display: flex;
   gap: 2px;
@@ -1605,6 +1696,12 @@ canvas {
 .chip.primary {
   background: var(--primary-soft);
   color: var(--primary);
+  border-color: transparent;
+}
+
+.chip.reinvested {
+  background: var(--reinvest-soft);
+  color: var(--reinvest);
   border-color: transparent;
 }
 
@@ -1871,6 +1968,28 @@ canvas {
   font-variant-numeric: tabular-nums;
 }
 
+/* REQ 6: realizado (negrito) e esperado (sutil) empilhados na mesma coluna,
+   para caber em telas estreitas sem uma segunda coluna de números */
+.legend-figures {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+
+.legend-expected {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.legend-expected.over {
+  color: var(--warning);
+}
+
 /* ============================================================
    Estados e utilitários
    ============================================================ */
@@ -1918,6 +2037,9 @@ canvas {
 }
 .text-expense {
   color: var(--expense);
+}
+.text-reinvest {
+  color: var(--reinvest);
 }
 .text-sm {
   font-size: 13px;
@@ -2696,6 +2818,22 @@ canvas {
   /* Espaçamento consistente entre o seletor e o título da página */
   .main-content {
     padding-top: 12px;
+  }
+
+  /* REQ 1: no mobile o popover de notificações fica ancorado à viewport para
+     não estourar a tela nem cortar itens. Fixo, com margens laterais
+     automáticas, largura limitada e rolagem interna. */
+  .popover {
+    position: fixed;
+    top: 64px;
+    left: 16px;
+    right: 16px;
+    width: auto;
+    max-width: calc(100vw - 32px);
+    max-height: 80vh;
+    overflow-y: auto;
+    margin-inline: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 

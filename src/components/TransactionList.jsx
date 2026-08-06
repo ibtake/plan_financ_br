@@ -31,6 +31,8 @@ export function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate,
   const method = getPaymentMethod(tx.method)
   const repeat = recurrenceLabel(tx)
   const isIncome = tx.type === 'income'
+  // Reinvestido tambem e saida de caixa, mas ganha cor e rotulo proprios
+  const isReinvested = tx.type === 'reinvested'
 
   return (
     <div className={`tx${tx.paid ? '' : ' unpaid'}`}>
@@ -52,6 +54,7 @@ export function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate,
           <span title="Forma de pagamento">
             <AppIcon emoji={method.icon} size={13} /> {method.name}
           </span>
+          {isReinvested && <span className="chip reinvested">Reinvestido</span>}
           {tx.installmentLabel && <span className="chip info">{tx.installmentLabel}</span>}
           {repeat && !tx.installmentLabel && (
             <span className="chip primary">
@@ -76,7 +79,7 @@ export function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate,
         )}
       </div>
 
-      <div className={`tx-amount ${isIncome ? 'income' : 'expense'} mono`}>
+      <div className={`tx-amount ${isIncome ? 'income' : isReinvested ? 'reinvested' : 'expense'} mono`}>
         {isIncome ? '+' : '−'} {formatCurrency(tx.amount)}
       </div>
 
@@ -174,11 +177,14 @@ export default function TransactionList({
   const totals = useMemo(() => {
     let income = 0
     let expense = 0
+    let reinvested = 0
     for (const t of filtered) {
       if (t.type === 'income') income += t.amount
+      else if (t.type === 'reinvested') reinvested += t.amount
       else expense += t.amount
     }
-    return { income, expense, count: filtered.length }
+    // Saidas = consumo + reinvestimento (ambos deixam a conta corrente)
+    return { income, expense, reinvested, outflow: expense + reinvested, count: filtered.length }
   }, [filtered])
 
   const usedCategories = useMemo(() => {
@@ -194,7 +200,14 @@ export default function TransactionList({
           <div className="card-sub">
             {totals.count} {totals.count === 1 ? 'registro' : 'registros'} • entradas{' '}
             <span className="text-income fw-600">{formatCurrency(totals.income)}</span> • saídas{' '}
-            <span className="text-expense fw-600">{formatCurrency(totals.expense)}</span>
+            <span className="text-expense fw-600">{formatCurrency(totals.outflow)}</span>
+            {totals.reinvested > 0 && (
+              <>
+                {' '}
+                • reinvestido{' '}
+                <span className="text-reinvest fw-600">{formatCurrency(totals.reinvested)}</span>
+              </>
+            )}
           </div>
         </div>
         <div className="row">
@@ -237,6 +250,7 @@ export default function TransactionList({
           <option value="all">Todos os tipos</option>
           <option value="income">Somente receitas</option>
           <option value="expense">Somente despesas</option>
+          <option value="reinvested">Somente reinvestido</option>
         </select>
 
         <select

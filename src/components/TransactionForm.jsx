@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Repeat2, X } from 'lucide-react'
 import {
   PAYMENT_METHODS,
   RECURRENCE_OPTIONS,
@@ -100,7 +100,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                 {isEditing ? 'Editar lançamento' : 'Novo lançamento'}
               </div>
               <div className="card-sub">
-                {isEditing ? 'Altere os dados e salve' : 'Registre uma receita ou despesa'}
+                {isEditing ? 'Altere os dados e salve' : 'Registre uma receita, despesa ou reinvestimento'}
               </div>
             </div>
             <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar">
@@ -116,7 +116,16 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                 onClick={() => set({ type: 'expense' })}
               >
                 <ArrowUpRight size={16} strokeWidth={2} />
-                Despesa
+                <span>Despesa</span>
+              </button>
+              <button
+                type="button"
+                className={form.type === 'reinvested' ? 'active-reinvested' : ''}
+                onClick={() => set({ type: 'reinvested' })}
+                title="Saída de caixa que vira patrimônio (reinvestimento)"
+              >
+                <Repeat2 size={16} strokeWidth={2} />
+                <span>Reinvestido</span>
               </button>
               <button
                 type="button"
@@ -124,9 +133,16 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                 onClick={() => set({ type: 'income' })}
               >
                 <ArrowDownLeft size={16} strokeWidth={2} />
-                Receita
+                <span>Receita</span>
               </button>
             </div>
+
+            {form.type === 'reinvested' && (
+              <div className="hint">
+                Sai da liquidez do mês como qualquer saída, mas soma no patrimônio
+                acumulado e na taxa de poupança em vez de contar como consumo.
+              </div>
+            )}
 
             <div className="form-grid">
               <div className="field span-2">

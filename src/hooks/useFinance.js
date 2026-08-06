@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 import { useLocalStorage } from './useLocalStorage.js'
-import { DEFAULT_CATEGORIES } from '../utils/categories.js'
+import { DEFAULT_CATEGORIES, fallbackCategoryId, normalizeType } from '../utils/categories.js'
 import { expandMonth } from '../utils/recurrence.js'
 import {
   addMonths,
@@ -22,7 +22,7 @@ const KEYS = {
 function normalizeTransaction(input) {
   return {
     id: input.id || uid(),
-    type: input.type === 'income' ? 'income' : 'expense',
+    type: normalizeType(input.type),
     description: String(input.description || '').trim() || 'Sem descrição',
     amount: Math.abs(Number(input.amount) || 0),
     categoryId: input.categoryId || 'outros-d',
@@ -140,9 +140,10 @@ export function useFinance() {
         {
           id,
           name: String(cat.name || 'Nova categoria').trim(),
-          type: cat.type === 'income' ? 'income' : 'expense',
+          type: normalizeType(cat.type),
           color: cat.color || '#6366f1',
           icon: cat.icon || '📁',
+          targetPercentage: Math.max(0, Math.min(100, Number(cat.targetPercentage) || 0)),
           custom: true,
         },
       ])
@@ -165,11 +166,12 @@ export function useFinance() {
         delete next[id]
         return next
       })
-      // lancamentos orfaos vao para "Outros"
+      // lancamentos orfaos vao para "Outros" do tipo correspondente
+      // (reinvestido cai em Outros de despesa)
       setTransactions((prev) =>
         prev.map((t) =>
           t.categoryId === id
-            ? { ...t, categoryId: t.type === 'income' ? 'outros-r' : 'outros-d' }
+            ? { ...t, categoryId: fallbackCategoryId(t.type) }
             : t,
         ),
       )
@@ -295,6 +297,7 @@ export function useFinance() {
 export function summarize(occurrences) {
   let income = 0
   let expense = 0
+  let reinvested = 0
   let pendingExpense = 0
   let pendingIncome = 0
 
@@ -303,16 +306,33 @@ export function summarize(occurrences) {
     if (t.type === 'income') {
       income += amount
       if (!t.paid) pendingIncome += amount
+    } else if (t.type === 'reinvested') {
+      // Saida de liquidez, mas patrimonio (nao e consumo)
+      reinvested += amount
+      if (!t.paid) pendingExpense += amount
     } else {
       expense += amount
       if (!t.paid) pendingExpense += amount
     }
   }
 
-  const balance = income - expense
-  const savingsRate = income > 0 ? (balance / income) * 100 : 0
+  // Saldo do mes desconta consumo E reinvestimento da liquidez disponivel
+  const balance = income - expense - reinvested
+  // REQ 3: taxa de poupanca = quanto da receita virou patrimonio reinvestido
+  const savingsRate = income > 0 ? (reinvested / income) * 100 : 0
+  // Patrimonio formado no mes (base para o card acumulado)
+  const patrimony = reinvested
 
-  return { income, expense, balance, savingsRate, pendingExpense, pendingIncome }
+  return {
+    income,
+    expense,
+    reinvested,
+    balance,
+    savingsRate,
+    patrimony,
+    pendingExpense,
+    pendingIncome,
+  }
 }
 
 /** Totais por categoria (apenas despesas por padrao) */
@@ -341,10 +361,16 @@ export function useMonthlyData(transactions, monthKey, monthsBack = 12) {
     })
 
     let cumulative = 0
+    let cumulativePatrimony = 0
     const trend = history.map((h) => {
       cumulative += h.balance
-      return { ...h, cumulative }
+      cumulativePatrimony += h.patrimony || 0
+      return { ...h, cumulative, cumulativePatrimony }
     })
+
+    // Patrimonio acumulado ate o mes selecionado (inclusive)
+    const accumulatedPatrimony =
+      trend.find((h) => h.key === key)?.cumulativePatrimony ?? current.patrimony
 
     return {
       monthKey: key,
@@ -355,10 +381,13 @@ export function useMonthlyData(transactions, monthKey, monthsBack = 12) {
         income: percentChange(current.income, prev.income),
         expense: percentChange(current.expense, prev.expense),
         balance: percentChange(current.balance, prev.balance),
+        savingsRate: percentChange(current.savingsRate, prev.savingsRate),
       },
       byCategory: totalsByCategory(occurrences, 'expense'),
       byCategoryIncome: totalsByCategory(occurrences, 'income'),
+      byCategoryReinvested: totalsByCategory(occurrences, 'reinvested'),
       previousByCategory: totalsByCategory(previous, 'expense'),
+      accumulatedPatrimony,
       history,
       trend,
     }

@@ -1,0 +1,19 @@
+{
+  "name": "Planejador Financeiro",
+  "short_name": "Planejador",
+  "description": "Controle mensal de receitas, despesas, orçamento e metas.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1120",
+  "theme_color": "#0b1120",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

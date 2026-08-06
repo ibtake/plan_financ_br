@@ -26,7 +26,7 @@ function EventList() {
       <div className="card-head">
         <div>
           <div className="card-title">Histórico de segurança</div>
-          <div className="card-sub">Eventos imutáveis da sua conta, mais recentes primeiro</div>
+          <div className="card-sub">Eventos da sua conta dos últimos 7 dias, mais recentes primeiro</div>
         </div>
         <button className="btn btn-sm" onClick={load} disabled={loading}>Atualizar</button>
       </div>

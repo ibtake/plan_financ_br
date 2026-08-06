@@ -2,14 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { supabase, translateAuthError } from '../lib/supabase.js'
 import { EVENTS, guarded, logEvent } from '../lib/audit.js'
-import { DEFAULT_CATEGORIES } from '../utils/categories.js'
+import { DEFAULT_CATEGORIES, fallbackCategoryId, normalizeType } from '../utils/categories.js'
 import { uid } from '../utils/format.js'
 import { useLocalStorage } from './useLocalStorage.js'
 
 function normalizeTransaction(input) {
   return {
     id: input.id || uid(),
-    type: input.type === 'income' ? 'income' : 'expense',
+    type: normalizeType(input.type),
     description: String(input.description || '').trim() || 'Sem descrição',
     amount: Math.abs(Number(input.amount) || 0),
     categoryId: input.categoryId || 'outros-d',
@@ -66,11 +66,14 @@ const fromTxRow = (row) => normalizeTransaction({
 })
 
 const fromCategory = (row) => ({
-  id: row.id, name: row.name, type: row.type, color: row.color, icon: row.icon, custom: row.custom,
+  id: row.id, name: row.name, type: row.type, color: row.color, icon: row.icon,
+  targetPercentage: Number(row.target_percentage) || 0, custom: row.custom,
 })
 const toCategory = (cat, userId) => ({
   id: cat.id, user_id: userId, name: cat.name, type: cat.type,
-  color: cat.color, icon: cat.icon, custom: cat.custom !== false,
+  color: cat.color, icon: cat.icon,
+  target_percentage: Math.max(0, Math.min(100, Number(cat.targetPercentage) || 0)),
+  custom: cat.custom !== false,
 })
 const fromGoal = (row) => ({
   id: row.id, name: row.name, target: Number(row.target), current: Number(row.current),
@@ -176,28 +179,43 @@ export function useSupabaseFinance() {
 
   const addCategory = useCallback((input) => {
     const base = String(input.name || 'cat').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-    const cat = { id: input.id || `${base}-${Math.random().toString(36).slice(2, 5)}`, name: String(input.name || 'Nova categoria').trim(), type: input.type === 'income' ? 'income' : 'expense', color: input.color || '#6366f1', icon: input.icon || '📁', custom: true }
+    const cat = { id: input.id || `${base}-${Math.random().toString(36).slice(2, 5)}`, name: String(input.name || 'Nova categoria').trim(), type: normalizeType(input.type), color: input.color || '#6366f1', icon: input.icon || '📁', targetPercentage: Math.max(0, Math.min(100, Number(input.targetPercentage) || 0)), custom: true }
     setCategories((prev) => [...prev, cat])
     void persist(() => supabase.from('categories').insert(toCategory(cat, user.id)), { table: 'categories', action: 'insert' })
   }, [persist, user])
 
   const updateCategory = useCallback((id, patch) => {
     setCategories((prev) => prev.map((cat) => cat.id === id ? { ...cat, ...patch } : cat))
-    const allowed = Object.fromEntries(Object.entries(patch).filter(([key]) => ['name', 'type', 'color', 'icon'].includes(key)))
+    // Traduz o estado (camelCase) para as colunas do banco (snake_case)
+    const allowed = {}
+    if (patch.name !== undefined) allowed.name = patch.name
+    if (patch.type !== undefined) allowed.type = normalizeType(patch.type)
+    if (patch.color !== undefined) allowed.color = patch.color
+    if (patch.icon !== undefined) allowed.icon = patch.icon
+    if (patch.targetPercentage !== undefined) {
+      allowed.target_percentage = Math.max(0, Math.min(100, Number(patch.targetPercentage) || 0))
+    }
     void persist(() => supabase.from('categories').update(allowed).eq('id', id).eq('user_id', user.id), { table: 'categories', action: 'update' })
   }, [persist, user])
 
   const deleteCategory = useCallback((id) => {
     const category = categories.find((cat) => cat.id === id)
     if (!category?.custom) return
-    const fallback = category.type === 'income' ? 'outros-r' : 'outros-d'
+    // Reatribui os lancamentos ligados a uma categoria "Outros" do mesmo grupo
+    // ANTES de excluir. Isso evita erro de chave estrangeira e lancamentos orfaos.
+    const fallback = fallbackCategoryId(category.type)
     setCategories((prev) => prev.filter((cat) => cat.id !== id))
     setBudgets((prev) => { const next = { ...prev }; delete next[id]; return next })
     setTransactions((prev) => prev.map((tx) => tx.categoryId === id ? { ...tx, categoryId: fallback } : tx))
     void (async () => {
-      await persist(() => supabase.from('transactions').update({ category_id: fallback }).eq('category_id', id).eq('user_id', user.id), { table: 'transactions', action: 'update_category' })
-      await persist(() => supabase.from('budgets').delete().eq('category_id', id).eq('user_id', user.id), { table: 'budgets', action: 'delete' })
-      await persist(() => supabase.from('categories').delete().eq('id', id).eq('user_id', user.id), { table: 'categories', action: 'delete' })
+      // Ordem importa: primeiro solta as referencias, depois remove a categoria.
+      // persist() recarrega do servidor em caso de erro, mantendo a UI coerente.
+      const okTx = await persist(() => supabase.from('transactions').update({ category_id: fallback }).eq('category_id', id).eq('user_id', user.id), { table: 'transactions', action: 'update_category' })
+      const okBudget = await persist(() => supabase.from('budgets').delete().eq('category_id', id).eq('user_id', user.id), { table: 'budgets', action: 'delete' })
+      // So exclui a categoria depois que as dependencias sairam com sucesso.
+      if (okTx && okBudget) {
+        await persist(() => supabase.from('categories').delete().eq('id', id).eq('user_id', user.id), { table: 'categories', action: 'delete' })
+      }
     })()
   }, [categories, persist, user])
 
@@ -234,15 +252,34 @@ export function useSupabaseFinance() {
     const cats = Array.isArray(data.categories) && data.categories.length ? data.categories : categories
     const nextBudgets = data.budgets && typeof data.budgets === 'object' ? data.budgets : budgets
     const nextGoals = Array.isArray(data.goals) ? data.goals.map((goal) => ({ id: goal.id || uid(), name: String(goal.name || 'Meta'), target: Math.abs(Number(goal.target) || 0), current: Math.abs(Number(goal.current) || 0), deadline: goal.deadline || '', icon: goal.icon || '🎯', color: goal.color || '#6366f1' })) : goals
-    await supabase.rpc('delete_my_data')
-    const results = await Promise.all([
-      supabase.from('categories').upsert(cats.map((cat) => toCategory(cat, user.id))),
-      txs.length ? supabase.from('transactions').insert(txs.map((tx) => toTxRow(tx, user.id))) : Promise.resolve({ error: null }),
-      Object.keys(nextBudgets).length ? supabase.from('budgets').insert(Object.entries(nextBudgets).map(([categoryId, amount]) => ({ user_id: user.id, category_id: categoryId, limit_amount: Number(amount) }))) : Promise.resolve({ error: null }),
-      nextGoals.length ? supabase.from('goals').insert(nextGoals.map((goal) => toGoal(goal, user.id))) : Promise.resolve({ error: null }),
-    ])
-    const failure = results.find((result) => result.error)
-    if (failure) reportError(failure.error)
+
+    // REQ 9 (auditoria V-05, Opcao B): uma unica RPC transacional substitui o
+    // antigo delete_my_data + Promise.all. Se qualquer insert falhar, o Postgres
+    // faz rollback e os dados antigos permanecem intactos.
+    const payload = {
+      categories: cats.map((cat) => ({
+        id: cat.id,
+        name: cat.name,
+        icon: cat.icon || '📁',
+        color: cat.color || '#6366f1',
+        type: normalizeType(cat.type),
+        target_percentage: Math.max(0, Math.min(100, Number(cat.targetPercentage) || 0)),
+      })),
+      transactions: txs.map((tx) => toTxRow(tx, user.id)),
+      // A RPC le budgets como recordset {category_id, limit_amount}; o estado
+      // guarda um mapa {categoryId: valor}, entao convertemos para array.
+      budgets: Object.entries(nextBudgets).map(([categoryId, amount]) => ({
+        category_id: categoryId,
+        limit_amount: Number(amount) || 0,
+      })),
+      goals: nextGoals.map((goal) => toGoal(goal, user.id)),
+    }
+
+    const { error: rpcError } = await supabase.rpc('replace_my_data', { p_data: payload })
+    if (rpcError) {
+      reportError(rpcError)
+      return
+    }
     await logEvent(EVENTS.DATA_IMPORTED, 'warning', { transactions: txs.length, goals: nextGoals.length })
     await load()
   }, [budgets, categories, goals, load, reportError, transactions, user])

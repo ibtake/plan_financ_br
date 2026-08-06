@@ -133,10 +133,20 @@ function AuthenticatedApp() {
 
   const overview = (
     <div className="stack">
-      <SummaryCards summary={monthly.summary} change={monthly.change} />
+      <SummaryCards
+        summary={monthly.summary}
+        change={monthly.change}
+        accumulatedPatrimony={monthly.accumulatedPatrimony}
+      />
       <div className="grid-2 dashboard-grid">
         <Suspense fallback={<ChartFallback height={240} />}>
-          <CategoryChart byCategory={monthly.byCategory} categories={finance.categories} total={monthly.summary.expense} />
+          {/* REQ 6: metas percentuais somam 100% entre despesas e reinvestimentos,
+              então o gráfico compara realizado × esperado sobre as duas juntas. */}
+          <CategoryChart
+            byCategory={{ ...monthly.byCategory, ...monthly.byCategoryReinvested }}
+            categories={finance.categories}
+            total={monthly.summary.expense + monthly.summary.reinvested}
+          />
         </Suspense>
         <Suspense fallback={<ChartFallback height={280} />}>
           <MonthlyChart history={monthly.history} />
