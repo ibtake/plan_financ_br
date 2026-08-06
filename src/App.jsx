@@ -9,7 +9,6 @@ import TransactionList from './components/TransactionList.jsx'
 import BudgetPanel from './components/BudgetPanel.jsx'
 import GoalsPanel from './components/GoalsPanel.jsx'
 import Insights from './components/Insights.jsx'
-import TopExpenses from './components/TopExpenses.jsx'
 import FixedExpenses from './components/FixedExpenses.jsx'
 import CategoryManager from './components/CategoryManager.jsx'
 import IconManager from './components/IconManager.jsx'
@@ -144,7 +143,7 @@ function AuthenticatedApp() {
         accumulatedPatrimony={monthly.accumulatedPatrimony}
         reinvestmentTargetPercentage={finance.categories.filter((category) => category.type === 'reinvested').reduce((sum, category) => sum + (Number(category.targetPercentage) || 0), 0)}
       />
-      <div className="grid-2 dashboard-grid">
+      <div className="dashboard-category-row">
         <Suspense fallback={<ChartFallback height={240} />}>
           {/* REQ 6: metas percentuais somam 100% entre despesas e reinvestimentos,
               então o gráfico compara realizado × esperado sobre as duas juntas. */}
@@ -155,6 +154,8 @@ function AuthenticatedApp() {
             budgets={finance.budgets}
           />
         </Suspense>
+      </div>
+      <div className="dashboard-monthly-row">
         <Suspense fallback={<ChartFallback height={280} />}>
           <MonthlyChart history={monthly.history} />
         </Suspense>
@@ -166,7 +167,6 @@ function AuthenticatedApp() {
         <Insights {...insightProps} />
       </div>
       <div className="grid-2 dashboard-grid">
-        <TopExpenses occurrences={monthly.occurrences} categories={finance.categories} total={monthly.summary.expense} />
         <FixedExpenses occurrences={monthly.occurrences} categories={finance.categories} onTogglePaid={finance.togglePaid} />
       </div>
     </div>
