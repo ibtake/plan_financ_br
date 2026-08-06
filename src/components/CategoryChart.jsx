@@ -18,13 +18,7 @@ function TooltipContent({ active, payload }) {
         <strong>{formatCurrency(item.value)}</strong>
         <span>({formatPercent(item.share, 1)})</span>
       </div>
-      {item.target > 0 && (
-        <div className="chart-tooltip-row text-muted">
-          <span>
-            Esperado {formatCurrency(item.expected)} ({formatPercent(item.target, 1)})
-          </span>
-        </div>
-      )}
+      {item.target > 0 && <div className="chart-tooltip-row text-muted"><span>Meta {formatPercent(item.target, 1)} | Real {formatPercent(item.share, 1)} {item.comparison.symbol}</span></div>}
     </div>
   )
 }
@@ -55,7 +49,7 @@ export default function CategoryChart({ byCategory, categories, total }) {
         value,
         share: total > 0 ? (value / total) * 100 : 0,
         target,
-        expected: (target / 100) * total,
+        comparison: target === 0 ? { symbol: '•', label: 'Sem meta' } : Math.abs((value / total) * 100 - target) < 0.1 ? { symbol: '●', label: 'Estável' } : (value / total) * 100 > target ? { symbol: '▲', label: 'Acima' } : { symbol: '▼', label: 'Abaixo' },
       }
     })
   }, [byCategory, categories, total])
@@ -89,7 +83,7 @@ export default function CategoryChart({ byCategory, categories, total }) {
           <div className="card-title">Saídas por categoria</div>
           <div className="card-sub">
             Total de {formatCurrency(total)} no mês
-            {hasTargets && ' • realizado em destaque, esperado em cinza'}
+            {hasTargets && ' • meta definida e percentual real'}
           </div>
         </div>
       </div>
@@ -125,13 +119,13 @@ export default function CategoryChart({ byCategory, categories, total }) {
               <AppIcon emoji={item.icon} /> {item.name}
             </span>
             <span className="legend-figures">
-              <span className="legend-value mono">{formatCurrency(item.value)}</span>
+              <span className="legend-value mono">Real {formatPercent(item.share, 1)}</span>
               {item.target > 0 ? (
                 <span
                   className={`legend-expected mono${item.share > item.target ? ' over' : ''}`}
-                  title={`Esperado: ${formatPercent(item.target, 1)} do total`}
+                  title={item.comparison.label}
                 >
-                  {formatPercent(item.share, 1)} · meta {formatCurrency(item.expected)}
+                  Meta {formatPercent(item.target, 1)} {item.comparison.symbol}
                 </span>
               ) : (
                 <span className="legend-expected mono">{formatPercent(item.share, 1)}</span>

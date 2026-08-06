@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, Minus, ArrowDownToLine, ArrowUpFromLine, Wallet, AlertTriangle, PiggyBank, Landmark } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, ArrowDownToLine, ArrowUpFromLine, Wallet, AlertTriangle, Landmark } from 'lucide-react'
 import { formatCurrency, formatPercent } from '../utils/format.js'
 
 /**
@@ -53,7 +53,7 @@ function KPI({ icon: Icon, label, value, accentColor, accentSoft, children }) {
  * ao mês anterior (`change`) e o patrimônio acumulado nos últimos meses
  * (`accumulatedPatrimony`, somatório das despesas reinvestidas).
  */
-export default function SummaryCards({ summary, change, accumulatedPatrimony = 0 }) {
+export default function SummaryCards({ summary, change, accumulatedPatrimony = 0, reinvestmentTargetPercentage = 0 }) {
   const { income, expense, reinvested = 0, balance, savingsRate, pendingExpense } = summary
 
   return (
@@ -108,31 +108,12 @@ export default function SummaryCards({ summary, change, accumulatedPatrimony = 0
         {reinvested > 0 ? (
           <>
             <span className="chip reinvested">+ {formatCurrency(reinvested)}</span>
-            <span>reinvestido no mês</span>
+            <span>{formatPercent(savingsRate, 1)} poupado no mês</span>
           </>
         ) : (
-          <span>Nenhum reinvestimento neste mês</span>
+          <span>{formatPercent(savingsRate, 1)} poupado no mês</span>
         )}
-      </KPI>
-
-      <KPI
-        icon={PiggyBank}
-        label="Taxa de poupança"
-        value={formatPercent(savingsRate, 1)}
-        accentColor={savingsRate >= 20 ? 'var(--income)' : savingsRate >= 0 ? 'var(--warning)' : 'var(--expense)'}
-        accentSoft={savingsRate >= 20 ? 'var(--income-soft)' : savingsRate >= 0 ? 'var(--warning-soft)' : 'var(--expense-soft)'}
-      >
-        <span>
-          {income <= 0
-            ? 'Sem receitas no mês'
-            : reinvested <= 0
-              ? 'Nada reinvestido ainda'
-              : savingsRate >= 20
-                ? 'Excelente!'
-                : savingsRate >= 10
-                  ? 'Bom, pode melhorar'
-                  : 'Abaixo do ideal'}
-        </span>
+        <span className="kpi-target">Meta reinvestida: {formatPercent(reinvestmentTargetPercentage, 1)}</span>
       </KPI>
     </div>
   )

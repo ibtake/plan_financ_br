@@ -4,6 +4,26 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 const MAX_BODY_BYTES = 16_384
 const MFA_FRESHNESS_SECONDS = 5 * 60
 
+async function readJsonWithinLimit(request: Request): Promise<Record<string, unknown>> {
+  const reader = request.body?.getReader()
+  if (!reader) throw new Error('invalid_body')
+  const chunks: Uint8Array[] = []
+  let size = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > MAX_BODY_BYTES) throw new Error('body_too_large')
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+  const body = JSON.parse(new TextDecoder().decode(bytes))
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('invalid_body')
+  return body as Record<string, unknown>
+}
+
 function corsHeaders(request: Request) {
   const origin = request.headers.get('origin') || ''
   const configured = String(Deno.env.get('APP_ALLOWED_ORIGINS') || '')
@@ -108,8 +128,11 @@ Deno.serve(async (request) => {
 
   let body: Record<string, unknown>
   try {
-    body = await request.json()
-  } catch {
+    body = await readJsonWithinLimit(request)
+  } catch (error) {
+    if (error instanceof Error && error.message === 'body_too_large') {
+      return response(request, 413, { error: 'Requisição muito grande.' })
+    }
     return response(request, 400, { error: 'Corpo da requisição inválido.' })
   }
 
@@ -137,6 +160,15 @@ Deno.serve(async (request) => {
 
   if (!allowedAdminIds().has(user.id.toLowerCase())) {
     return response(request, 403, { error: 'Acesso administrativo não autorizado.' })
+  }
+
+  if (['status', 'list-users', 'create-user'].includes(action)) {
+    const { data: allowed, error: rateError } = await admin.rpc('consume_admin_rate_limit', {
+      p_admin_id: user.id,
+      p_action: action,
+    })
+    if (rateError) return response(request, 503, { error: 'Proteção temporariamente indisponível.' })
+    if (!allowed) return response(request, 429, { error: 'Muitas solicitações. Aguarde um minuto.' })
   }
 
   if (action === 'status') {
