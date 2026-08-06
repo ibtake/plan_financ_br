@@ -14,7 +14,9 @@ const MAX_FILE_BYTES = 1024 * 1024
 /** Lado maximo do icone normalizado, suficiente para telas retina */
 const MAX_DIMENSION = 128
 
-const ALLOWED_TYPES = ['image/png', 'image/webp', 'image/svg+xml']
+// V-10: image/svg+xml removido. file.type e falsificavel e SVG e um vetor
+// desnecessario aqui, ja que so guardamos o PNG redesenhado no canvas.
+const ALLOWED_TYPES = ['image/png', 'image/webp']
 
 /**
  * Le um arquivo de imagem e devolve um data URL PNG quadrado e redimensionado.
@@ -23,7 +25,7 @@ const ALLOWED_TYPES = ['image/png', 'image/webp', 'image/svg+xml']
 export function readIconFile(file) {
   return new Promise((resolve, reject) => {
     if (!ALLOWED_TYPES.includes(file.type)) {
-      reject(new Error('Formato não aceito. Envie um arquivo PNG, WEBP ou SVG.'))
+      reject(new Error('Formato não aceito. Envie um arquivo PNG ou WEBP.'))
       return
     }
     if (file.size > MAX_FILE_BYTES) {
