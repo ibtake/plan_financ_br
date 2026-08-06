@@ -912,6 +912,12 @@ canvas {
   min-height: 22px;
 }
 
+.kpi-savings-summary {
+  font-size: 11px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
 .delta {
   display: inline-flex;
   align-items: center;
@@ -1911,6 +1917,11 @@ canvas {
   min-width: 0;
 }
 
+/* O gráfico mensal ocupa a mesma presença visual do gráfico de categorias no desktop. */
+.monthly-chart-wrap {
+  height: 300px;
+}
+
 .chart-loading {
   display: flex;
   align-items: center;
@@ -1983,6 +1994,7 @@ canvas {
   flex-direction: column;
   align-items: flex-end;
   line-height: 1.25;
+  min-width: 112px;
 }
 
 .legend-expected {
@@ -1995,6 +2007,13 @@ canvas {
 
 .legend-expected.over {
   color: var(--warning);
+}
+
+.legend-target,
+.legend-actual {
+  display: inline-block;
+  width: 48px;
+  text-align: left;
 }
 
 .legend-target { color: var(--primary); }
@@ -3056,6 +3075,10 @@ canvas {
   }
 
   .chart-wrap {
+    height: 220px;
+  }
+
+  .monthly-chart-wrap {
     height: 220px;
   }
 }
