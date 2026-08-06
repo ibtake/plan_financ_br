@@ -152,6 +152,7 @@ function AuthenticatedApp() {
             byCategory={{ ...monthly.byCategory, ...monthly.byCategoryReinvested }}
             categories={finance.categories}
             total={monthly.summary.expense + monthly.summary.reinvested}
+            budgets={finance.budgets}
           />
         </Suspense>
         <Suspense fallback={<ChartFallback height={280} />}>
