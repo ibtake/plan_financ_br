@@ -6,14 +6,28 @@ import { expandMonth } from '../utils/recurrence.js'
 const SEGMENT_GAP_COLOR = 'var(--surface)'
 
 function useIsMobile() {
-  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches)
+  const queryText = '(max-width: 768px)'
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(queryText).matches)
 
   useEffect(() => {
-    const query = window.matchMedia('(max-width: 768px)')
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined
+
+    const query = window.matchMedia(queryText)
     const update = () => setMobile(query.matches)
     update()
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
+
+    if (typeof query.addEventListener === 'function') {
+      query.addEventListener('change', update)
+      return () => query.removeEventListener('change', update)
+    }
+
+    // Safari/iOS WebViews antigos expoem apenas a API legada.
+    if (typeof query.addListener === 'function') {
+      query.addListener(update)
+      return () => query.removeListener(update)
+    }
+
+    return undefined
   }, [])
 
   return mobile

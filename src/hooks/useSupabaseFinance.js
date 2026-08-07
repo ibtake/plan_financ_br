@@ -6,8 +6,6 @@ import { DEFAULT_CATEGORIES, fallbackCategoryId, normalizeType } from '../utils/
 import { uid } from '../utils/format.js'
 import { useLocalStorage } from './useLocalStorage.js'
 
-const delay = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds))
-
 function normalizeTransaction(input) {
   return {
     id: input.id || uid(),
@@ -106,6 +104,7 @@ export function useSupabaseFinance() {
   const [goals, setGoals] = useState([])
   const [reverseGoalHistory, setReverseGoalHistory] = useState([])
   const [reverseGoalContributions, setReverseGoalContributions] = useState([])
+  const [standardGoalContributions, setStandardGoalContributions] = useState([])
   const [reverseGoalEvents, setReverseGoalEvents] = useState([])
   const [reverseGoalRetentionMonths, setReverseGoalRetentionMonths] = useState(null)
   const [theme, setTheme] = useLocalStorage('planejador:theme', 'light')
@@ -129,20 +128,21 @@ export function useSupabaseFinance() {
     }
     setLoading(true)
     if (!preserveError) setError('')
-    const [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, reverseEventsResult, retentionResult] = await Promise.all([
+    const [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult] = await Promise.all([
       guarded(() => supabase.from('transactions').select('*').order('created_at', { ascending: false }), { table: 'transactions', action: 'select' }),
       guarded(() => supabase.from('categories').select('*').order('created_at'), { table: 'categories', action: 'select' }),
       guarded(() => supabase.from('budgets').select('*'), { table: 'budgets', action: 'select' }),
       guarded(() => supabase.from('goals').select('*').order('created_at'), { table: 'goals', action: 'select' }),
       guarded(() => supabase.from('reverse_goal_history').select('*').order('reference_month', { ascending: false }), { table: 'reverse_goal_history', action: 'select' }),
       guarded(() => supabase.from('reverse_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_contributions', action: 'select' }),
+      guarded(() => supabase.from('standard_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'standard_goal_contributions', action: 'select' }),
       guarded(() => supabase.from('reverse_goal_events').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_events', action: 'select' }),
       guarded(() => supabase.from('reverse_goal_retention_settings').select('completed_goal_retention_months').maybeSingle(), { table: 'reverse_goal_retention_settings', action: 'select' }),
     ])
     // Uma carga iniciada antes de uma mutacao nao pode restaurar um snapshot
     // antigo sobre os dados que acabaram de ser confirmados pelo servidor.
     if (requestId !== latestLoadRequest.current) return false
-    const firstError = [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, reverseEventsResult, retentionResult].find((r) => r.error)?.error
+    const firstError = [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult].find((r) => r.error)?.error
     if (firstError) {
       const code = String(firstError.code || '')
       const message = String(firstError.message || '').toLowerCase()
@@ -163,6 +163,7 @@ export function useSupabaseFinance() {
     setGoals((goalResult.data || []).map(fromGoal))
     setReverseGoalHistory(reverseHistoryResult.data || [])
     setReverseGoalContributions(reverseContributionsResult.data || [])
+    setStandardGoalContributions(standardContributionsResult.data || [])
     setReverseGoalEvents(reverseEventsResult.data || [])
     setReverseGoalRetentionMonths(retentionResult.data?.completed_goal_retention_months ?? null)
     setLoading(false)
@@ -277,11 +278,41 @@ export function useSupabaseFinance() {
     else void persist(() => supabase.from('budgets').upsert({ user_id: user.id, category_id: categoryId, limit_amount: amount }), { table: 'budgets', action: 'upsert' })
   }, [persist, user])
 
-  const addGoal = useCallback((input) => {
-    const goal = { id: uid(), name: String(input.name || 'Nova meta').trim(), target: Math.abs(Number(input.target) || 0), current: Math.abs(Number(input.current) || 0), deadline: input.deadline || '', icon: input.icon || '🎯', color: input.color || '#6366f1' }
-    setGoals((prev) => [...prev, goal])
-    void persist(() => supabase.from('goals').insert(toGoal(goal, user.id)), { table: 'goals', action: 'insert' })
-  }, [persist, user])
+  const addGoal = useCallback(async (input) => {
+    const { error: rpcError } = await supabase.rpc('create_standard_goal', {
+      p_name: String(input.name || '').trim(),
+      p_target: Math.abs(Number(input.target) || 0),
+      p_initial_contribution: Math.abs(Number(input.current) || 0),
+      p_deadline: input.deadline || null,
+      p_icon: input.icon || '🎯',
+      p_color: input.color || '#6366f1',
+    })
+    if (rpcError) { reportError(rpcError); return false }
+    await load()
+    return true
+  }, [load, reportError])
+
+  const addStandardGoalContribution = useCallback(async (goalId, input) => {
+    const { error: rpcError } = await supabase.rpc('add_standard_goal_contribution', {
+      p_goal_id: goalId,
+      p_amount: Math.abs(Number(input.amount) || 0),
+      p_occurred_on: input.occurredOn,
+    })
+    if (rpcError) { reportError(rpcError); return false }
+    await load()
+    return true
+  }, [load, reportError])
+
+  const updateStandardGoalContribution = useCallback(async (contributionId, input) => {
+    const { error: rpcError } = await supabase.rpc('update_standard_goal_contribution', {
+      p_contribution_id: contributionId,
+      p_amount: Math.abs(Number(input.amount) || 0),
+      p_occurred_on: input.occurredOn,
+    })
+    if (rpcError) { reportError(rpcError); return false }
+    await load()
+    return true
+  }, [load, reportError])
 
   const addReverseGoal = useCallback(async (input) => {
     const { error: rpcError } = await supabase.rpc('create_reverse_goal', {
@@ -338,16 +369,19 @@ export function useSupabaseFinance() {
     return true
   }, [load, reportError])
 
-  const updateGoal = useCallback((id, patch) => {
-    const currentGoal = goals.find((goal) => goal.id === id)
-    if (!currentGoal) return
-    const goal = { ...currentGoal, ...patch, target: patch.target !== undefined ? Math.abs(Number(patch.target) || 0) : currentGoal.target, current: patch.current !== undefined ? Math.abs(Number(patch.current) || 0) : currentGoal.current }
-    // Impede que uma leitura iniciada antes do aporte substitua o estado
-    // otimista e atrase a reacao visual de meta concluida.
-    latestLoadRequest.current += 1
-    setGoals((prev) => prev.map((item) => item.id === id ? goal : item))
-    void persist(() => supabase.from('goals').update(toGoal(goal, user.id)).eq('id', id).eq('user_id', user.id), { table: 'goals', action: 'update' })
-  }, [goals, persist, user])
+  const updateGoal = useCallback(async (id, patch) => {
+    const { error: rpcError } = await supabase.rpc('update_standard_goal_metadata', {
+      p_goal_id: id,
+      p_name: String(patch.name || '').trim(),
+      p_target: Math.abs(Number(patch.target) || 0),
+      p_deadline: patch.deadline || null,
+      p_icon: patch.icon || '🎯',
+      p_color: patch.color || '#6366f1',
+    })
+    if (rpcError) { reportError(rpcError); return false }
+    await load()
+    return true
+  }, [load, reportError])
 
   const updateReverseGoal = useCallback(async (id, input) => {
     const patch = {
@@ -383,48 +417,15 @@ export function useSupabaseFinance() {
         return false
       }
 
-      setGoalDeletionPhase('confirming')
-      const confirmationDeadline = Date.now() + 1500
-      const confirmDeletion = () => guarded(
-        () => supabase.from('goals').select('id').eq('id', id).eq('user_id', user.id).maybeSingle(),
-        { table: 'goals', action: 'confirm_delete' },
-      )
-      const confirmWithinLimit = async () => {
-        const remaining = confirmationDeadline - Date.now()
-        if (remaining <= 0) return { timedOut: true }
-        return Promise.race([confirmDeletion(), delay(remaining).then(() => ({ timedOut: true }))])
-      }
-      const firstConfirmation = await confirmWithinLimit()
-      if (firstConfirmation.timedOut || firstConfirmation.error) {
-        reportError(firstConfirmation.error || { message: 'A confirmacao da exclusao excedeu o tempo limite.' })
-        return false
-      }
-
-      // Uma segunda leitura curta confirma a exclusao no servidor sem repetir
-      // o DELETE. Isso absorve atrasos de rede sem mascarar erro de permissao.
-      const retryDelay = Math.min(400, Math.max(0, confirmationDeadline - Date.now()))
-      if (!retryDelay) {
-        reportError({ message: 'A confirmacao da exclusao excedeu o tempo limite.' })
-        return false
-      }
-      await delay(retryDelay)
-      const secondConfirmation = await confirmWithinLimit()
-      if (secondConfirmation.timedOut || secondConfirmation.error) {
-        reportError(secondConfirmation.error || { message: 'A confirmacao da exclusao excedeu o tempo limite.' })
-        return false
-      }
-      if (secondConfirmation.data) {
-        reportError({ message: 'A exclusao ainda nao foi confirmada pelo servidor. Tente novamente.' })
-        return false
-      }
-
-      // Invalida qualquer leitura anterior ao DELETE antes de atualizar o
-      // estado local ja confirmado pelas duas consultas ao Supabase.
+      // A RPC e transacional: se ela retornou sem erro, a exclusao ja foi
+      // confirmada no servidor. Leituras posteriores podem atrasar ou falhar
+      // sem transformar uma meta ja excluida em um card fantasma no cliente.
       latestLoadRequest.current += 1
       setGoals((prev) => prev.filter((goal) => goal.id !== id))
       setReverseGoalHistory((prev) => prev.filter((item) => item.goal_id !== id))
       setReverseGoalContributions((prev) => prev.filter((item) => item.goal_id !== id))
       setReverseGoalEvents((prev) => prev.filter((item) => item.goal_id !== id))
+      setStandardGoalContributions((prev) => prev.filter((item) => item.goal_id !== id))
       return true
     } catch (deleteException) {
       reportError(deleteException)
@@ -437,10 +438,10 @@ export function useSupabaseFinance() {
   }, [reportError, user])
 
   const exportData = useCallback(() => ({
-    transactions, categories, budgets, goals,
+    transactions, categories, budgets, goals, standardGoalContributions,
     reverseGoalContributions, reverseGoalHistory, reverseGoalEvents,
     reverseGoalRetentionMonths,
-  }), [transactions, categories, budgets, goals, reverseGoalContributions, reverseGoalEvents, reverseGoalHistory, reverseGoalRetentionMonths])
+  }), [transactions, categories, budgets, goals, standardGoalContributions, reverseGoalContributions, reverseGoalEvents, reverseGoalHistory, reverseGoalRetentionMonths])
 
   const importData = useCallback(async (data) => {
     if (false && Array.isArray(data.goals) && data.goals.some((goal) => goal.goalType === 'reverse' || goal.goal_type === 'reverse')) {
@@ -472,7 +473,7 @@ export function useSupabaseFinance() {
         limit_amount: Number(amount) || 0,
       })),
       goals: nextGoals.map((goal) => ({ ...toGoal(goal, user.id), goal_type: goal.goalType || goal.goal_type || 'standard', reverse_original_amount: goal.reverseOriginalAmount ?? goal.reverse_original_amount, reverse_remaining_amount: goal.reverseRemainingAmount ?? goal.reverse_remaining_amount, reverse_corrected_amount: goal.reverseCorrectedAmount ?? goal.reverse_corrected_amount, reverse_start_date: goal.reverseStartDate ?? goal.reverse_start_date, reverse_selic_factor: goal.reverseSelicFactor ?? goal.reverse_selic_factor, reverse_completed_at: goal.reverseCompletedAt ?? goal.reverse_completed_at, reverse_total_contributed: goal.reverseTotalContributed ?? goal.reverse_total_contributed, reverse_correction_amount: goal.reverseCorrectionAmount ?? goal.reverse_correction_amount, reverse_progress_percent: goal.reverseProgressPercent ?? goal.reverse_progress_percent, reverse_monthly_contribution_average: goal.reverseMonthlyContributionAverage ?? goal.reverse_monthly_contribution_average, reverse_forecast_completion_date: goal.reverseForecastCompletionDate ?? goal.reverse_forecast_completion_date })),
-      reverseGoalContributions: data.reverseGoalContributions || [], reverseGoalHistory: data.reverseGoalHistory || [], reverseGoalEvents: data.reverseGoalEvents || [], reverseGoalRetentionMonths: data.reverseGoalRetentionMonths ?? null,
+      standardGoalContributions: data.standardGoalContributions || [], reverseGoalContributions: data.reverseGoalContributions || [], reverseGoalHistory: data.reverseGoalHistory || [], reverseGoalEvents: data.reverseGoalEvents || [], reverseGoalRetentionMonths: data.reverseGoalRetentionMonths ?? null,
     }
 
     const { error: rpcError } = await supabase.rpc('replace_my_data', { p_data: payload })
@@ -493,8 +494,8 @@ export function useSupabaseFinance() {
 
   return { transactions, categories, budgets, goals, theme, loading, error, isDeletingGoal, goalDeletionPhase, reload: load,
     addTransaction, updateTransaction, deleteTransaction, duplicateTransaction, togglePaid,
-    addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateReverseGoalContribution, updateGoal, updateReverseGoal, deleteGoal,
-    reverseGoalHistory, reverseGoalContributions, reverseGoalEvents, reverseGoalRetentionMonths,
+    addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateReverseGoalContribution, addStandardGoalContribution, updateStandardGoalContribution, updateGoal, updateReverseGoal, deleteGoal,
+    reverseGoalHistory, reverseGoalContributions, standardGoalContributions, reverseGoalEvents, reverseGoalRetentionMonths,
     setReverseGoalRetention,
     setTheme, exportData, importData, clearAll }
 }

@@ -184,8 +184,8 @@ function AuthenticatedApp() {
         <div className="sync-overlay" role="status" aria-live="assertive" aria-label="Atualizando metas">
           <div className="sync-overlay-card">
             <div className="spinner" />
-            <strong>{finance.goalDeletionPhase === 'confirming' ? 'Confirmando no servidor...' : 'Excluindo meta...'}</strong>
-            <span>{finance.goalDeletionPhase === 'confirming' ? 'Conferindo se a exclusao foi aplicada definitivamente.' : 'Enviando a solicitacao de exclusao com seguranca.'}</span>
+            <strong>Excluindo meta...</strong>
+            <span>Enviando a solicitacao de exclusao com seguranca.</span>
           </div>
         </div>
       )}
@@ -254,11 +254,14 @@ function AuthenticatedApp() {
               goals={finance.goals}
               reverseHistory={finance.reverseGoalHistory}
               reverseContributions={finance.reverseGoalContributions}
+              standardContributions={finance.standardGoalContributions}
               reverseEvents={finance.reverseGoalEvents}
               onAdd={finance.addGoal}
               onAddReverse={finance.addReverseGoal}
               onAddReverseContribution={finance.addReverseGoalContribution}
               onUpdateReverseContribution={finance.updateReverseGoalContribution}
+              onAddStandardContribution={finance.addStandardGoalContribution}
+              onUpdateStandardContribution={finance.updateStandardGoalContribution}
               onUpdate={finance.updateGoal}
               onUpdateReverse={finance.updateReverseGoal}
               onDelete={finance.deleteGoal}
