@@ -85,6 +85,8 @@ const fromGoal = (row) => ({
   reverseTotalContributed: Number(row.reverse_total_contributed) || 0,
   reverseCorrectionAmount: Number(row.reverse_correction_amount) || 0,
   reverseProgressPercent: Number(row.reverse_progress_percent) || 0,
+  reverseForecastCompletionDate: row.reverse_forecast_completion_date || null,
+  reverseMonthlyContributionAverage: Number(row.reverse_monthly_contribution_average || 0),
   reverseStartDate: row.reverse_start_date || '',
   reverseSelicFactor: Number(row.reverse_selic_factor) || 1,
   reverseCompletedAt: row.reverse_completed_at || null,
@@ -345,14 +347,14 @@ export function useSupabaseFinance() {
   }), [transactions, categories, budgets, goals, reverseGoalContributions, reverseGoalEvents, reverseGoalHistory, reverseGoalRetentionMonths])
 
   const importData = useCallback(async (data) => {
-    if (Array.isArray(data.goals) && data.goals.some((goal) => goal.goalType === 'reverse' || goal.goal_type === 'reverse')) {
+    if (false && Array.isArray(data.goals) && data.goals.some((goal) => goal.goalType === 'reverse' || goal.goal_type === 'reverse')) {
       reportError({ message: 'A restauração de backup com Meta Reversa requer a versão de banco compatível e foi bloqueada para evitar perda de histórico.' })
       return
     }
     const txs = Array.isArray(data.transactions) ? data.transactions.map(normalizeTransaction) : transactions
     const cats = Array.isArray(data.categories) && data.categories.length ? data.categories : categories
     const nextBudgets = data.budgets && typeof data.budgets === 'object' ? data.budgets : budgets
-    const nextGoals = Array.isArray(data.goals) ? data.goals.map((goal) => ({ id: goal.id || uid(), name: String(goal.name || 'Meta'), target: Math.abs(Number(goal.target) || 0), current: Math.abs(Number(goal.current) || 0), deadline: goal.deadline || '', icon: goal.icon || '🎯', color: goal.color || '#6366f1' })) : goals
+    const nextGoals = Array.isArray(data.goals) ? data.goals.map((goal) => ({ ...goal, id: goal.id || uid(), name: String(goal.name || 'Meta'), target: Math.abs(Number(goal.target) || 0), current: Math.abs(Number(goal.current) || 0), deadline: goal.deadline || '', icon: goal.icon || '🎯', color: goal.color || '#6366f1' })) : goals
 
     // REQ 9 (auditoria V-05, Opcao B): uma unica RPC transacional substitui o
     // antigo delete_my_data + Promise.all. Se qualquer insert falhar, o Postgres
@@ -373,7 +375,7 @@ export function useSupabaseFinance() {
         category_id: categoryId,
         limit_amount: Number(amount) || 0,
       })),
-      goals: nextGoals.map((goal) => ({ ...toGoal(goal, user.id), goal_type: goal.goalType || goal.goal_type || 'standard', reverse_original_amount: goal.reverseOriginalAmount ?? goal.reverse_original_amount, reverse_remaining_amount: goal.reverseRemainingAmount ?? goal.reverse_remaining_amount, reverse_corrected_amount: goal.reverseCorrectedAmount ?? goal.reverse_corrected_amount, reverse_start_date: goal.reverseStartDate ?? goal.reverse_start_date, reverse_selic_factor: goal.reverseSelicFactor ?? goal.reverse_selic_factor, reverse_completed_at: goal.reverseCompletedAt ?? goal.reverse_completed_at, reverse_total_contributed: goal.reverseTotalContributed ?? goal.reverse_total_contributed, reverse_correction_amount: goal.reverseCorrectionAmount ?? goal.reverse_correction_amount, reverse_progress_percent: goal.reverseProgressPercent ?? goal.reverse_progress_percent })),
+      goals: nextGoals.map((goal) => ({ ...toGoal(goal, user.id), goal_type: goal.goalType || goal.goal_type || 'standard', reverse_original_amount: goal.reverseOriginalAmount ?? goal.reverse_original_amount, reverse_remaining_amount: goal.reverseRemainingAmount ?? goal.reverse_remaining_amount, reverse_corrected_amount: goal.reverseCorrectedAmount ?? goal.reverse_corrected_amount, reverse_start_date: goal.reverseStartDate ?? goal.reverse_start_date, reverse_selic_factor: goal.reverseSelicFactor ?? goal.reverse_selic_factor, reverse_completed_at: goal.reverseCompletedAt ?? goal.reverse_completed_at, reverse_total_contributed: goal.reverseTotalContributed ?? goal.reverse_total_contributed, reverse_correction_amount: goal.reverseCorrectionAmount ?? goal.reverse_correction_amount, reverse_progress_percent: goal.reverseProgressPercent ?? goal.reverse_progress_percent, reverse_monthly_contribution_average: goal.reverseMonthlyContributionAverage ?? goal.reverse_monthly_contribution_average, reverse_forecast_completion_date: goal.reverseForecastCompletionDate ?? goal.reverse_forecast_completion_date })),
       reverseGoalContributions: data.reverseGoalContributions || [], reverseGoalHistory: data.reverseGoalHistory || [], reverseGoalEvents: data.reverseGoalEvents || [], reverseGoalRetentionMonths: data.reverseGoalRetentionMonths ?? null,
     }
 
