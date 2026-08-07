@@ -157,7 +157,7 @@ function AuthenticatedApp() {
       </div>
       <div className="dashboard-monthly-row">
         <Suspense fallback={<ChartFallback height={280} />}>
-          <MonthlyChart history={monthly.history} />
+          <MonthlyChart summary={monthly.summary} occurrences={monthly.occurrences} categories={finance.categories} />
         </Suspense>
       </div>
       <div className="grid-2 dashboard-grid">

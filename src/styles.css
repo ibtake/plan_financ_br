@@ -3397,3 +3397,11 @@ canvas {
 .reverse-timeline article { border-left:3px solid var(--primary); padding:9px 12px; border-radius:0 8px 8px 0; background:var(--surface-2); }
 .reverse-timeline p { margin:5px 0 0; font-size:.82rem; color:var(--muted); line-height:1.45; }
 @media (max-width: 768px) { .reverse-modal-backdrop { align-items:flex-end; padding:0; } .reverse-details { width:100%; max-height:88vh; border-radius:18px 18px 0 0; padding:18px; } }
+.goal-date-input { min-height: 42px; height: 42px; }
+.goal-badge { display: inline-flex; width: fit-content; margin-top: 4px; padding: 2px 7px; border: 1px solid currentColor; border-radius: 999px; background: transparent; font-size: 10px; font-weight: 700; }
+.reverse-badge { color: var(--primary); }
+.standard-badge { color: var(--income); }
+.goal-completed { border: 2px solid var(--income); }
+.standard-card-main { display:flex; align-items:center; gap:10px; padding:0; border:0; background:transparent; color:inherit; text-align:left; }
+.standard-card-main span:last-child { display:grid; gap:2px; }
+.reverse-timeline-contribution { display:flex; align-items:center; justify-content:space-between; gap:12px; }
