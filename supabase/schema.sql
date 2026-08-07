@@ -980,3 +980,27 @@ create or replace function public.rebuild_all_reverse_goals() returns integer la
 create or replace function public.set_reverse_goal_retention(p_months smallint default null) returns void language plpgsql security definer set search_path=public,pg_temp as $$ declare u uuid:=auth.uid(); begin if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if; if p_months is not null and p_months not between 1 and 12 then raise exception 'periodo de retencao invalido' using errcode='22023'; end if; insert into public.reverse_goal_retention_settings(user_id,completed_goal_retention_months,updated_at) values(u,p_months,now()) on conflict(user_id) do update set completed_goal_retention_months=excluded.completed_goal_retention_months,updated_at=now(); end; $$;
 create or replace function public.cleanup_expired_reverse_goals() returns integer language plpgsql security definer set search_path=public,pg_temp as $$ declare deleted_count integer; begin delete from public.goals g using public.reverse_goal_retention_settings s where g.user_id=s.user_id and g.goal_type='reverse' and g.reverse_completed_at is not null and s.completed_goal_retention_months is not null and g.reverse_completed_at<now()-make_interval(months=>s.completed_goal_retention_months); get diagnostics deleted_count=row_count; return deleted_count; end; $$;
 revoke all on function public.set_reverse_goal_retention(smallint) from public,anon; grant execute on function public.set_reverse_goal_retention(smallint) to authenticated; revoke all on function public.cleanup_expired_reverse_goals() from public,anon,authenticated;
+
+-- BLOCO 19 - Previsao de conclusao da Meta Reversa V1.3.2
+-- A previsao e calculada no banco apos cada reconstrucao, usando a media dos
+-- aportes por mes. Nao concede permissao adicional ao cliente.
+alter table public.goals add column if not exists reverse_monthly_contribution_average numeric(14,2);
+alter table public.goals add column if not exists reverse_forecast_completion_date date;
+
+create or replace function public.refresh_reverse_goal_forecast(p_goal_id text,p_user_id uuid) returns void language plpgsql security definer set search_path=public,pg_temp as $$
+declare avg_amount numeric(14,2); remaining numeric(14,2); months numeric; completed_at timestamptz;
+begin
+  select reverse_remaining_amount, reverse_completed_at into remaining, completed_at from public.goals where id=p_goal_id and user_id=p_user_id;
+  select case when count(distinct date_trunc('month',occurred_on))>0 then round(sum(amount)/count(distinct date_trunc('month',occurred_on)),2) end into avg_amount from public.reverse_goal_contributions where goal_id=p_goal_id and user_id=p_user_id;
+  months:=case when avg_amount>0 then ceil(remaining/avg_amount) end;
+  update public.goals set reverse_monthly_contribution_average=avg_amount,reverse_forecast_completion_date=case when completed_at is not null then completed_at::date when months is null then null else (current_date+(months::text||' months')::interval)::date end where id=p_goal_id and user_id=p_user_id;
+end; $$;
+revoke all on function public.refresh_reverse_goal_forecast(text,uuid) from public,anon,authenticated;
+
+create or replace function public.refresh_reverse_goal_forecast_after_rebuild() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+  if new.goal_type='reverse' then perform public.refresh_reverse_goal_forecast(new.id,new.user_id); end if;
+  return new;
+end; $$;
+revoke all on function public.refresh_reverse_goal_forecast_after_rebuild() from public,anon,authenticated;
+create trigger reverse_goal_forecast_after_rebuild after update of reverse_remaining_amount,reverse_completed_at on public.goals for each row when (new.goal_type='reverse' and (old.reverse_remaining_amount is distinct from new.reverse_remaining_amount or old.reverse_completed_at is distinct from new.reverse_completed_at)) execute function public.refresh_reverse_goal_forecast_after_rebuild();
