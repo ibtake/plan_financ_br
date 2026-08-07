@@ -3403,7 +3403,7 @@ canvas {
 .reverse-timeline { display:grid; gap:10px; margin-top:14px; }
 .reverse-timeline article { border-left:3px solid var(--primary); padding:9px 12px; border-radius:0 8px 8px 0; background:var(--surface-2); }
 .reverse-timeline p { margin:5px 0 0; font-size:.82rem; color:var(--muted); line-height:1.45; }
-@media (max-width: 768px) { .reverse-modal-backdrop { align-items:flex-end; padding:0; } .reverse-details { width:100%; max-height:88vh; border-radius:18px 18px 0 0; padding:18px; } .reverse-modal-backdrop:has(.reverse-details:not(.aporte-modal)) { inset:0 0 calc(var(--bottom-nav-h) + env(safe-area-inset-bottom)); z-index:44; padding:12px; background:rgb(15 23 42 / .18); } .reverse-details:not(.aporte-modal) { width:min(680px,100%); max-height:min(64dvh,620px); border-radius:18px; padding:16px; } }
+@media (max-width: 768px) { .reverse-modal-backdrop { align-items:flex-end; padding:0; } .reverse-details { width:100%; max-height:88vh; border-radius:18px 18px 0 0; padding:18px; } .reverse-modal-backdrop:has(.reverse-details:not(.aporte-modal)) { inset:0 0 calc(var(--bottom-nav-h) + env(safe-area-inset-bottom)); z-index:44; align-items:center; padding:12px; background:rgb(15 23 42 / .18); } .reverse-details:not(.aporte-modal) { width:min(680px,100%); max-height:min(64dvh,620px); border-radius:18px; padding:16px; } }
 /* Datas seguem a mesma altura dos demais .input e nunca ultrapassam a coluna
    do formulario, inclusive no controle nativo de navegadores moveis. */
 .goal-date-input {
