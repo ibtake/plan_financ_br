@@ -78,6 +78,16 @@ const toCategory = (cat, userId) => ({
 const fromGoal = (row) => ({
   id: row.id, name: row.name, target: Number(row.target), current: Number(row.current),
   deadline: row.deadline || '', icon: row.icon, color: row.color,
+  goalType: row.goal_type || 'standard',
+  reverseOriginalAmount: Number(row.reverse_original_amount) || 0,
+  reverseRemainingAmount: Number(row.reverse_remaining_amount) || 0,
+  reverseCorrectedAmount: Number(row.reverse_corrected_amount) || 0,
+  reverseTotalContributed: Number(row.reverse_total_contributed) || 0,
+  reverseCorrectionAmount: Number(row.reverse_correction_amount) || 0,
+  reverseProgressPercent: Number(row.reverse_progress_percent) || 0,
+  reverseStartDate: row.reverse_start_date || '',
+  reverseSelicFactor: Number(row.reverse_selic_factor) || 1,
+  reverseCompletedAt: row.reverse_completed_at || null,
 })
 const toGoal = (goal, userId) => ({
   id: goal.id, user_id: userId, name: goal.name, target: goal.target,
@@ -90,6 +100,10 @@ export function useSupabaseFinance() {
   const [categories, setCategories] = useState([])
   const [budgets, setBudgets] = useState({})
   const [goals, setGoals] = useState([])
+  const [reverseGoalHistory, setReverseGoalHistory] = useState([])
+  const [reverseGoalContributions, setReverseGoalContributions] = useState([])
+  const [reverseGoalEvents, setReverseGoalEvents] = useState([])
+  const [reverseGoalRetentionMonths, setReverseGoalRetentionMonths] = useState(null)
   const [theme, setTheme] = useLocalStorage('planejador:theme', 'light')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -106,13 +120,17 @@ export function useSupabaseFinance() {
     }
     setLoading(true)
     setError('')
-    const [txResult, catResult, budgetResult, goalResult] = await Promise.all([
+    const [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, reverseEventsResult, retentionResult] = await Promise.all([
       guarded(() => supabase.from('transactions').select('*').order('created_at', { ascending: false }), { table: 'transactions', action: 'select' }),
       guarded(() => supabase.from('categories').select('*').order('created_at'), { table: 'categories', action: 'select' }),
       guarded(() => supabase.from('budgets').select('*'), { table: 'budgets', action: 'select' }),
       guarded(() => supabase.from('goals').select('*').order('created_at'), { table: 'goals', action: 'select' }),
+      guarded(() => supabase.from('reverse_goal_history').select('*').order('reference_month', { ascending: false }), { table: 'reverse_goal_history', action: 'select' }),
+      guarded(() => supabase.from('reverse_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_contributions', action: 'select' }),
+      guarded(() => supabase.from('reverse_goal_events').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_events', action: 'select' }),
+      guarded(() => supabase.from('reverse_goal_retention_settings').select('completed_goal_retention_months').maybeSingle(), { table: 'reverse_goal_retention_settings', action: 'select' }),
     ])
-    const firstError = [txResult, catResult, budgetResult, goalResult].find((r) => r.error)?.error
+    const firstError = [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, reverseEventsResult, retentionResult].find((r) => r.error)?.error
     if (firstError) {
       const code = String(firstError.code || '')
       const message = String(firstError.message || '').toLowerCase()
@@ -131,6 +149,10 @@ export function useSupabaseFinance() {
     setCategories((catResult.data || []).map(fromCategory))
     setBudgets(Object.fromEntries((budgetResult.data || []).map((row) => [row.category_id, Number(row.limit_amount)])))
     setGoals((goalResult.data || []).map(fromGoal))
+    setReverseGoalHistory(reverseHistoryResult.data || [])
+    setReverseGoalContributions(reverseContributionsResult.data || [])
+    setReverseGoalEvents(reverseEventsResult.data || [])
+    setReverseGoalRetentionMonths(retentionResult.data?.completed_goal_retention_months ?? null)
     setLoading(false)
   }, [reportError, session, signOut, user])
 
@@ -248,6 +270,50 @@ export function useSupabaseFinance() {
     void persist(() => supabase.from('goals').insert(toGoal(goal, user.id)), { table: 'goals', action: 'insert' })
   }, [persist, user])
 
+  const addReverseGoal = useCallback(async (input) => {
+    const { error: rpcError } = await supabase.rpc('create_reverse_goal', {
+      p_name: String(input.name || '').trim(),
+      p_original_amount: Math.abs(Number(input.originalAmount) || 0),
+      p_initial_contribution: Math.abs(Number(input.initialContribution) || 0),
+      p_start_date: input.startDate,
+      p_selic_factor: Number(input.selicFactor) || 1,
+      p_icon: input.icon || '🎯',
+      p_color: input.color || '#6366f1',
+    })
+    if (rpcError) {
+      reportError(rpcError)
+      return false
+    }
+    await load()
+    return true
+  }, [load, reportError])
+
+  const addReverseGoalContribution = useCallback(async (goalId, input) => {
+    const { error: rpcError } = await supabase.rpc('add_reverse_goal_contribution', {
+      p_goal_id: goalId,
+      p_amount: Math.abs(Number(input.amount) || 0),
+      p_occurred_on: input.occurredOn,
+      p_note: String(input.note || '').trim() || null,
+    })
+    if (rpcError) {
+      reportError(rpcError)
+      return false
+    }
+    await load()
+    return true
+  }, [load, reportError])
+
+  const setReverseGoalRetention = useCallback(async (months) => {
+    const value = months === null || months === '' ? null : Number(months)
+    const { error: rpcError } = await supabase.rpc('set_reverse_goal_retention', { p_months: value })
+    if (rpcError) {
+      reportError(rpcError)
+      return false
+    }
+    await load()
+    return true
+  }, [load, reportError])
+
   const updateGoal = useCallback((id, patch) => {
     const currentGoal = goals.find((goal) => goal.id === id)
     if (!currentGoal) return
@@ -309,6 +375,8 @@ export function useSupabaseFinance() {
 
   return { transactions, categories, budgets, goals, theme, loading, error, reload: load,
     addTransaction, updateTransaction, deleteTransaction, duplicateTransaction, togglePaid,
-    addCategory, updateCategory, deleteCategory, setBudget, addGoal, updateGoal, deleteGoal,
+    addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateGoal, deleteGoal,
+    reverseGoalHistory, reverseGoalContributions, reverseGoalEvents, reverseGoalRetentionMonths,
+    setReverseGoalRetention,
     setTheme, exportData, importData, clearAll }
 }
