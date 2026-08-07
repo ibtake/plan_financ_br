@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { supabase, translateAuthError } from '../lib/supabase.js'
 import { EVENTS, guarded, logEvent } from '../lib/audit.js'
@@ -109,19 +109,22 @@ export function useSupabaseFinance() {
   const [theme, setTheme] = useLocalStorage('planejador:theme', 'light')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [isDeletingGoal, setIsDeletingGoal] = useState(false)
+  const latestLoadRequest = useRef(0)
 
   const reportError = useCallback((dbError) => {
     setError(translateAuthError(dbError))
     window.setTimeout(() => setError(''), 6000)
   }, [])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ preserveError = false } = {}) => {
+    const requestId = ++latestLoadRequest.current
     if (!user || !supabase) {
-      setLoading(false)
-      return
+      if (requestId === latestLoadRequest.current) setLoading(false)
+      return false
     }
     setLoading(true)
-    setError('')
+    if (!preserveError) setError('')
     const [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, reverseEventsResult, retentionResult] = await Promise.all([
       guarded(() => supabase.from('transactions').select('*').order('created_at', { ascending: false }), { table: 'transactions', action: 'select' }),
       guarded(() => supabase.from('categories').select('*').order('created_at'), { table: 'categories', action: 'select' }),
@@ -132,20 +135,23 @@ export function useSupabaseFinance() {
       guarded(() => supabase.from('reverse_goal_events').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_events', action: 'select' }),
       guarded(() => supabase.from('reverse_goal_retention_settings').select('completed_goal_retention_months').maybeSingle(), { table: 'reverse_goal_retention_settings', action: 'select' }),
     ])
+    // Uma carga iniciada antes de uma mutacao nao pode restaurar um snapshot
+    // antigo sobre os dados que acabaram de ser confirmados pelo servidor.
+    if (requestId !== latestLoadRequest.current) return false
     const firstError = [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, reverseEventsResult, retentionResult].find((r) => r.error)?.error
     if (firstError) {
       const code = String(firstError.code || '')
       const message = String(firstError.message || '').toLowerCase()
       if (code === 'PGRST301' || message.includes('jwt expired') || message.includes('token is expired')) {
         await signOut('session_expired')
-        return
+        return false
       }
       reportError(firstError)
       // Uma falha de leitura não pode transformar a interface em uma
       // Dashboard aparentemente válida, mas zerada. Os últimos dados são
       // preservados até uma carga posterior bem-sucedida.
       setLoading(false)
-      return
+      return false
     }
     setTransactions((txResult.data || []).map(fromTxRow))
     setCategories((catResult.data || []).map(fromCategory))
@@ -156,6 +162,7 @@ export function useSupabaseFinance() {
     setReverseGoalEvents(reverseEventsResult.data || [])
     setReverseGoalRetentionMonths(retentionResult.data?.completed_goal_retention_months ?? null)
     setLoading(false)
+    return true
   }, [reportError, session, signOut, user])
 
   useEffect(() => { load() }, [load])
@@ -164,7 +171,7 @@ export function useSupabaseFinance() {
     const result = await guarded(operation, context)
     if (result.error) {
       reportError(result.error)
-      await load()
+      await load({ preserveError: true })
       return false
     }
     return true
@@ -335,10 +342,53 @@ export function useSupabaseFinance() {
     void persist(() => supabase.from('goals').update(toGoal(goal, user.id)).eq('id', id).eq('user_id', user.id), { table: 'goals', action: 'update' })
   }, [goals, persist, user])
 
-  const deleteGoal = useCallback((id) => {
-    setGoals((prev) => prev.filter((goal) => goal.id !== id))
-    void persist(() => supabase.from('goals').delete().eq('id', id).eq('user_id', user.id), { table: 'goals', action: 'delete' })
-  }, [persist, user])
+  const updateReverseGoal = useCallback(async (id, input) => {
+    const patch = {
+      name: String(input.name || '').trim(),
+      icon: input.icon || '🎯',
+      color: input.color || '#6366f1',
+    }
+    if (!patch.name) return false
+
+    const ok = await persist(
+      () => supabase.from('goals').update(patch).eq('id', id).eq('user_id', user.id).eq('goal_type', 'reverse'),
+      { table: 'goals', action: 'update_reverse_metadata' },
+    )
+    if (!ok) return false
+    await load()
+    return true
+  }, [load, persist, user])
+
+  const deleteGoal = useCallback(async (id) => {
+    if (!supabase || !user || isDeletingGoal) return false
+
+    setIsDeletingGoal(true)
+    try {
+      const { data, error: deleteError } = await guarded(
+        () => supabase.from('goals').delete().eq('id', id).eq('user_id', user.id).select('id'),
+        { table: 'goals', action: 'delete' },
+      )
+
+      if (deleteError) {
+        reportError(deleteError)
+        await load({ preserveError: true })
+        return false
+      }
+
+      if (!data?.some((goal) => goal.id === id)) {
+        reportError({ message: 'A meta nao foi encontrada para exclusao.' })
+        await load({ preserveError: true })
+        return false
+      }
+
+      // A meta so sai da tela depois da confirmacao do DELETE no Supabase.
+      // A carga seguinte recebe uma versao nova e ignora respostas antigas.
+      setGoals((prev) => prev.filter((goal) => goal.id !== id))
+      return await load()
+    } finally {
+      setIsDeletingGoal(false)
+    }
+  }, [isDeletingGoal, load, reportError, user])
 
   const exportData = useCallback(() => ({
     transactions, categories, budgets, goals,
@@ -395,9 +445,9 @@ export function useSupabaseFinance() {
     await load()
   }, [load, reportError, user])
 
-  return { transactions, categories, budgets, goals, theme, loading, error, reload: load,
+  return { transactions, categories, budgets, goals, theme, loading, error, isDeletingGoal, reload: load,
     addTransaction, updateTransaction, deleteTransaction, duplicateTransaction, togglePaid,
-    addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateReverseGoalContribution, updateGoal, deleteGoal,
+    addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateReverseGoalContribution, updateGoal, updateReverseGoal, deleteGoal,
     reverseGoalHistory, reverseGoalContributions, reverseGoalEvents, reverseGoalRetentionMonths,
     setReverseGoalRetention,
     setTheme, exportData, importData, clearAll }
