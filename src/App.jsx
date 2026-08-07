@@ -157,7 +157,7 @@ function AuthenticatedApp() {
       </div>
       <div className="dashboard-monthly-row">
         <Suspense fallback={<ChartFallback height={280} />}>
-          <MonthlyChart summary={monthly.summary} occurrences={monthly.occurrences} categories={finance.categories} />
+          <MonthlyChart transactions={finance.transactions} monthKey={monthly.monthKey} categories={finance.categories} />
         </Suspense>
       </div>
       <div className="grid-2 dashboard-grid">
@@ -184,8 +184,8 @@ function AuthenticatedApp() {
         <div className="sync-overlay" role="status" aria-live="assertive" aria-label="Atualizando metas">
           <div className="sync-overlay-card">
             <div className="spinner" />
-            <strong>Atualizando metas...</strong>
-            <span>Excluindo a meta e conferindo seus dados.</span>
+            <strong>{finance.goalDeletionPhase === 'confirming' ? 'Confirmando no servidor...' : 'Excluindo meta...'}</strong>
+            <span>{finance.goalDeletionPhase === 'confirming' ? 'Conferindo se a exclusao foi aplicada definitivamente.' : 'Enviando a solicitacao de exclusao com seguranca.'}</span>
           </div>
         </div>
       )}

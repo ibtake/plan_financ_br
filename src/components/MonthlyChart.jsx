@@ -1,19 +1,84 @@
-﻿import { useMemo } from 'react'
-import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { formatCompact, formatCurrency } from '../utils/format.js'
+import { useEffect, useMemo, useState } from 'react'
+import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { formatCompact, formatCurrency, lastMonths, monthLabelShort } from '../utils/format.js'
+import { expandMonth } from '../utils/recurrence.js'
 
-export default function MonthlyChart({ summary, occurrences, categories }) {
-  const data = useMemo(() => {
-    const incomeCategoryIds = new Set(categories.filter(c => c.type === 'income').map(c => c.id))
-    const income = occurrences.filter(t => t.type === 'income').reduce((acc, t) => {
-      const categoryId = incomeCategoryIds.has(t.categoryId) ? t.categoryId : '__uncategorized_income__'
-      return { ...acc, [categoryId]: (acc[categoryId] || 0) + Number(t.amount || 0) }
-    }, {})
-    const expense = occurrences.filter(t => t.type === 'expense' || t.type === 'reinvested').reduce((acc, t) => ({ ...acc, [t.categoryId]: (acc[t.categoryId] || 0) + Number(t.amount || 0) }), {})
-    const incomeTotal = Object.values(income).reduce((total, amount) => total + amount, 0)
-    return [{ name: 'Receita', total: incomeTotal, ...Object.fromEntries(categories.map(c => [c.id, income[c.id] || 0])), __uncategorized_income__: income.__uncategorized_income__ || 0 }, { name: 'Despesas', total: (summary.expense || 0) + (summary.reinvested || 0), ...Object.fromEntries(categories.map(c => [c.id, expense[c.id] || 0])) }]
-  }, [categories, occurrences, summary])
-  const used = [...categories, { id: '__uncategorized_income__', color: '#94a3b8' }].filter(c => data.some(row => row[c.id] > 0))
-  const MonthlyTooltip = ({ active, payload, label }) => active && payload?.length ? <div className="chart-tooltip"><div className="chart-tooltip-title">{label}</div><div className="chart-tooltip-row">{formatCurrency(Number(payload[0].payload.total) || 0)}</div></div> : null
-  return <div className="card"><div className="card-head"><div><div className="card-title">Receita × Despesas</div><div className="card-sub">Distribuição do mês por categoria</div></div></div><div className="chart-wrap monthly-chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={data} margin={{ top: 8, right: 5, left: -10, bottom: 0 }}><XAxis dataKey="name" tickLine={false} axisLine={false}/><YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false}/><Tooltip content={<MonthlyTooltip />} />{used.map((category, index) => <Bar key={category.id} dataKey={category.id} stackId="categories" fill={category.color} radius={index === used.length - 1 ? [5,5,0,0] : 0} />)}</BarChart></ResponsiveContainer></div></div>
+const SEGMENT_GAP_COLOR = 'var(--surface)'
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches)
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 768px)')
+    const update = () => setMobile(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  return mobile
+}
+
+function rankSegments(totals, colors) {
+  return Object.entries(totals)
+    .filter(([, amount]) => amount > 0)
+    .map(([id, amount]) => ({ id, amount, color: colors.get(id) || '#94a3b8' }))
+    .sort((left, right) => right.amount - left.amount || left.id.localeCompare(right.id))
+}
+
+export default function MonthlyChart({ transactions, monthKey, categories }) {
+  const isMobile = useIsMobile()
+  const monthsToShow = isMobile ? 3 : 6
+  const chart = useMemo(() => {
+    const incomeCategoryIds = new Set(categories.filter((category) => category.type === 'income').map((category) => category.id))
+    const expenseCategoryIds = new Set(categories.filter((category) => category.type === 'expense' || category.type === 'reinvested').map((category) => category.id))
+    const colors = new Map(categories.map((category) => [category.id, category.color]))
+    colors.set('__uncategorized_income__', '#94a3b8')
+    colors.set('__uncategorized_expense__', '#94a3b8')
+
+    const data = lastMonths(monthKey, monthsToShow).map((key) => {
+      const income = {}
+      const expense = {}
+      for (const occurrence of expandMonth(transactions, key)) {
+        const amount = Number(occurrence.amount) || 0
+        if (occurrence.type === 'income') {
+          const id = incomeCategoryIds.has(occurrence.categoryId) ? occurrence.categoryId : '__uncategorized_income__'
+          income[id] = (income[id] || 0) + amount
+        } else if (occurrence.type === 'expense' || occurrence.type === 'reinvested') {
+          const id = expenseCategoryIds.has(occurrence.categoryId) ? occurrence.categoryId : '__uncategorized_expense__'
+          expense[id] = (expense[id] || 0) + amount
+        }
+      }
+
+      const incomeRanks = rankSegments(income, colors)
+      const expenseRanks = rankSegments(expense, colors)
+      const row = {
+        name: monthLabelShort(key),
+        incomeTotal: incomeRanks.reduce((total, item) => total + item.amount, 0),
+        expenseTotal: expenseRanks.reduce((total, item) => total + item.amount, 0),
+        incomeRanks,
+        expenseRanks,
+      }
+      incomeRanks.forEach((item, index) => { row[`income:rank:${index}`] = item.amount })
+      expenseRanks.forEach((item, index) => { row[`expense:rank:${index}`] = item.amount })
+      return row
+    })
+
+    return {
+      data,
+      incomeRankCount: Math.max(0, ...data.map((row) => row.incomeRanks.length)),
+      expenseRankCount: Math.max(0, ...data.map((row) => row.expenseRanks.length)),
+    }
+  }, [categories, monthKey, monthsToShow, transactions])
+
+  const MonthlyTooltip = ({ active, payload }) => {
+    if (!active || !payload?.length) return null
+    const item = payload[0]
+    const isIncome = String(item.dataKey).startsWith('income:')
+    const total = isIncome ? item.payload.incomeTotal : item.payload.expenseTotal
+    return <div className="chart-tooltip"><div className="chart-tooltip-title">{item.payload.name} · {isIncome ? 'Receita' : 'Despesas'}</div><div className="chart-tooltip-row">{formatCurrency(Number(total) || 0)}</div></div>
+  }
+
+  const roundedSegment = (kind, rank, row) => <Cell key={`${kind}-${rank}-${row.name}`} fill={row[`${kind}Ranks`][rank]?.color || 'transparent'} />
+  return <div className="card"><div className="card-head"><div><div className="card-title">Receita × Despesas</div><div className="card-sub">{isMobile ? 'Últimos 3 meses' : 'Últimos 6 meses'} · distribuição por categoria</div></div></div><div className="chart-wrap monthly-chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={chart.data} margin={{ top: 8, right: 5, left: -10, bottom: 0 }} barGap={3}><XAxis dataKey="name" tickLine={false} axisLine={false}/><YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false}/><Tooltip shared={false} content={<MonthlyTooltip />} />{Array.from({ length: chart.incomeRankCount }, (_, rank) => <Bar key={`income-rank-${rank}`} dataKey={`income:rank:${rank}`} stackId="income" fill="transparent" stroke={SEGMENT_GAP_COLOR} strokeWidth={2} barSize={isMobile ? 18 : 24} radius={[5,5,5,5]}>{chart.data.map((row) => roundedSegment('income', rank, row))}</Bar>)}{Array.from({ length: chart.expenseRankCount }, (_, rank) => <Bar key={`expense-rank-${rank}`} dataKey={`expense:rank:${rank}`} stackId="expense" fill="transparent" stroke={SEGMENT_GAP_COLOR} strokeWidth={2} barSize={isMobile ? 18 : 24} radius={[5,5,5,5]}>{chart.data.map((row) => roundedSegment('expense', rank, row))}</Bar>)}</BarChart></ResponsiveContainer></div></div>
 }

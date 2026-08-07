@@ -6,6 +6,8 @@ import { DEFAULT_CATEGORIES, fallbackCategoryId, normalizeType } from '../utils/
 import { uid } from '../utils/format.js'
 import { useLocalStorage } from './useLocalStorage.js'
 
+const delay = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+
 function normalizeTransaction(input) {
   return {
     id: input.id || uid(),
@@ -110,7 +112,9 @@ export function useSupabaseFinance() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [isDeletingGoal, setIsDeletingGoal] = useState(false)
+  const [goalDeletionPhase, setGoalDeletionPhase] = useState('')
   const latestLoadRequest = useRef(0)
+  const deleteGoalInFlight = useRef(false)
 
   const reportError = useCallback((dbError) => {
     setError(translateAuthError(dbError))
@@ -338,6 +342,9 @@ export function useSupabaseFinance() {
     const currentGoal = goals.find((goal) => goal.id === id)
     if (!currentGoal) return
     const goal = { ...currentGoal, ...patch, target: patch.target !== undefined ? Math.abs(Number(patch.target) || 0) : currentGoal.target, current: patch.current !== undefined ? Math.abs(Number(patch.current) || 0) : currentGoal.current }
+    // Impede que uma leitura iniciada antes do aporte substitua o estado
+    // otimista e atrase a reacao visual de meta concluida.
+    latestLoadRequest.current += 1
     setGoals((prev) => prev.map((item) => item.id === id ? goal : item))
     void persist(() => supabase.from('goals').update(toGoal(goal, user.id)).eq('id', id).eq('user_id', user.id), { table: 'goals', action: 'update' })
   }, [goals, persist, user])
@@ -360,35 +367,74 @@ export function useSupabaseFinance() {
   }, [load, persist, user])
 
   const deleteGoal = useCallback(async (id) => {
-    if (!supabase || !user || isDeletingGoal) return false
+    if (!supabase || !user || deleteGoalInFlight.current) return false
 
+    deleteGoalInFlight.current = true
     setIsDeletingGoal(true)
+    setGoalDeletionPhase('deleting')
     try {
-      const { data, error: deleteError } = await guarded(
-        () => supabase.from('goals').delete().eq('id', id).eq('user_id', user.id).select('id'),
+      const { error: deleteError } = await guarded(
+        () => supabase.rpc('delete_goal', { p_goal_id: id }),
         { table: 'goals', action: 'delete' },
       )
 
       if (deleteError) {
         reportError(deleteError)
-        await load({ preserveError: true })
         return false
       }
 
-      if (!data?.some((goal) => goal.id === id)) {
-        reportError({ message: 'A meta nao foi encontrada para exclusao.' })
-        await load({ preserveError: true })
+      setGoalDeletionPhase('confirming')
+      const confirmationDeadline = Date.now() + 1500
+      const confirmDeletion = () => guarded(
+        () => supabase.from('goals').select('id').eq('id', id).eq('user_id', user.id).maybeSingle(),
+        { table: 'goals', action: 'confirm_delete' },
+      )
+      const confirmWithinLimit = async () => {
+        const remaining = confirmationDeadline - Date.now()
+        if (remaining <= 0) return { timedOut: true }
+        return Promise.race([confirmDeletion(), delay(remaining).then(() => ({ timedOut: true }))])
+      }
+      const firstConfirmation = await confirmWithinLimit()
+      if (firstConfirmation.timedOut || firstConfirmation.error) {
+        reportError(firstConfirmation.error || { message: 'A confirmacao da exclusao excedeu o tempo limite.' })
         return false
       }
 
-      // A meta so sai da tela depois da confirmacao do DELETE no Supabase.
-      // A carga seguinte recebe uma versao nova e ignora respostas antigas.
+      // Uma segunda leitura curta confirma a exclusao no servidor sem repetir
+      // o DELETE. Isso absorve atrasos de rede sem mascarar erro de permissao.
+      const retryDelay = Math.min(400, Math.max(0, confirmationDeadline - Date.now()))
+      if (!retryDelay) {
+        reportError({ message: 'A confirmacao da exclusao excedeu o tempo limite.' })
+        return false
+      }
+      await delay(retryDelay)
+      const secondConfirmation = await confirmWithinLimit()
+      if (secondConfirmation.timedOut || secondConfirmation.error) {
+        reportError(secondConfirmation.error || { message: 'A confirmacao da exclusao excedeu o tempo limite.' })
+        return false
+      }
+      if (secondConfirmation.data) {
+        reportError({ message: 'A exclusao ainda nao foi confirmada pelo servidor. Tente novamente.' })
+        return false
+      }
+
+      // Invalida qualquer leitura anterior ao DELETE antes de atualizar o
+      // estado local ja confirmado pelas duas consultas ao Supabase.
+      latestLoadRequest.current += 1
       setGoals((prev) => prev.filter((goal) => goal.id !== id))
-      return await load()
+      setReverseGoalHistory((prev) => prev.filter((item) => item.goal_id !== id))
+      setReverseGoalContributions((prev) => prev.filter((item) => item.goal_id !== id))
+      setReverseGoalEvents((prev) => prev.filter((item) => item.goal_id !== id))
+      return true
+    } catch (deleteException) {
+      reportError(deleteException)
+      return false
     } finally {
+      deleteGoalInFlight.current = false
+      setGoalDeletionPhase('')
       setIsDeletingGoal(false)
     }
-  }, [isDeletingGoal, load, reportError, user])
+  }, [reportError, user])
 
   const exportData = useCallback(() => ({
     transactions, categories, budgets, goals,
@@ -445,7 +491,7 @@ export function useSupabaseFinance() {
     await load()
   }, [load, reportError, user])
 
-  return { transactions, categories, budgets, goals, theme, loading, error, isDeletingGoal, reload: load,
+  return { transactions, categories, budgets, goals, theme, loading, error, isDeletingGoal, goalDeletionPhase, reload: load,
     addTransaction, updateTransaction, deleteTransaction, duplicateTransaction, togglePaid,
     addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateReverseGoalContribution, updateGoal, updateReverseGoal, deleteGoal,
     reverseGoalHistory, reverseGoalContributions, reverseGoalEvents, reverseGoalRetentionMonths,
