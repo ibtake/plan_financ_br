@@ -3,6 +3,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 const BCB_SERIES_URL = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.4390/dados'
 const FETCH_TIMEOUT_MS = 8_000
 const MAX_MONTHS_FROM_BCB = 240
+const SUPPORTED_HISTORY_MONTHS = 228
 
 function response(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -45,6 +46,15 @@ function currentMonth() {
   return new Date().toISOString().slice(0, 7) + '-01'
 }
 
+function supportedStartDate(startDate: string) {
+  const limit = new Date()
+  limit.setUTCDate(1)
+  limit.setUTCHours(0, 0, 0, 0)
+  limit.setUTCMonth(limit.getUTCMonth() - SUPPORTED_HISTORY_MONTHS)
+  const minimum = limit.toISOString().slice(0, 10)
+  return startDate < minimum ? minimum : startDate
+}
+
 Deno.serve(async (request) => {
   if (request.method !== 'POST') return response(405, { error: 'Método não permitido.' })
   const declaredLength = Number(request.headers.get('content-length') || 0)
@@ -77,7 +87,8 @@ Deno.serve(async (request) => {
     if (goalError) throw new Error('goals_query_failed')
     if (!oldestGoal?.reverse_start_date) return response(200, { ok: true, inserted: 0, rebuilt: 0 })
 
-    const startDate = String(oldestGoal.reverse_start_date).slice(0, 10)
+    const requestedStartDate = String(oldestGoal.reverse_start_date).slice(0, 10)
+    const startDate = supportedStartDate(requestedStartDate)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new Error('invalid_goal_date')
     const endpoint = new URL(BCB_SERIES_URL)
     endpoint.searchParams.set('formato', 'json')
