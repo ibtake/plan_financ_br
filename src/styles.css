@@ -3385,6 +3385,8 @@ canvas {
   }
 }
 
+.reverse-card-main{display:flex;align-items:center;gap:10px;width:100%;padding:0;border:0;background:transparent;text-align:left;color:inherit}.reverse-card-main span:last-child{display:grid;gap:3px}.reverse-card-main small{color:var(--muted)}.aporte-modal{display:grid;gap:10px}.aporte-value{min-height:48px;font-size:1.1rem}
+
 /* Meta Reversa: resumo persistido e memoria de calculo. */
 .reverse-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:16px; }
 .reverse-summary span { display:flex; flex-direction:column; gap:2px; padding:9px; border-radius:8px; background:var(--surface-2); font-size:.75rem; color:var(--muted); }

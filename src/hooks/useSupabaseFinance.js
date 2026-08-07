@@ -303,6 +303,17 @@ export function useSupabaseFinance() {
     return true
   }, [load, reportError])
 
+  const updateReverseGoalContribution = useCallback(async (contributionId, input) => {
+    const { error: rpcError } = await supabase.rpc('update_reverse_goal_contribution', {
+      p_contribution_id: contributionId,
+      p_amount: Math.abs(Number(input.amount) || 0),
+      p_occurred_on: input.occurredOn,
+    })
+    if (rpcError) { reportError(rpcError); return false }
+    await load()
+    return true
+  }, [load, reportError])
+
   const setReverseGoalRetention = useCallback(async (months) => {
     const value = months === null || months === '' ? null : Number(months)
     const { error: rpcError } = await supabase.rpc('set_reverse_goal_retention', { p_months: value })
@@ -327,9 +338,17 @@ export function useSupabaseFinance() {
     void persist(() => supabase.from('goals').delete().eq('id', id).eq('user_id', user.id), { table: 'goals', action: 'delete' })
   }, [persist, user])
 
-  const exportData = useCallback(() => ({ transactions, categories, budgets, goals }), [transactions, categories, budgets, goals])
+  const exportData = useCallback(() => ({
+    transactions, categories, budgets, goals,
+    reverseGoalContributions, reverseGoalHistory, reverseGoalEvents,
+    reverseGoalRetentionMonths,
+  }), [transactions, categories, budgets, goals, reverseGoalContributions, reverseGoalEvents, reverseGoalHistory, reverseGoalRetentionMonths])
 
   const importData = useCallback(async (data) => {
+    if (Array.isArray(data.goals) && data.goals.some((goal) => goal.goalType === 'reverse' || goal.goal_type === 'reverse')) {
+      reportError({ message: 'A restauração de backup com Meta Reversa requer a versão de banco compatível e foi bloqueada para evitar perda de histórico.' })
+      return
+    }
     const txs = Array.isArray(data.transactions) ? data.transactions.map(normalizeTransaction) : transactions
     const cats = Array.isArray(data.categories) && data.categories.length ? data.categories : categories
     const nextBudgets = data.budgets && typeof data.budgets === 'object' ? data.budgets : budgets
@@ -354,7 +373,8 @@ export function useSupabaseFinance() {
         category_id: categoryId,
         limit_amount: Number(amount) || 0,
       })),
-      goals: nextGoals.map((goal) => toGoal(goal, user.id)),
+      goals: nextGoals.map((goal) => ({ ...toGoal(goal, user.id), goal_type: goal.goalType || goal.goal_type || 'standard', reverse_original_amount: goal.reverseOriginalAmount ?? goal.reverse_original_amount, reverse_remaining_amount: goal.reverseRemainingAmount ?? goal.reverse_remaining_amount, reverse_corrected_amount: goal.reverseCorrectedAmount ?? goal.reverse_corrected_amount, reverse_start_date: goal.reverseStartDate ?? goal.reverse_start_date, reverse_selic_factor: goal.reverseSelicFactor ?? goal.reverse_selic_factor, reverse_completed_at: goal.reverseCompletedAt ?? goal.reverse_completed_at, reverse_total_contributed: goal.reverseTotalContributed ?? goal.reverse_total_contributed, reverse_correction_amount: goal.reverseCorrectionAmount ?? goal.reverse_correction_amount, reverse_progress_percent: goal.reverseProgressPercent ?? goal.reverse_progress_percent })),
+      reverseGoalContributions: data.reverseGoalContributions || [], reverseGoalHistory: data.reverseGoalHistory || [], reverseGoalEvents: data.reverseGoalEvents || [], reverseGoalRetentionMonths: data.reverseGoalRetentionMonths ?? null,
     }
 
     const { error: rpcError } = await supabase.rpc('replace_my_data', { p_data: payload })
@@ -375,7 +395,7 @@ export function useSupabaseFinance() {
 
   return { transactions, categories, budgets, goals, theme, loading, error, reload: load,
     addTransaction, updateTransaction, deleteTransaction, duplicateTransaction, togglePaid,
-    addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateGoal, deleteGoal,
+    addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateReverseGoalContribution, updateGoal, deleteGoal,
     reverseGoalHistory, reverseGoalContributions, reverseGoalEvents, reverseGoalRetentionMonths,
     setReverseGoalRetention,
     setTheme, exportData, importData, clearAll }
