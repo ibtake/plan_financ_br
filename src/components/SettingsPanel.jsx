@@ -13,9 +13,27 @@ export default function SettingsPanel({
   onImport,
   onLoadSample,
   onClearAll,
+  reverseGoalRetentionMonths,
+  onSetReverseGoalRetention,
 }) {
   const inputRef = useRef(null)
   const [message, setMessage] = useState(null)
+  const [retentionMonths, setRetentionMonths] = useState(reverseGoalRetentionMonths ?? '')
+  const [savingRetention, setSavingRetention] = useState(false)
+
+  const applyRetention = async () => {
+    const normalized = retentionMonths === '' ? null : Number(retentionMonths)
+    if (normalized !== null && (!Number.isInteger(normalized) || normalized < 1 || normalized > 12)) {
+      setMessage({ tone: 'danger', text: 'Escolha de 1 a 12 meses ou deixe o campo vazio.' })
+      return
+    }
+    const description = normalized === null ? 'Nunca excluir metas reversas concluídas?' : `Excluir permanentemente metas reversas concluídas após ${normalized} mês(es)?`
+    if (!window.confirm(`${description} Metas em andamento e metas comuns nunca serão excluídas.`)) return
+    setSavingRetention(true)
+    const saved = await onSetReverseGoalRetention(normalized)
+    setSavingRetention(false)
+    if (saved) setMessage({ tone: 'success', text: normalized === null ? 'Retenção desativada: metas concluídas não serão excluídas automaticamente.' : 'Configuração de retenção aplicada.' })
+  }
 
   const handleFile = async (event) => {
     const file = event.target.files?.[0]
@@ -122,6 +140,26 @@ export default function SettingsPanel({
         <p className="hint" style={{ marginTop: 12 }}>
           A importação substitui apenas os conjuntos presentes no arquivo. O formato JSON preserva recorrências, parcelas, categorias, orçamentos e metas.
         </p>
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <div className="card-title">Metas Reversas</div>
+            <div className="card-sub">Retenção de Metas Reversas concluídas</div>
+          </div>
+        </div>
+        <div className="setting-row" style={{ alignItems: 'flex-end', gap: 16 }}>
+          <div className="field grow">
+            <label className="label">Excluir metas concluídas após</label>
+            <select className="input" value={retentionMonths} onChange={(event) => setRetentionMonths(event.target.value)}>
+              <option value="">Nunca excluir</option>
+              {Array.from({ length: 12 }, (_, index) => index + 1).map((months) => <option key={months} value={months}>{months} {months === 1 ? 'mês' : 'meses'}</option>)}
+            </select>
+          </div>
+          <button className="btn btn-primary" onClick={applyRetention} disabled={savingRetention}>{savingRetention ? 'Aplicando...' : 'Aplicar configuração'}</button>
+        </div>
+        <p className="hint" style={{ marginTop: 12 }}>Quando ativada, esta opção removerá permanentemente do banco de dados as Metas Reversas concluídas após o período definido. Metas em andamento nunca serão excluídas.</p>
       </section>
 
       <section className="card">

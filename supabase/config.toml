@@ -5,3 +5,11 @@ enable_signup = false
 
 [functions.admin-users]
 verify_jwt = true
+
+[functions.selic-sync]
+# A chamada vem apenas do Supabase Cron e e autenticada pelo header secreto.
+verify_jwt = false
+
+[functions.reverse-goal-cleanup]
+# A chamada vem apenas do Supabase Cron e e autenticada pelo header secreto.
+verify_jwt = false

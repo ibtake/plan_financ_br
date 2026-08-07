@@ -211,10 +211,12 @@ function AuthenticatedApp() {
                 {activeTab === 'overview' ? `${page.sub} • ${monthLabel(monthKey)}` : page.sub}
               </p>
             </div>
-            <button type="button" className="btn btn-primary add-main" onClick={openNew}>
-              <Plus size={16} strokeWidth={2.2} />
-              Novo lançamento
-            </button>
+            {!['budget', 'goals'].includes(activeTab) && (
+              <button type="button" className="btn btn-primary add-main" onClick={openNew}>
+                <Plus size={16} strokeWidth={2.2} />
+                Novo lançamento
+              </button>
+            )}
           </div>
 
           {activeTab === 'overview' && overview}
@@ -239,7 +241,17 @@ function AuthenticatedApp() {
             <BudgetPanel budgets={finance.budgets} byCategory={monthly.byCategory} categories={finance.categories} monthKey={monthKey} onSetBudget={finance.setBudget} />
           )}
           {activeTab === 'goals' && (
-            <GoalsPanel goals={finance.goals} onAdd={finance.addGoal} onUpdate={finance.updateGoal} onDelete={finance.deleteGoal} />
+            <GoalsPanel
+              goals={finance.goals}
+              reverseHistory={finance.reverseGoalHistory}
+              reverseContributions={finance.reverseGoalContributions}
+              reverseEvents={finance.reverseGoalEvents}
+              onAdd={finance.addGoal}
+              onAddReverse={finance.addReverseGoal}
+              onAddReverseContribution={finance.addReverseGoalContribution}
+              onUpdate={finance.updateGoal}
+              onDelete={finance.deleteGoal}
+            />
           )}
           {activeTab === 'categories' && (
             <CategoryManager categories={finance.categories} transactions={finance.transactions} onAdd={finance.addCategory} onUpdate={finance.updateCategory} onDelete={finance.deleteCategory} />
@@ -257,6 +269,8 @@ function AuthenticatedApp() {
               onImport={finance.importData}
               onLoadSample={() => finance.importData(buildSampleData())}
               onClearAll={finance.clearAll}
+              reverseGoalRetentionMonths={finance.reverseGoalRetentionMonths}
+              onSetReverseGoalRetention={finance.setReverseGoalRetention}
             />
           )}
 

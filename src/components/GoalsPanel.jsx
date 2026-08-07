@@ -1,348 +1,51 @@
 import { useState } from 'react'
-import { CalendarClock, Lightbulb, PartyPopper, Pencil, Plus, Trash2, Trophy } from 'lucide-react'
+import { CircleHelp, Pencil, Plus, Trash2, Trophy, X } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { formatCurrency, formatDate, formatPercent, parseAmount } from '../utils/format.js'
 
-// Ícones e cores gravados junto da meta no banco — continuam sendo dados,
-// não decoração de interface.
-const ICONS = ['🎯', '🛟', '✈️', '🏠', '🚗', '💻', '🎓', '💍', '🏖️', '📱', '🐣', '🎁']
+const ICONS = ['🎯', '🛠️', '✈️', '🏠', '🚗', '💻', '🎓', '💍', '🏖️', '📱', '🐧', '🎁']
 const COLORS = ['#6366f1', '#22c55e', '#0ea5e9', '#f97316', '#ec4899', '#8b5cf6', '#14b8a6', '#f59e0b']
 
-/** Meses restantes até o prazo */
-function monthsLeft(deadline) {
-  if (!deadline) return null
-  const target = new Date(`${String(deadline).slice(0, 10)}T00:00:00`)
-  const now = new Date()
-  const diff =
-    (target.getFullYear() - now.getFullYear()) * 12 + (target.getMonth() - now.getMonth())
-  return diff
-}
-
 function GoalForm({ initial, onSave, onCancel }) {
-  const [form, setForm] = useState(
-    initial || { name: '', target: '', current: '', deadline: '', icon: '🎯', color: '#6366f1' },
-  )
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }))
-
-  const submit = (e) => {
-    e.preventDefault()
-    if (!form.name.trim() || parseAmount(form.target) <= 0) return
-    onSave({
-      ...form,
-      target: parseAmount(form.target),
-      current: parseAmount(form.current),
-    })
+  const [reverse, setReverse] = useState(initial?.goalType === 'reverse')
+  const [busy, setBusy] = useState(false)
+  const [form, setForm] = useState(initial || { name: '', target: '', current: '', deadline: '', icon: '🎯', color: '#6366f1', originalAmount: '', initialContribution: '', startDate: new Date().toISOString().slice(0, 10), selicFactor: 1 })
+  const set = (patch) => setForm((value) => ({ ...value, ...patch }))
+  const submit = async (event) => {
+    event.preventDefault()
+    const data = reverse ? { ...form, goalType: 'reverse', originalAmount: parseAmount(form.originalAmount), initialContribution: parseAmount(form.initialContribution), selicFactor: Number(form.selicFactor) || 1 } : { ...form, goalType: 'standard', target: parseAmount(form.target), current: parseAmount(form.current) }
+    if (!data.name?.trim() || (reverse ? data.originalAmount <= 0 || !data.startDate : data.target <= 0)) return
+    setBusy(true); const saved = await onSave(data); setBusy(false); if (saved !== false) onCancel()
   }
-
-  return (
-    <form className="card" onSubmit={submit} style={{ background: 'var(--surface-2)' }}>
-      <div className="form-grid">
-        <div className="field span-2">
-          <label className="label">Nome da meta *</label>
-          <input
-            className="input"
-            value={form.name}
-            onChange={(e) => set({ name: e.target.value })}
-            placeholder="Ex.: Reserva de emergência"
-            autoFocus
-          />
-        </div>
-        <div className="field">
-          <label className="label">Valor alvo (R$) *</label>
-          <input
-            className="input mono"
-            value={form.target}
-            onChange={(e) => set({ target: e.target.value })}
-            placeholder="0,00"
-            inputMode="decimal"
-          />
-        </div>
-        <div className="field">
-          <label className="label">Já guardado (R$)</label>
-          <input
-            className="input mono"
-            value={form.current}
-            onChange={(e) => set({ current: e.target.value })}
-            placeholder="0,00"
-            inputMode="decimal"
-          />
-        </div>
-        <div className="field">
-          <label className="label">Prazo</label>
-          <input
-            type="date"
-            className="input"
-            value={form.deadline ? String(form.deadline).slice(0, 10) : ''}
-            onChange={(e) => set({ deadline: e.target.value })}
-          />
-        </div>
-        <div className="field span-2">
-          <label className="label">Ícone e cor</label>
-          <div className="swatch-grid">
-            {ICONS.map((ic) => (
-              <button
-                type="button"
-                key={ic}
-                className={`swatch${form.icon === ic ? ' selected' : ''}`}
-                onClick={() => set({ icon: ic })}
-                aria-label={`Ícone ${ic}`}
-                aria-pressed={form.icon === ic}
-              >
-                <AppIcon emoji={ic} />
-              </button>
-            ))}
-          </div>
-          <div className="swatch-grid" style={{ marginTop: 8 }}>
-            {COLORS.map((c) => (
-              <button
-                type="button"
-                key={c}
-                className={`color-dot${form.color === c ? ' selected' : ''}`}
-                onClick={() => set({ color: c })}
-                aria-label={`Cor ${c}`}
-                aria-pressed={form.color === c}
-                style={{ background: c }}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="row" style={{ justifyContent: 'flex-end', marginTop: 18 }}>
-        <button type="button" className="btn" onClick={onCancel}>
-          Cancelar
-        </button>
-        <button type="submit" className="btn btn-primary">
-          Salvar meta
-        </button>
-      </div>
-    </form>
-  )
+  return <form className="card" onSubmit={submit} style={{ background: 'var(--surface-2)' }}>
+    {!initial && <div className="row-between" style={{ marginBottom: 18, gap: 12 }}><div><div className="fw-600">Esta meta é Reversa?</div><div className="text-xs text-muted">Use para recompor um valor retirado de investimento ou reserva.</div></div><button type="button" className={`goal-switch${reverse ? ' active' : ''}`} onClick={() => setReverse((value) => !value)} role="switch" aria-checked={reverse}><span /></button></div>}
+    {reverse && <details className="reverse-help" open><summary><CircleHelp size={16} /> Como funciona a Meta Reversa?</summary><p>O saldo restante é corrigido mensalmente pela Selic oficial multiplicada pelo fator escolhido. A meta termina apenas quando o saldo chega a R$ 0,00.</p></details>}
+    <div className="form-grid" style={{ marginTop: 16 }}><div className="field span-2"><label className="label">Nome da meta *</label><input className="input" value={form.name} onChange={(e) => set({ name: e.target.value })} autoFocus /></div>
+      {reverse ? <><div className="field"><label className="label">Valor inicial (R$) *</label><input className="input mono" value={form.originalAmount} onChange={(e) => set({ originalAmount: e.target.value })} inputMode="decimal" /></div><div className="field"><label className="label">Já recomposto hoje (R$)</label><input className="input mono" value={form.initialContribution} onChange={(e) => set({ initialContribution: e.target.value })} inputMode="decimal" /></div><div className="field"><label className="label">Data de início *</label><input type="date" className="input" value={form.startDate || ''} onChange={(e) => set({ startDate: e.target.value })} max={new Date().toISOString().slice(0, 10)} /></div><div className="field"><label className="label">Fator de correção via Selic</label><div className="factor-stepper"><button type="button" onClick={() => set({ selicFactor: Math.max(.5, (Number(form.selicFactor) || 1) - .005) })}>−</button><strong>{((Number(form.selicFactor) || 1) * 100).toFixed(2)}%</strong><button type="button" onClick={() => set({ selicFactor: Math.min(1.5, (Number(form.selicFactor) || 1) + .005) })}>+</button></div><div className="text-xs text-muted">50% a 150%, em passos de 0,5%</div></div></> : <><div className="field"><label className="label">Valor alvo (R$) *</label><input className="input mono" value={form.target} onChange={(e) => set({ target: e.target.value })} inputMode="decimal" /></div><div className="field"><label className="label">Já guardado (R$)</label><input className="input mono" value={form.current} onChange={(e) => set({ current: e.target.value })} inputMode="decimal" /></div><div className="field"><label className="label">Prazo</label><input type="date" className="input" value={form.deadline || ''} onChange={(e) => set({ deadline: e.target.value })} /></div></>}
+      <div className="field span-2"><label className="label">Ícone e cor</label><div className="swatch-grid">{ICONS.map((icon) => <button type="button" key={icon} className={`swatch${form.icon === icon ? ' selected' : ''}`} onClick={() => set({ icon })}><AppIcon emoji={icon} /></button>)}</div><div className="swatch-grid" style={{ marginTop: 8 }}>{COLORS.map((color) => <button type="button" key={color} className={`color-dot${form.color === color ? ' selected' : ''}`} onClick={() => set({ color })} style={{ background: color }} />)}</div></div></div>
+    <div className="row" style={{ justifyContent: 'flex-end', marginTop: 18 }}><button type="button" className="btn" onClick={onCancel} disabled={busy}>Cancelar</button><button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Salvando...' : reverse ? 'Criar meta reversa' : 'Salvar meta'}</button></div>
+  </form>
 }
 
-function GoalCard({ goal, onUpdate, onDelete, onEdit }) {
-  const [contribution, setContribution] = useState('')
-  const percent = goal.target > 0 ? (goal.current / goal.target) * 100 : 0
-  const remaining = Math.max(0, goal.target - goal.current)
-  const left = monthsLeft(goal.deadline)
-  const perMonth = left && left > 0 ? remaining / left : remaining
-  const done = percent >= 100
-
-  const contribute = (e) => {
-    e.preventDefault()
-    const value = parseAmount(contribution)
-    if (value === 0) return
-    onUpdate(goal.id, { current: Math.max(0, goal.current + value) })
-    setContribution('')
-  }
-
-  return (
-    <div className="goal-card">
-      <div className="row-between" style={{ gap: 10 }}>
-        <div className="row" style={{ minWidth: 0 }}>
-          <div className="goal-icon" style={{ background: `${goal.color}22`, color: goal.color }}>
-            <AppIcon emoji={goal.icon} />
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div className="fw-600 truncate">{goal.name}</div>
-            <div className="text-xs text-muted">
-              {goal.deadline ? `Prazo: ${formatDate(goal.deadline)}` : 'Sem prazo definido'}
-            </div>
-          </div>
-        </div>
-        <div className="row" style={{ flex: 'none' }}>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => onEdit(goal)}
-            title="Editar"
-            aria-label={`Editar meta ${goal.name}`}
-          >
-            <Pencil size={15} strokeWidth={1.9} />
-          </button>
-          <button
-            type="button"
-            className="icon-btn danger"
-            onClick={() => onDelete(goal.id)}
-            title="Excluir"
-            aria-label={`Excluir meta ${goal.name}`}
-          >
-            <Trash2 size={15} strokeWidth={1.9} />
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <div className="row-between text-sm" style={{ marginBottom: 7, gap: 8 }}>
-          <span className="mono fw-700" style={{ color: goal.color }}>
-            {formatCurrency(goal.current)}
-          </span>
-          <span className="text-muted mono">de {formatCurrency(goal.target)}</span>
-        </div>
-        <div className="progress" style={{ height: 11 }}>
-          <div
-            className="progress-bar"
-            style={{
-              width: `${Math.min(100, percent)}%`,
-              background: done ? 'var(--income)' : goal.color,
-            }}
-          />
-        </div>
-        <div className="row-between text-xs text-muted" style={{ marginTop: 7, gap: 8 }}>
-          <span>{formatPercent(percent, 1)} concluído</span>
-          {done ? (
-            <span className="text-income fw-600 row" style={{ gap: 5 }}>
-              <PartyPopper size={12} strokeWidth={2.2} />
-              Meta alcançada!
-            </span>
-          ) : (
-            <span>Faltam {formatCurrency(remaining)}</span>
-          )}
-        </div>
-      </div>
-
-      {!done && left !== null && (
-        <div className={`insight ${left <= 0 ? 'danger' : left <= 2 ? 'warning' : 'info'}`}>
-          <span className="insight-icon">
-            {left <= 0 ? (
-              <CalendarClock size={16} strokeWidth={2} />
-            ) : (
-              <Lightbulb size={16} strokeWidth={2} />
-            )}
-          </span>
-          <div style={{ minWidth: 0 }}>
-            <div className="insight-title">
-              {left <= 0
-                ? 'Prazo vencido'
-                : `Guarde ${formatCurrency(perMonth)} por mês`}
-            </div>
-            <div className="insight-text">
-              {left <= 0
-                ? 'Reveja o prazo ou aumente os aportes.'
-                : `Faltam ${left} ${left === 1 ? 'mês' : 'meses'} para o prazo.`}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <form className="row" onSubmit={contribute}>
-        <input
-          className="input mono grow"
-          placeholder="Aportar R$..."
-          value={contribution}
-          onChange={(e) => setContribution(e.target.value)}
-          inputMode="decimal"
-          aria-label={`Aportar valor na meta ${goal.name}`}
-        />
-        <button className="btn btn-primary btn-sm" type="submit">
-          <Plus size={15} strokeWidth={2.2} />
-          Aportar
-        </button>
-      </form>
-    </div>
-  )
+function StandardGoalCard({ goal, onUpdate, onDelete, onEdit }) {
+  const [contribution, setContribution] = useState(''); const percent = goal.target > 0 ? goal.current / goal.target * 100 : 0
+  return <div className="goal-card"><div className="row-between"><div className="row"><div className="goal-icon" style={{ background: `${goal.color}22`, color: goal.color }}><AppIcon emoji={goal.icon} /></div><div><div className="fw-600">{goal.name}</div><div className="text-xs text-muted">{goal.deadline ? `Prazo: ${formatDate(goal.deadline)}` : 'Sem prazo definido'}</div></div></div><div className="row"><button type="button" className="icon-btn" onClick={() => onEdit(goal)}><Pencil size={15} /></button><button type="button" className="icon-btn danger" onClick={() => onDelete(goal.id)}><Trash2 size={15} /></button></div></div><div className="row-between text-sm" style={{ marginTop: 18 }}><strong className="mono" style={{ color: goal.color }}>{formatCurrency(goal.current)}</strong><span className="text-muted">de {formatCurrency(goal.target)}</span></div><div className="progress" style={{ marginTop: 7 }}><div className="progress-bar" style={{ width: `${Math.min(100, percent)}%`, background: goal.color }} /></div><div className="text-xs text-muted" style={{ marginTop: 7 }}>{formatPercent(percent, 1)} concluído</div><form className="row" style={{ marginTop: 14 }} onSubmit={(e) => { e.preventDefault(); const value = parseAmount(contribution); if (value > 0) { onUpdate(goal.id, { current: goal.current + value }); setContribution('') } }}><input className="input mono grow" value={contribution} onChange={(e) => setContribution(e.target.value)} placeholder="Aportar R$..." inputMode="decimal" /><button className="btn btn-primary btn-sm"><Plus size={15} /> Aportar</button></form></div>
 }
 
-export default function GoalsPanel({ goals, onAdd, onUpdate, onDelete }) {
-  const [showForm, setShowForm] = useState(false)
-  const [editing, setEditing] = useState(null)
+function ReverseGoalDetails({ goal, history, contributions, events, onClose }) {
+  const entries = [...history.map((row) => ({ date: row.applied_on, type: 'correction', id: `h-${row.id}`, row })), ...contributions.map((row) => ({ date: row.occurred_on, type: 'contribution', id: `c-${row.id}`, row })), ...events.filter((row) => row.event_type !== 'contribution').map((row) => ({ date: row.occurred_on, type: row.event_type, id: `e-${row.id}`, row }))].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.id.localeCompare(b.id))
+  const labels = { created: 'Meta criada', recalculated: 'Histórico recalculado', completed: 'Meta concluída' }
+  return <div className="reverse-modal-backdrop" role="presentation" onMouseDown={onClose}><section className="reverse-details" role="dialog" aria-modal="true" aria-label={`Detalhes de ${goal.name}`} onMouseDown={(event) => event.stopPropagation()}><div className="row-between"><div><div className="card-title">Memória de cálculo</div><div className="card-sub">{goal.name}</div></div><button className="icon-btn" type="button" onClick={onClose} aria-label="Fechar detalhes"><X size={18} /></button></div><div className="reverse-summary"><span>Valor original<strong>{formatCurrency(goal.reverseOriginalAmount)}</strong></span><span>Total aportado<strong>{formatCurrency(goal.reverseTotalContributed)}</strong></span><span>Correção acumulada<strong>{formatCurrency(goal.reverseCorrectionAmount)}</strong></span><span>Saldo restante<strong>{formatCurrency(goal.reverseRemainingAmount)}</strong></span><span>Data de início<strong>{formatDate(goal.reverseStartDate)}</strong></span><span>Conclusão<strong>{goal.reverseCompletedAt ? formatDate(goal.reverseCompletedAt) : 'Em andamento'}</strong></span><span>Selic utilizada<strong>{(goal.reverseSelicFactor * 100).toFixed(2)}%</strong></span><span>Correções realizadas<strong>{history.length}</strong></span></div><p className="hint">O saldo restante foi corrigido utilizando {(goal.reverseSelicFactor * 100).toFixed(2)}% da Selic de cada mês disponível.</p><div className="reverse-timeline">{entries.map((entry) => entry.type === 'correction' ? <article key={entry.id}><strong>{formatDate(entry.date)} · Correção mensal</strong><p>Saldo antes: {formatCurrency(Number(entry.row.balance_before))}. Selic: {Number(entry.row.selic_rate_percent).toFixed(4)}%; fator: {(Number(entry.row.selic_factor) * 100).toFixed(2)}%; taxa efetiva: {(Number(entry.row.selic_rate_percent) * Number(entry.row.selic_factor)).toFixed(4)}%.</p><p>Correção: {formatCurrency(Number(entry.row.correction_amount))}. Saldo após correção e aporte do mês: {formatCurrency(Number(entry.row.balance_after))}.</p></article> : entry.type === 'contribution' ? <article key={entry.id}><strong>{formatDate(entry.date)} · Aporte</strong><p>{formatCurrency(Number(entry.row.amount))}{entry.row.note ? ` — ${entry.row.note}` : ''}.</p></article> : <article key={entry.id}><strong>{formatDate(entry.date)} · {labels[entry.type]}</strong><p>{entry.row.details?.message || 'Evento registrado.'}</p></article>)}</div></section></div>
+}
 
-  const totalTarget = goals.reduce((s, g) => s + g.target, 0)
-  const totalCurrent = goals.reduce((s, g) => s + g.current, 0)
-  const totalPercent = totalTarget > 0 ? (totalCurrent / totalTarget) * 100 : 0
+function ReverseGoalCard({ goal, history, contributions, events, onContribution, onDelete }) {
+  const [busy, setBusy] = useState(false); const [detailsOpen, setDetailsOpen] = useState(false); const [form, setForm] = useState({ amount: '', occurredOn: new Date().toISOString().slice(0, 10), note: '' }); const remaining = goal.reverseRemainingAmount
+  const submit = async (event) => { event.preventDefault(); if (parseAmount(form.amount) <= 0 || !form.occurredOn) return; setBusy(true); const saved = await onContribution(goal.id, { amount: parseAmount(form.amount), occurredOn: form.occurredOn, note: form.note }); setBusy(false); if (saved) setForm({ amount: '', occurredOn: new Date().toISOString().slice(0, 10), note: '' }) }
+  return <div className="goal-card reverse-goal-card"><div className="row-between"><div className="row"><div className="goal-icon" style={{ background: `${goal.color}22`, color: goal.color }}><AppIcon emoji={goal.icon} /></div><div><div className="fw-600">{goal.name}</div><span className="reverse-badge">Meta Reversa</span></div></div><button type="button" className="icon-btn danger" onClick={() => onDelete(goal.id)} title="Excluir meta"><Trash2 size={15} /></button></div><div className="reverse-summary"><span>Valor original<strong>{formatCurrency(goal.reverseOriginalAmount)}</strong></span><span>Total aportado<strong>{formatCurrency(goal.reverseTotalContributed)}</strong></span><span>Correção acumulada<strong>{formatCurrency(goal.reverseCorrectionAmount)}</strong></span><span>Saldo restante<strong>{formatCurrency(remaining)}</strong></span><span>Progresso<strong>{Number(goal.reverseProgressPercent).toFixed(0)}%</strong></span></div><div className="progress" style={{ marginTop: 7 }}><div className="progress-bar" style={{ width: `${goal.reverseProgressPercent}%`, background: goal.color }} /></div>{remaining <= 0 ? <div className="insight success">Meta reversa concluída em {formatDate(goal.reverseCompletedAt)}. O saldo foi zerado e não receberá novas correções.</div> : <form className="stack" style={{ gap: 9, marginTop: 14 }} onSubmit={submit}><label className="text-xs fw-600">Em qual data este aporte realmente foi realizado? *</label><div className="row"><input className="input mono grow" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="Valor do aporte" inputMode="decimal" required /><input type="date" className="input" value={form.occurredOn} min={goal.reverseStartDate} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setForm({ ...form, occurredOn: e.target.value })} required /></div><input className="input" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Observação (opcional)" maxLength="500" /><button className="btn btn-primary btn-sm" disabled={busy}>{busy ? 'Recalculando...' : 'Adicionar aporte'}</button></form>}<button type="button" className="btn btn-sm" style={{ marginTop: 14 }} onClick={() => setDetailsOpen(true)}>Mais detalhes</button>{detailsOpen && <ReverseGoalDetails goal={goal} history={history} contributions={contributions} events={events} onClose={() => setDetailsOpen(false)} />}</div>
+}
 
-  const handleSave = (data) => {
-    if (editing) onUpdate(editing.id, data)
-    else onAdd(data)
-    setShowForm(false)
-    setEditing(null)
-  }
-
-  return (
-    <div className="stack">
-      <div className="card">
-        <div className="card-head">
-          <div style={{ minWidth: 0 }}>
-            <div className="card-title">Metas de economia</div>
-            <div className="card-sub">
-              {goals.length
-                ? `${formatCurrency(totalCurrent)} guardados de ${formatCurrency(totalTarget)} (${formatPercent(totalPercent)})`
-                : 'Defina objetivos e acompanhe seu progresso'}
-            </div>
-          </div>
-          {!showForm && (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => {
-                setEditing(null)
-                setShowForm(true)
-              }}
-            >
-              <Plus size={15} strokeWidth={2.2} />
-              Nova meta
-            </button>
-          )}
-        </div>
-
-        {goals.length > 0 && (
-          <div className="progress" style={{ height: 12 }}>
-            <div
-              className="progress-bar ok"
-              style={{ width: `${Math.min(100, totalPercent)}%` }}
-            />
-          </div>
-        )}
-      </div>
-
-      {showForm && (
-        <GoalForm
-          initial={
-            editing
-              ? {
-                  ...editing,
-                  target: String(editing.target),
-                  current: String(editing.current),
-                }
-              : null
-          }
-          onSave={handleSave}
-          onCancel={() => {
-            setShowForm(false)
-            setEditing(null)
-          }}
-        />
-      )}
-
-      {goals.length === 0 && !showForm ? (
-        <div className="card">
-          <div className="empty">
-            <div className="empty-icon">
-              <Trophy size={22} strokeWidth={1.6} />
-            </div>
-            <div className="empty-title">Nenhuma meta cadastrada</div>
-            <div className="text-sm">
-              Crie metas como reserva de emergência, viagem ou troca de carro.
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="grid-3">
-          {goals.map((goal) => (
-            <GoalCard
-              key={goal.id}
-              goal={goal}
-              onUpdate={onUpdate}
-              onDelete={onDelete}
-              onEdit={(g) => {
-                setEditing(g)
-                setShowForm(true)
-                window.scrollTo({ top: 0, behavior: 'smooth' })
-              }}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
+export default function GoalsPanel({ goals, reverseHistory, reverseContributions, reverseEvents, onAdd, onAddReverse, onAddReverseContribution, onUpdate, onDelete }) {
+  const [showForm, setShowForm] = useState(false); const [editing, setEditing] = useState(null); const totalTarget = goals.reduce((sum, goal) => sum + goal.target, 0); const totalCurrent = goals.reduce((sum, goal) => sum + goal.current, 0)
+  const save = async (data) => data.goalType === 'reverse' ? onAddReverse(data) : (editing ? onUpdate(editing.id, data) : onAdd(data))
+  return <div className="stack"><div className="card"><div className="card-head"><div><div className="card-title">Metas de economia</div><div className="card-sub">{goals.length ? `${formatCurrency(totalCurrent)} recompostos ou guardados de ${formatCurrency(totalTarget)}` : 'Defina objetivos e acompanhe seu progresso'}</div></div>{!showForm && <button type="button" className="btn btn-primary btn-sm" onClick={() => { setEditing(null); setShowForm(true) }}><Plus size={15} /> Nova meta</button>}</div></div>{showForm && <GoalForm initial={editing ? { ...editing, target: String(editing.target), current: String(editing.current) } : null} onSave={save} onCancel={() => { setShowForm(false); setEditing(null) }} />}{goals.length === 0 && !showForm ? <div className="card empty"><div className="empty-icon"><Trophy size={22} /></div><div className="empty-title">Nenhuma meta cadastrada</div><div className="text-sm">Crie uma meta comum ou uma Meta Reversa.</div></div> : <div className="grid-3">{goals.map((goal) => goal.goalType === 'reverse' ? <ReverseGoalCard key={goal.id} goal={goal} history={reverseHistory.filter((row) => row.goal_id === goal.id)} contributions={reverseContributions.filter((row) => row.goal_id === goal.id)} events={reverseEvents.filter((row) => row.goal_id === goal.id)} onContribution={onAddReverseContribution} onDelete={onDelete} /> : <StandardGoalCard key={goal.id} goal={goal} onUpdate={onUpdate} onDelete={onDelete} onEdit={(item) => { setEditing(item); setShowForm(true) }} />)}</div>}</div>
 }
