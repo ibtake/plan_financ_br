@@ -3385,7 +3385,7 @@ canvas {
   }
 }
 
-.reverse-card-main{display:flex;align-items:center;gap:10px;width:100%;padding:0;border:0;background:transparent;text-align:left;color:inherit}.reverse-card-main span:last-child{display:grid;gap:3px}.reverse-card-main small{color:var(--muted)}.aporte-modal{display:grid;gap:10px}.aporte-value{min-height:48px;font-size:1.1rem}
+.reverse-card-main{display:flex;align-items:center;gap:10px;flex:1;min-width:0;padding:0;border:0;background:transparent;text-align:left;color:inherit}.reverse-card-main span:last-child{display:grid;gap:3px}.reverse-card-main small{color:var(--muted)}.aporte-modal{display:grid;gap:10px}.aporte-value{min-height:48px;font-size:1.1rem}
 
 /* Meta Reversa: resumo persistido e memoria de calculo. */
 .reverse-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:16px; }
@@ -3397,7 +3397,14 @@ canvas {
 .reverse-timeline article { border-left:3px solid var(--primary); padding:9px 12px; border-radius:0 8px 8px 0; background:var(--surface-2); }
 .reverse-timeline p { margin:5px 0 0; font-size:.82rem; color:var(--muted); line-height:1.45; }
 @media (max-width: 768px) { .reverse-modal-backdrop { align-items:flex-end; padding:0; } .reverse-details { width:100%; max-height:88vh; border-radius:18px 18px 0 0; padding:18px; } }
-.goal-date-input { min-height: 42px; height: 42px; }
+/* Datas seguem a mesma altura dos demais .input e nunca ultrapassam a coluna
+   do formulario, inclusive no controle nativo de navegadores moveis. */
+.goal-date-input {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  box-sizing: border-box;
+}
 .goal-badge { display: inline-flex; width: fit-content; margin-top: 4px; padding: 2px 7px; border: 1px solid currentColor; border-radius: 999px; background: transparent; font-size: 10px; font-weight: 700; }
 .reverse-badge { color: var(--primary); }
 .standard-badge { color: var(--income); }
@@ -3405,3 +3412,13 @@ canvas {
 .standard-card-main { display:flex; align-items:center; gap:10px; padding:0; border:0; background:transparent; color:inherit; text-align:left; }
 .standard-card-main span:last-child { display:grid; gap:2px; }
 .reverse-timeline-contribution { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.reverse-timeline-info { min-width:0; }
+.reverse-timeline-edit { flex:0 0 auto; white-space:nowrap; }
+@media (max-width:420px) { .reverse-timeline-edit { width:40px; min-width:40px; padding-inline:0; justify-content:center; } .reverse-timeline-edit-label { display:none; } }
+@media (max-width:330px) { .reverse-timeline-contribution { flex-wrap:wrap; align-items:flex-start; } .reverse-timeline-edit { margin-left:auto; } }
+
+/* Bloqueia interacoes enquanto a exclusao da meta e confirmada e recarregada. */
+.sync-overlay { position:fixed; z-index:300; inset:0; display:grid; place-items:center; padding:24px; background:rgb(15 23 42 / .58); }
+.sync-overlay-card { width:min(320px,100%); display:grid; justify-items:center; gap:12px; padding:28px 24px; border:1px solid var(--border); border-radius:16px; background:var(--surface); box-shadow:0 24px 80px rgb(0 0 0 / .3); text-align:center; }
+.sync-overlay-card .spinner { width:32px; height:32px; }
+.sync-overlay-card span { color:var(--text-muted); font-size:13px; line-height:1.45; }

@@ -93,3 +93,27 @@ Uma atualizacao so esta pronta quando o build e a validacao de migracoes passam,
 nenhum segredo ou artefato local foi incluido, a compatibilidade foi revisada e
 o procedimento de publicacao/rollback foi informado. Nao declare que o banco ou
 a producao foram atualizados se apenas os arquivos locais foram modificados.
+
+
+## Code exploration policy
+
+Call the jcodemunch_guide tool and strictly follow its instructions.
+
+## jCodeMunch usage
+
+Use jCodeMunch as the primary mechanism for understanding and exploring this codebase.
+
+Before reading source files directly:
+
+1. Search the jCodeMunch index.
+2. Search for relevant symbols.
+3. Retrieve only the required functions, classes, methods, or definitions.
+4. Prefer symbol-level source retrieval instead of reading complete files.
+5. Use dependency/call/reference analysis before modifying shared code.
+6. Read complete source files only when jCodeMunch cannot provide enough context.
+
+Avoid recursively reading directories or opening many source files merely to understand the architecture.
+
+After significant source-code changes, ensure the jCodeMunch index is refreshed when necessary.
+
+The goal is to minimize unnecessary context usage while maintaining enough information to make safe code changes.

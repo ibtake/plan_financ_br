@@ -180,6 +180,15 @@ function AuthenticatedApp() {
 
   return (
     <div className="app-shell">
+      {finance.isDeletingGoal && (
+        <div className="sync-overlay" role="status" aria-live="assertive" aria-label="Atualizando metas">
+          <div className="sync-overlay-card">
+            <div className="spinner" />
+            <strong>Atualizando metas...</strong>
+            <span>Excluindo a meta e conferindo seus dados.</span>
+          </div>
+        </div>
+      )}
       <Sidebar active={activeTab} onChange={setActiveTab} badges={{ transactions: pendingCount }} />
 
       <div className="app-main">
@@ -251,7 +260,9 @@ function AuthenticatedApp() {
               onAddReverseContribution={finance.addReverseGoalContribution}
               onUpdateReverseContribution={finance.updateReverseGoalContribution}
               onUpdate={finance.updateGoal}
+              onUpdateReverse={finance.updateReverseGoal}
               onDelete={finance.deleteGoal}
+              isDeleting={finance.isDeletingGoal}
             />
           )}
           {activeTab === 'categories' && (
