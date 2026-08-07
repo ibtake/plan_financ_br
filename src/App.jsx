@@ -249,6 +249,7 @@ function AuthenticatedApp() {
               onAdd={finance.addGoal}
               onAddReverse={finance.addReverseGoal}
               onAddReverseContribution={finance.addReverseGoalContribution}
+              onUpdateReverseContribution={finance.updateReverseGoalContribution}
               onUpdate={finance.updateGoal}
               onDelete={finance.deleteGoal}
             />
