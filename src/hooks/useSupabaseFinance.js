@@ -451,6 +451,7 @@ export function useSupabaseFinance() {
     const txs = Array.isArray(data.transactions) ? data.transactions.map(normalizeTransaction) : transactions
     const cats = Array.isArray(data.categories) && data.categories.length ? data.categories : categories
     const nextBudgets = data.budgets && typeof data.budgets === 'object' ? data.budgets : budgets
+    const nextStandardGoalContributions = Array.isArray(data.standardGoalContributions) ? data.standardGoalContributions : []
     const nextGoals = Array.isArray(data.goals) ? data.goals.map((goal) => ({ ...goal, id: goal.id || uid(), name: String(goal.name || 'Meta'), target: Math.abs(Number(goal.target) || 0), current: Math.abs(Number(goal.current) || 0), deadline: goal.deadline || '', icon: goal.icon || '🎯', color: goal.color || '#6366f1' })) : goals
 
     // REQ 9 (auditoria V-05, Opcao B): uma unica RPC transacional substitui o
@@ -473,7 +474,7 @@ export function useSupabaseFinance() {
         limit_amount: Number(amount) || 0,
       })),
       goals: nextGoals.map((goal) => ({ ...toGoal(goal, user.id), goal_type: goal.goalType || goal.goal_type || 'standard', reverse_original_amount: goal.reverseOriginalAmount ?? goal.reverse_original_amount, reverse_remaining_amount: goal.reverseRemainingAmount ?? goal.reverse_remaining_amount, reverse_corrected_amount: goal.reverseCorrectedAmount ?? goal.reverse_corrected_amount, reverse_start_date: goal.reverseStartDate ?? goal.reverse_start_date, reverse_selic_factor: goal.reverseSelicFactor ?? goal.reverse_selic_factor, reverse_completed_at: goal.reverseCompletedAt ?? goal.reverse_completed_at, reverse_total_contributed: goal.reverseTotalContributed ?? goal.reverse_total_contributed, reverse_correction_amount: goal.reverseCorrectionAmount ?? goal.reverse_correction_amount, reverse_progress_percent: goal.reverseProgressPercent ?? goal.reverse_progress_percent, reverse_monthly_contribution_average: goal.reverseMonthlyContributionAverage ?? goal.reverse_monthly_contribution_average, reverse_forecast_completion_date: goal.reverseForecastCompletionDate ?? goal.reverse_forecast_completion_date })),
-      standardGoalContributions: data.standardGoalContributions || [], reverseGoalContributions: data.reverseGoalContributions || [], reverseGoalHistory: data.reverseGoalHistory || [], reverseGoalEvents: data.reverseGoalEvents || [], reverseGoalRetentionMonths: data.reverseGoalRetentionMonths ?? null,
+      standardGoalContributions: nextStandardGoalContributions, reverseGoalContributions: data.reverseGoalContributions || [], reverseGoalHistory: data.reverseGoalHistory || [], reverseGoalEvents: data.reverseGoalEvents || [], reverseGoalRetentionMonths: data.reverseGoalRetentionMonths ?? null,
     }
 
     const { error: rpcError } = await supabase.rpc('replace_my_data', { p_data: payload })

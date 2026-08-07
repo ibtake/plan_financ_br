@@ -24,6 +24,19 @@ Atualizar o Planejador Financeiro preservando:
 - segredos fora do Git e do bundle Vite;
 - funcionamento durante a publicacao, sempre que tecnicamente possivel.
 
+## Escopo de trabalho e autorizacao de pastas
+
+1. Trabalhe exclusivamente dentro de `/app/` por padrao.
+2. Nao leia, crie, copie, altere, mova ou exclua arquivos fora de `/app/` sem
+   ordem expressa do usuario para a pasta ou arquivo externo envolvido.
+3. Em especial, nunca altere `release/`, `arquivo-documentacao/` ou qualquer
+   outra pasta paralela por inferencia, mesmo que exista uma versao relacionada
+   do aplicativo. Aguarde autorizacao explicita para cada operacao fora de
+   `/app/`.
+4. Quando uma tarefa em `/app/` exigir documentacao ou uma copia de release,
+   conclua a alteracao no aplicativo e informe quais arquivos externos seriam
+   necessarios; somente execute essas etapas apos a autorizacao expressa.
+
 ## Regras de seguranca
 
 1. Nunca leia, imprima, versione ou exponha valores de `.env`, senhas, dumps,

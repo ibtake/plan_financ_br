@@ -27,7 +27,39 @@ import {
 const AuthContext = createContext(null)
 
 /** Encerra a sessao apos este periodo sem interacao */
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000
+const LAST_ACTIVITY_KEY = 'planejador:last-activity-at'
+
+function getLastActivityAt(session) {
+  try {
+    const stored = Number(window.localStorage.getItem(LAST_ACTIVITY_KEY))
+    if (Number.isFinite(stored) && stored > 0) return stored
+  } catch {
+    // O controle continua funcionando mesmo se o navegador bloquear storage.
+  }
+  const signedInAt = Date.parse(session?.user?.last_sign_in_at || '')
+  return Number.isFinite(signedInAt) ? signedInAt : Date.now()
+}
+
+function markUserActivity() {
+  try {
+    window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()))
+  } catch {
+    // O temporizador em memoria continua sendo a protecao de reserva.
+  }
+}
+
+function clearUserActivity() {
+  try {
+    window.localStorage.removeItem(LAST_ACTIVITY_KEY)
+  } catch {
+    // Nada a limpar quando storage nao esta disponivel.
+  }
+}
+
+function isIdleSession(session) {
+  return Date.now() - getLastActivityAt(session) >= IDLE_TIMEOUT_MS
+}
 
 /** Senha considerada aceitavel pela politica da aplicacao */
 export function validatePassword(password) {
@@ -81,6 +113,11 @@ export function AuthProvider({ children }) {
 
     const applySession = async (nextSession) => {
       if (!active) return
+      if (nextSession && isIdleSession(nextSession)) {
+        clearUserActivity()
+        await supabase.auth.signOut()
+        nextSession = null
+      }
       setSession(nextSession || null)
       setUser(nextSession?.user || null)
       if (nextSession) await refreshAssurance()
@@ -93,7 +130,8 @@ export function AuthProvider({ children }) {
 
     supabase.auth.getSession().then(({ data }) => applySession(data.session))
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'SIGNED_IN') markUserActivity()
       void applySession(newSession)
     })
 
@@ -104,6 +142,12 @@ export function AuthProvider({ children }) {
       if (!active || document.visibilityState !== 'visible') return
       const { data: current } = await supabase.auth.getSession()
       if (!current.session) {
+        await applySession(null)
+        return
+      }
+      if (isIdleSession(current.session)) {
+        clearUserActivity()
+        await supabase.auth.signOut()
         await applySession(null)
         return
       }
@@ -136,6 +180,7 @@ export function AuthProvider({ children }) {
       if (!supabase) return
       if (reason === 'manual') await logEvent(EVENTS.LOGOUT, 'info', { reason })
       await supabase.auth.signOut()
+      clearUserActivity()
       setSession(null)
       setUser(null)
       setMfaStage('none')
@@ -147,13 +192,19 @@ export function AuthProvider({ children }) {
     if (!session) return
 
     const reset = () => {
+      markUserActivity()
       if (idleTimer.current) clearTimeout(idleTimer.current)
       idleTimer.current = setTimeout(() => {
         signOut('idle_timeout')
       }, IDLE_TIMEOUT_MS)
     }
 
-    const events = ['mousedown', 'keydown', 'touchstart', 'scroll']
+    if (isIdleSession(session)) {
+      signOut('idle_timeout')
+      return
+    }
+
+    const events = ['pointerdown', 'keydown', 'touchstart', 'scroll']
     events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
     reset()
 
