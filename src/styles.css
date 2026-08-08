@@ -640,6 +640,14 @@ canvas {
   color: var(--text);
 }
 
+/* O avatar jÃ¡ Ã© circular; o estado aberto nÃ£o deve desenhar um quadrado ao redor dele. */
+.topbar-profile-btn,
+.topbar-profile-btn:hover,
+.topbar-profile-btn.active {
+  background: transparent;
+  border-color: transparent;
+}
+
 .topbar-dot {
   position: absolute;
   top: 5px;
@@ -1852,6 +1860,75 @@ body:has(.modal-backdrop) .mobile-nav-dock {
 
 .tx-amount.reinvested {
   color: var(--reinvest);
+}
+
+/* Contas do mÃªs: no mobile, descriÃ§Ã£o/valor e vencimento/status ocupam duas linhas. */
+.fixed-expense-status {
+  display: contents;
+}
+
+@media (max-width: 640px) {
+  .fixed-expense {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 2px;
+  }
+
+  .fixed-expense .tx-icon {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+  }
+
+  .fixed-expense .tx-main {
+    display: contents;
+  }
+
+  .fixed-expense .tx-desc {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .fixed-expense .tx-amount {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .fixed-expense .tx-meta {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .fixed-expense .fixed-expense-due {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .fixed-expense .fixed-expense-status {
+    display: flex;
+    justify-content: flex-end;
+    min-width: 0;
+    gap: 4px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .fixed-expense .fixed-expense-status .chip {
+    flex: none;
+    padding-right: 6px;
+    padding-left: 6px;
+  }
 }
 
 .tx-actions {

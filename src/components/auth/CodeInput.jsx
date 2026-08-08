@@ -46,6 +46,7 @@ export default function CodeInput({ value, onChange, disabled, autoFocus = true 
       {digits.map((digit, index) => (
         <input
           key={index}
+          name={`verification-code-${index + 1}`}
           ref={(el) => (refs.current[index] = el)}
           className="code-digit mono"
           type="text"
