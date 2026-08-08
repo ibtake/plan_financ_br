@@ -59,6 +59,7 @@ function IconPicker({ value, onChange }) {
           </span>
         </div>
         <input
+          name="icon-search"
           className="input icon-picker-search"
           type="search"
           value={search}
@@ -96,6 +97,7 @@ function IconPicker({ value, onChange }) {
 
       <div className="icon-picker-upload">
         <input
+          name="icon-upload"
           ref={inputRef}
           type="file"
           accept="image/png,image/webp"
@@ -156,6 +158,7 @@ function CategoryForm({ initial, onSave, onCancel, otherTargetTotal }) {
         <div className="field">
           <label className="label">Nome *</label>
           <input
+            name="category-name"
             className="input"
             value={form.name}
             onChange={(e) => set({ name: e.target.value })}
@@ -166,6 +169,7 @@ function CategoryForm({ initial, onSave, onCancel, otherTargetTotal }) {
         <div className="field">
           <label className="label">Tipo</label>
           <select
+            name="category-type"
             className="select"
             value={form.type}
             onChange={(e) => set({ type: e.target.value })}
@@ -187,6 +191,7 @@ function CategoryForm({ initial, onSave, onCancel, otherTargetTotal }) {
             </label>
             <input
               id="cat-target"
+              name="category-target-percentage"
               type="number"
               min="0"
               max="100"

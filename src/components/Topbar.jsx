@@ -237,7 +237,7 @@ export default function Topbar({
         <div className="popover-anchor" ref={profileRef}>
           <button
             type="button"
-            className={`topbar-btn${profileOpen ? ' active' : ''}`}
+            className={`topbar-btn topbar-profile-btn${profileOpen ? ' active' : ''}`}
             onClick={() => setProfileOpen((open) => !open)}
             title={user?.email}
             aria-label="Menu da conta"

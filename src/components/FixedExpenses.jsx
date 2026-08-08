@@ -54,7 +54,7 @@ export default function FixedExpenses({ occurrences, categories, onTogglePaid })
             const soon = !tx.paid && days >= 0 && days <= 5
 
             return (
-              <div className="tx" key={tx.id}>
+              <div className="tx fixed-expense" key={tx.id}>
                 <button
                   type="button"
                   className="tx-icon tx-icon-btn"
@@ -74,19 +74,21 @@ export default function FixedExpenses({ occurrences, categories, onTogglePaid })
                     {tx.description}
                   </div>
                   <div className="tx-meta">
-                    <span>vence {formatDate(tx.date)}</span>
-                    {overdue && (
-                      <span className="chip expense">
-                        <AlertTriangle size={11} strokeWidth={2.2} />
-                        atrasada
-                      </span>
-                    )}
-                    {soon && (
-                      <span className="chip warning">
-                        {days === 0 ? 'vence hoje' : `em ${days} ${days === 1 ? 'dia' : 'dias'}`}
-                      </span>
-                    )}
-                    {tx.paid && <span className="chip income">pago</span>}
+                    <span className="fixed-expense-due">vence {formatDate(tx.date)}</span>
+                    <span className="fixed-expense-status">
+                      {overdue && (
+                        <span className="chip expense">
+                          <AlertTriangle size={11} strokeWidth={2.2} />
+                          atrasada
+                        </span>
+                      )}
+                      {soon && (
+                        <span className="chip warning">
+                          {days === 0 ? 'vence hoje' : `em ${days} ${days === 1 ? 'dia' : 'dias'}`}
+                        </span>
+                      )}
+                      {tx.paid && <span className="chip income">pago</span>}
+                    </span>
                   </div>
                 </div>
 

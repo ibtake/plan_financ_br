@@ -49,6 +49,7 @@ function BudgetRow({ category, spent, limit, onChange, onRemove }) {
           {editing ? (
             <>
               <input
+                name={`budget-limit-${category.id}`}
                 className="input mono"
                 style={{ width: 120 }}
                 value={draft}
@@ -196,6 +197,7 @@ export default function BudgetPanel({ budgets, byCategory, categories, monthKey,
 
         <form className="filters" onSubmit={handleAdd}>
           <select
+            name="budget-category"
             className="select grow"
             value={newCategory}
             onChange={(e) => setNewCategory(e.target.value)}
@@ -209,6 +211,7 @@ export default function BudgetPanel({ budgets, byCategory, categories, monthKey,
             ))}
           </select>
           <input
+            name="budget-limit"
             className="input mono"
             style={{ width: 150 }}
             placeholder="Limite R$"
