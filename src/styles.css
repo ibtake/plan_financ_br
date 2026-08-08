@@ -202,6 +202,37 @@ canvas {
   flex-direction: column;
 }
 
+/* No desktop, a navegação ocupa a viewport e somente a coluna de conteúdo
+   recebe rolagem. A barra lateral permanece visível, enquanto a topbar fica
+   fixa no topo da própria área rolável. O seletor de mês continua rolando
+   junto do conteúdo, como no comportamento esperado. */
+@media (min-width: 901px) {
+  html,
+  body,
+  #root {
+    overflow: hidden;
+  }
+
+  .app-shell {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    position: relative;
+    height: 100dvh;
+  }
+
+  .app-main {
+    height: 100dvh;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+}
+
 .container {
   width: 100%;
   max-width: 1600px;
