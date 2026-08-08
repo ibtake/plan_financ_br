@@ -108,6 +108,7 @@ export function useSupabaseFinance() {
   const [standardGoalContributions, setStandardGoalContributions] = useState([])
   const [reverseGoalEvents, setReverseGoalEvents] = useState([])
   const [reverseGoalRetentionMonths, setReverseGoalRetentionMonths] = useState(null)
+  const [reverseGoalRetentionLoaded, setReverseGoalRetentionLoaded] = useState(false)
   const [theme, setTheme] = useLocalStorage('planejador:theme', 'auto')
   const [transactionFormFields, setTransactionFormFieldsState] = useState(DEFAULT_TRANSACTION_FORM_FIELDS)
   const [loading, setLoading] = useState(true)
@@ -198,6 +199,7 @@ export function useSupabaseFinance() {
       setStandardGoalContributions(standardContributionsResult.data || [])
       setReverseGoalEvents(reverseEventsResult.data || [])
       setReverseGoalRetentionMonths(retentionResult.data?.completed_goal_retention_months ?? null)
+      setReverseGoalRetentionLoaded(true)
     })
 
     void profileRequest.then((profileResult) => {
@@ -577,7 +579,7 @@ export function useSupabaseFinance() {
   return { transactions, categories, budgets, goals, theme, transactionFormFields, loading, error, isDeletingGoal, goalDeletionPhase, reload: load,
     addTransaction, updateTransaction, deleteTransaction, duplicateTransaction, togglePaid,
     addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateReverseGoalContribution, addStandardGoalContribution, updateStandardGoalContribution, updateGoal, updateReverseGoal, deleteGoal,
-    reverseGoalHistory, reverseGoalContributions, standardGoalContributions, reverseGoalEvents, reverseGoalRetentionMonths,
+    reverseGoalHistory, reverseGoalContributions, standardGoalContributions, reverseGoalEvents, reverseGoalRetentionMonths, reverseGoalRetentionLoaded,
     setReverseGoalRetention,
     setTheme, setTransactionFormFields, exportData, importData, clearAll }
 }
