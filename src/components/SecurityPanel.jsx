@@ -6,11 +6,13 @@ import CodeInput from './auth/CodeInput.jsx'
 function EventList() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     const { data } = await fetchEvents(60)
     setEvents(data || [])
+    setExpanded(false)
     setLoading(false)
   }, [])
 
@@ -20,6 +22,15 @@ function EventList() {
     ['critical', 'warning'].includes(event.severity) &&
     new Date(event.created_at).getTime() > Date.now() - 24 * 60 * 60 * 1000,
   ).length
+  const lastSuccessfulLogin = events.find((event) => event.event_type === 'login_success')
+  const attentionEvents = events
+    .filter((event) => ['critical', 'warning'].includes(event.severity))
+    .slice(0, 4)
+  const summaryEvents = [lastSuccessfulLogin, ...attentionEvents]
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  const visibleEvents = expanded ? events : summaryEvents
+  const hasMoreEvents = events.length > summaryEvents.length
 
   return (
     <section className="card">
@@ -39,8 +50,9 @@ function EventList() {
       {loading ? <div className="empty">Carregando histórico...</div> : events.length === 0 ? (
         <div className="empty">Nenhum evento registrado ainda.</div>
       ) : (
+        <>
         <div className="security-events">
-          {events.map((event) => {
+          {visibleEvents.map((event) => {
             const label = EVENT_LABELS[event.event_type] || { icon: '•', text: event.event_type }
             return (
               <div className={`security-event ${event.severity}`} key={event.id}>
@@ -63,6 +75,19 @@ function EventList() {
             )
           })}
         </div>
+        {hasMoreEvents && (
+          <div className="settings-actions" style={{ marginTop: 14 }}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setExpanded((value) => !value)}
+              aria-expanded={expanded}
+            >
+              {expanded ? 'Mostrar menos' : 'Mais detalhes'}
+            </button>
+          </div>
+        )}
+        </>
       )}
     </section>
   )
