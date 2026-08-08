@@ -108,7 +108,7 @@ export function useSupabaseFinance() {
   const [standardGoalContributions, setStandardGoalContributions] = useState([])
   const [reverseGoalEvents, setReverseGoalEvents] = useState([])
   const [reverseGoalRetentionMonths, setReverseGoalRetentionMonths] = useState(null)
-  const [theme, setTheme] = useLocalStorage('planejador:theme', 'light')
+  const [theme, setTheme] = useLocalStorage('planejador:theme', 'auto')
   const [transactionFormFields, setTransactionFormFieldsState] = useState(DEFAULT_TRANSACTION_FORM_FIELDS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
