@@ -338,6 +338,7 @@ export function AuthProvider({ children }) {
     if (!supabase) return { error: 'Supabase nao configurado.' }
     const { data, error } = await supabase.auth.mfa.enroll({
       factorType: 'totp',
+      issuer: 'DinDin 10!',
       friendlyName: `DinDin 10! ${new Date().toISOString().slice(0, 10)}`,
     })
     if (error) return { error: translateAuthError(error) }
