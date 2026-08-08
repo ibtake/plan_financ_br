@@ -91,6 +91,11 @@ continuam com seus nomes e conteúdos internos.
 - `src/App.jsx`: composição das telas e fluxos principais
 - `src/hooks/useFinance.js`: estado, persistência e regras financeiras
 - `src/hooks/useSupabaseFinance.js`: persistência financeira no Supabase
+- `src/lib/audit.js`: camada compartilhada de segurança; centraliza auditoria, detecção de violações RLS e o `guarded()` usado pelos fluxos de autenticação e finanças
+- `src/lib/supabase.js`: cliente e adaptações compartilhadas do Supabase
+- `src/contexts/loginAttempts.js`: bloqueio local de tentativas de login, exclusivo do domínio de autenticação
+- `src/contexts/authAudit.js`: adaptador de autenticação para a camada compartilhada de auditoria
+- `src/utils/format.js`: utilitários transversais de formatação e normalização
 - `src/utils/recurrence.js`: expansão de recorrências e parcelas
 - `src/utils/exporters.js`: importação JSON e exportações JSON/CSV
 - `src/components/`: formulários, painéis, gráficos e listas

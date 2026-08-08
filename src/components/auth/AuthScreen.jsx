@@ -2,9 +2,8 @@
 // Tela de autenticacao: login, recuperacao e desafio MFA
 // =====================================================================
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext.jsx'
-import { configurationProblem } from '../../lib/supabase.js'
 import CodeInput from './CodeInput.jsx'
 import TurnstileCaptcha, { isTurnstileConfigured } from './TurnstileCaptcha.jsx'
 
@@ -23,7 +22,7 @@ export default function AuthScreen() {
   const [captchaToken, setCaptchaToken] = useState(null)
   const submittedMfaCode = useRef(null)
 
-  const missingConfig = useMemo(() => configurationProblem(), [])
+  const missingConfig = auth.configurationProblem
   const captchaEnabled = isTurnstileConfigured()
 
   useEffect(() => {

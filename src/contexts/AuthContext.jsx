@@ -14,15 +14,14 @@
 //   - Ha logout automatico por inatividade.
 // =====================================================================
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { supabase, isSupabaseConfigured, translateAuthError } from '../lib/supabase.js'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { supabase, isSupabaseConfigured, configurationProblem, translateAuthError } from '../lib/supabase.js'
+import { AUTH_EVENTS, logAuthEvent } from './authAudit.js'
 import {
-  EVENTS,
-  logEvent,
   registerFailedLogin,
   clearLoginAttempts,
   getLoginLock,
-} from '../lib/audit.js'
+} from './loginAttempts.js'
 
 const AuthContext = createContext(null)
 
@@ -76,6 +75,7 @@ export function AuthProvider({ children }) {
   // 'none' = sem MFA | 'required' = precisa do codigo | 'verified' = liberado
   const [mfaStage, setMfaStage] = useState('none')
   const [assuranceLevel, setAssuranceLevel] = useState(null)
+  const missingConfig = useMemo(() => configurationProblem(), [])
   const idleTimer = useRef(null)
   const lastActivityAt = useRef(0)
   const refreshInFlight = useRef(null)
@@ -211,7 +211,7 @@ export function AuthProvider({ children }) {
   const signOut = useCallback(
     async (reason = 'manual') => {
       if (!supabase) return
-      if (reason === 'manual') await logEvent(EVENTS.LOGOUT, 'info', { reason })
+      if (reason === 'manual') await logAuthEvent(AUTH_EVENTS.LOGOUT, 'info', { reason })
       await supabase.auth.signOut()
       clearUserActivity()
       lastActivityAt.current = 0
@@ -297,7 +297,7 @@ export function AuthProvider({ children }) {
       const attempt = registerFailedLogin()
       // O evento so e gravado se houver sessao; sem sessao, o proprio
       // rate limit do Supabase e a defesa ativa.
-      await logEvent(EVENTS.LOGIN_FAILED, 'warning', { attempts: attempt.attempts })
+      await logAuthEvent(AUTH_EVENTS.LOGIN_FAILED, 'warning', { attempts: attempt.attempts })
       const restantes = attempt.max - attempt.attempts
       const aviso =
         !attempt.locked && restantes > 0 && restantes <= 2
@@ -313,7 +313,7 @@ export function AuthProvider({ children }) {
       return { data, mfaRequired: true }
     }
 
-    await logEvent(EVENTS.LOGIN_SUCCESS, 'info', {})
+    await logAuthEvent(AUTH_EVENTS.LOGIN_SUCCESS, 'info', {})
     return { data }
   }, [refreshAssurance])
 
@@ -324,7 +324,7 @@ export function AuthProvider({ children }) {
       { redirectTo: `${window.location.origin}/`, ...(captchaToken ? { captchaToken } : {}) },
     )
     if (error) return { error: translateAuthError(error) }
-    await logEvent(EVENTS.PASSWORD_RESET, 'warning', {})
+    await logAuthEvent(AUTH_EVENTS.PASSWORD_RESET, 'warning', {})
     // Resposta identica mesmo se o e-mail nao existir (anti-enumeracao)
     return { ok: true }
   }, [])
@@ -335,7 +335,7 @@ export function AuthProvider({ children }) {
     if (!strength.valid) return { error: 'A nova senha nao atende a politica de seguranca.' }
     const { error } = await supabase.auth.updateUser({ password: newPassword })
     if (error) return { error: translateAuthError(error) }
-    await logEvent(EVENTS.PASSWORD_CHANGED, 'warning', {})
+    await logAuthEvent(AUTH_EVENTS.PASSWORD_CHANGED, 'warning', {})
     return { ok: true }
   }, [])
 
@@ -374,10 +374,10 @@ export function AuthProvider({ children }) {
         code: String(code || '').replace(/\D/g, ''),
       })
       if (error) {
-        await logEvent(EVENTS.MFA_FAILED, 'warning', { context: 'enrollment' })
+        await logAuthEvent(AUTH_EVENTS.MFA_FAILED, 'warning', { context: 'enrollment' })
         return { error: translateAuthError(error) }
       }
-      await logEvent(EVENTS.MFA_ENROLLED, 'warning', {})
+      await logAuthEvent(AUTH_EVENTS.MFA_ENROLLED, 'warning', {})
       await refreshAssurance()
       return { ok: true }
     },
@@ -397,12 +397,12 @@ export function AuthProvider({ children }) {
       })
 
       if (error) {
-        await logEvent(EVENTS.MFA_FAILED, 'critical', { context: 'login' })
+        await logAuthEvent(AUTH_EVENTS.MFA_FAILED, 'critical', { context: 'login' })
         return { error: translateAuthError(error) }
       }
 
-      await logEvent(EVENTS.MFA_OK, 'info', {})
-      await logEvent(EVENTS.LOGIN_SUCCESS, 'info', { mfa: true })
+      await logAuthEvent(AUTH_EVENTS.MFA_OK, 'info', {})
+      await logAuthEvent(AUTH_EVENTS.LOGIN_SUCCESS, 'info', { mfa: true })
       await refreshAssurance()
       return { ok: true }
     },
@@ -421,14 +421,14 @@ export function AuthProvider({ children }) {
         code: String(code || '').replace(/\D/g, ''),
       })
       if (verify.error) {
-        await logEvent(EVENTS.MFA_FAILED, 'critical', { context: 'disable' })
+        await logAuthEvent(AUTH_EVENTS.MFA_FAILED, 'critical', { context: 'disable' })
         return { error: translateAuthError(verify.error) }
       }
 
       const { error } = await supabase.auth.mfa.unenroll({ factorId: factors[0].id })
       if (error) return { error: translateAuthError(error) }
 
-      await logEvent(EVENTS.MFA_REMOVED, 'critical', {})
+      await logAuthEvent(AUTH_EVENTS.MFA_REMOVED, 'critical', {})
       await refreshAssurance()
       return { ok: true }
     },
@@ -442,6 +442,7 @@ export function AuthProvider({ children }) {
     mfaStage,
     assuranceLevel,
     isConfigured: isSupabaseConfigured,
+    configurationProblem: missingConfig,
     signIn,
     signOut,
     resetPassword,
