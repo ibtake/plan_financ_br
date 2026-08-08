@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "DinDin 10 - controle de receitas, despesas, orçamento e metas",
+  "description": "DinDin 10! - controle de receitas, despesas, orçamento e metas",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -138,7 +138,7 @@ function sanitizeObject(obj) {
 export function importJSON(file) {
   return new Promise((resolve, reject) => {
     if (file.size > MAX_FILE_BYTES) {
-      reject(new Error('Arquivo muito grande para ser um backup do DinDin 10 (limite de 8 MB).'))
+      reject(new Error('Arquivo muito grande para ser um backup do DinDin 10! (limite de 8 MB).'))
       return
     }
 
@@ -152,11 +152,11 @@ export function importJSON(file) {
         const data = sanitized?.data ?? sanitized
 
         if (!data || typeof data !== 'object' || Array.isArray(data)) {
-          reject(new Error('Arquivo inválido: não parece um backup do DinDin 10.'))
+          reject(new Error('Arquivo inválido: não parece um backup do DinDin 10!.'))
           return
         }
         if (!Array.isArray(data.transactions)) {
-          reject(new Error('Arquivo inválido: não parece um backup do DinDin 10.'))
+          reject(new Error('Arquivo inválido: não parece um backup do DinDin 10!.'))
           return
         }
 

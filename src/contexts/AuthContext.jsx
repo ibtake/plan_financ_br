@@ -30,23 +30,19 @@ const AuthContext = createContext(null)
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000
 const LAST_ACTIVITY_KEY = 'planejador:last-activity-at'
 
-function getLastActivityAt(session) {
+function getStoredLastActivityAt() {
   try {
     const stored = Number(window.localStorage.getItem(LAST_ACTIVITY_KEY))
     if (Number.isFinite(stored) && stored > 0) return stored
   } catch {
-    // O controle continua funcionando mesmo se o navegador bloquear storage.
+    // O armazenamento local e apenas complementar ao controle em memoria.
   }
-  const signedInAt = Date.parse(session?.user?.last_sign_in_at || '')
-  return Number.isFinite(signedInAt) ? signedInAt : Date.now()
+  return 0
 }
 
-function markUserActivity() {
-  try {
-    window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()))
-  } catch {
-    // O temporizador em memoria continua sendo a protecao de reserva.
-  }
+function getSessionStartedAt(session) {
+  const signedInAt = Date.parse(session?.user?.last_sign_in_at || '')
+  return Number.isFinite(signedInAt) ? signedInAt : 0
 }
 
 function clearUserActivity() {
@@ -55,10 +51,6 @@ function clearUserActivity() {
   } catch {
     // Nada a limpar quando storage nao esta disponivel.
   }
-}
-
-function isIdleSession(session) {
-  return Date.now() - getLastActivityAt(session) >= IDLE_TIMEOUT_MS
 }
 
 /** Senha considerada aceitavel pela politica da aplicacao */
@@ -84,6 +76,31 @@ export function AuthProvider({ children }) {
   const [mfaStage, setMfaStage] = useState('none')
   const [assuranceLevel, setAssuranceLevel] = useState(null)
   const idleTimer = useRef(null)
+  const lastActivityAt = useRef(0)
+
+  const getLastActivityAt = useCallback((currentSession) => (
+    Math.max(
+      lastActivityAt.current,
+      getStoredLastActivityAt(),
+      getSessionStartedAt(currentSession),
+    )
+  ), [])
+
+  const markUserActivity = useCallback(() => {
+    const now = Date.now()
+    // Esta referencia e a fonte confiavel durante a sessao atual. Assim,
+    // interacoes continuam adiando o logout mesmo com localStorage bloqueado.
+    lastActivityAt.current = now
+    try {
+      window.localStorage.setItem(LAST_ACTIVITY_KEY, String(now))
+    } catch {
+      // Outra aba pode nao receber a atividade, mas esta aba continua protegida.
+    }
+  }, [])
+
+  const isIdleSession = useCallback((currentSession) => (
+    Date.now() - getLastActivityAt(currentSession) >= IDLE_TIMEOUT_MS
+  ), [getLastActivityAt])
 
   // ---------- Sessao ----------
 
@@ -171,7 +188,7 @@ export function AuthProvider({ children }) {
       window.removeEventListener('pageshow', handleVisibilityChange)
       window.removeEventListener('focus', handleVisibilityChange)
     }
-  }, [refreshAssurance])
+  }, [isIdleSession, markUserActivity, refreshAssurance])
 
   // ---------- Logout por inatividade ----------
 
@@ -181,6 +198,7 @@ export function AuthProvider({ children }) {
       if (reason === 'manual') await logEvent(EVENTS.LOGOUT, 'info', { reason })
       await supabase.auth.signOut()
       clearUserActivity()
+      lastActivityAt.current = 0
       setSession(null)
       setUser(null)
       setMfaStage('none')
@@ -224,7 +242,13 @@ export function AuthProvider({ children }) {
     const events = ['pointerdown', 'keydown', 'touchstart', 'scroll']
     events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
     const handleSharedActivity = (event) => {
-      if (event.key === LAST_ACTIVITY_KEY && event.newValue) schedule()
+      if (event.key === LAST_ACTIVITY_KEY && event.newValue) {
+        const updatedAt = Number(event.newValue)
+        if (Number.isFinite(updatedAt) && updatedAt > 0) {
+          lastActivityAt.current = Math.max(lastActivityAt.current, updatedAt)
+        }
+        schedule()
+      }
     }
     window.addEventListener('storage', handleSharedActivity)
     schedule()
@@ -234,7 +258,7 @@ export function AuthProvider({ children }) {
       window.removeEventListener('storage', handleSharedActivity)
       if (idleTimer.current) clearTimeout(idleTimer.current)
     }
-  }, [session, signOut])
+  }, [isIdleSession, markUserActivity, session, signOut])
 
   // ---------- Login ----------
 
@@ -314,7 +338,7 @@ export function AuthProvider({ children }) {
     if (!supabase) return { error: 'Supabase nao configurado.' }
     const { data, error } = await supabase.auth.mfa.enroll({
       factorType: 'totp',
-      friendlyName: `DinDin 10 ${new Date().toISOString().slice(0, 10)}`,
+      friendlyName: `DinDin 10! ${new Date().toISOString().slice(0, 10)}`,
     })
     if (error) return { error: translateAuthError(error) }
     return {
