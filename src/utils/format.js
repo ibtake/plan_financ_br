@@ -12,23 +12,35 @@ const brlCompact = new Intl.NumberFormat('pt-BR', {
   maximumFractionDigits: 1,
 })
 
+const PRIVATE_CURRENCY = 'R$ •••••'
+const PRIVATE_NUMBER = '•••••'
+const PRIVATE_PERCENT = '•••%'
+
+function valuesAreHidden() {
+  return typeof document !== 'undefined' && document.documentElement.dataset.privacy === 'hidden'
+}
+
 export function formatCurrency(value) {
+  if (valuesAreHidden()) return PRIVATE_CURRENCY
   const n = Number(value) || 0
   return brl.format(n)
 }
 
 export function formatCompact(value) {
+  if (valuesAreHidden()) return PRIVATE_CURRENCY
   const n = Number(value) || 0
   if (Math.abs(n) < 1000) return brl.format(n)
   return brlCompact.format(n)
 }
 
 export function formatPercent(value, digits = 0) {
+  if (valuesAreHidden()) return PRIVATE_PERCENT
   const n = Number(value) || 0
   return `${n.toFixed(digits).replace('.', ',')}%`
 }
 
 export function formatNumber(value, digits = 2) {
+  if (valuesAreHidden()) return PRIVATE_NUMBER
   return new Intl.NumberFormat('pt-BR', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,

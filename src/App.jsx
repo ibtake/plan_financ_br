@@ -18,6 +18,7 @@ import AuthScreen from './components/auth/AuthScreen.jsx'
 import RequiredPasswordChange from './components/auth/RequiredPasswordChange.jsx'
 import { useAuth } from './contexts/AuthContext.jsx'
 import { useMonthlyData } from './hooks/useFinance.js'
+import { useLocalStorage } from './hooks/useLocalStorage.js'
 import { useSupabaseFinance } from './hooks/useSupabaseFinance.js'
 import { currentMonthKey, isoDateInMonth, monthLabel } from './utils/format.js'
 import { exportCSV, exportJSON } from './utils/exporters.js'
@@ -76,17 +77,36 @@ function AuthenticatedApp() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [notificationFocus, setNotificationFocus] = useState(null)
+  const [privacyVisible, setPrivacyVisible] = useLocalStorage('finance-privacy-visible', true)
+  const [systemTheme, setSystemTheme] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  ))
   // Busca do topo: o mesmo filtro que ja existia na lista, agora acessivel
   // de qualquer painel.
   const [search, setSearch] = useState('')
   const monthly = useMonthlyData(finance.transactions, monthKey)
+  const theme = finance.theme === 'dark' || finance.theme === 'light' ? finance.theme : systemTheme
 
   useEffect(() => {
-    document.documentElement.dataset.theme = finance.theme
-    document.documentElement.style.colorScheme = finance.theme
-  }, [finance.theme])
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const updateSystemTheme = (event) => setSystemTheme(event.matches ? 'dark' : 'light')
 
-  const toggleTheme = () => finance.setTheme((value) => (value === 'dark' ? 'light' : 'dark'))
+    mediaQuery.addEventListener('change', updateSystemTheme)
+    return () => mediaQuery.removeEventListener('change', updateSystemTheme)
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    document.documentElement.style.colorScheme = theme
+    document.documentElement.dataset.privacy = privacyVisible ? 'visible' : 'hidden'
+  }, [privacyVisible, theme])
+
+  const toggleTheme = () => finance.setTheme(theme === 'dark' ? 'light' : 'dark')
+  const togglePrivacy = () => {
+    const next = !privacyVisible
+    document.documentElement.dataset.privacy = next ? 'visible' : 'hidden'
+    setPrivacyVisible(next)
+  }
   const openNew = () => { setEditing(null); setFormOpen(true) }
   const openEdit = (occurrence) => { setEditing(occurrence); setFormOpen(true) }
 
@@ -195,8 +215,10 @@ function AuthenticatedApp() {
         <Topbar
           monthKey={monthKey}
           onMonthChange={setMonthKey}
-          theme={finance.theme}
+          theme={theme}
           onToggleTheme={toggleTheme}
+          privacyVisible={privacyVisible}
+          onTogglePrivacy={togglePrivacy}
           user={auth.user}
           onSignOut={() => auth.signOut()}
           search={search}
@@ -275,7 +297,7 @@ function AuthenticatedApp() {
           {activeTab === 'security' && <SecurityPanel />}
           {activeTab === 'settings' && (
             <SettingsPanel
-              theme={finance.theme}
+              theme={theme}
               transactionCount={finance.transactions.length}
               categoryCount={finance.categories.length}
               goalCount={finance.goals.length}
