@@ -51,10 +51,10 @@ export default function AuthScreen() {
         <div className="auth-card">
           <div className="auth-brand">
             <div className="brand-logo">
-              <img className="brand-favicon" src="/favicon.png" alt="Planejador Financeiro" />
+              <img className="brand-favicon" src="/dindin-10-logo.png" alt="DinDin 10" />
             </div>
             <div>
-              <div className="brand-title">Planejador Financeiro</div>
+              <div className="brand-title">DinDin 10</div>
               <div className="brand-sub">Configuração pendente</div>
             </div>
           </div>
@@ -166,7 +166,7 @@ export default function AuthScreen() {
   // ---------- Formularios ----------
 
   const titles = {
-    login: { title: 'Entrar na sua conta', sub: 'Acesse seu planejamento financeiro' },
+    login: { title: 'Entrar na sua conta' },
     forgot: { title: 'Recuperar senha', sub: 'Enviaremos um link por e-mail' },
     mfa: { title: 'Verificação em duas etapas', sub: 'Abra seu aplicativo autenticador' },
   }
@@ -176,17 +176,17 @@ export default function AuthScreen() {
       <div className="auth-card">
         <div className="auth-brand">
           <div className="brand-logo">
-            <img className="brand-favicon" src="/favicon.png" alt="Planejador Financeiro" />
+            <img className="brand-favicon" src="/dindin-10-logo.png" alt="DinDin 10" />
           </div>
           <div>
-            <div className="brand-title">Planejador Financeiro</div>
+            <div className="brand-title">DinDin 10</div>
             <div className="brand-sub">Suas finanças sob controle</div>
           </div>
         </div>
 
         <div style={{ marginTop: 22 }}>
           <h1 className="auth-title">{titles[mode].title}</h1>
-          <div className="text-sm text-muted">{titles[mode].sub}</div>
+          {titles[mode].sub && <div className="text-sm text-muted">{titles[mode].sub}</div>}
         </div>
 
         {error && (
@@ -247,9 +247,6 @@ export default function AuthScreen() {
                 Esqueci minha senha
               </button>
             </div>
-            <p className="text-xs text-muted" style={{ margin: 0 }}>
-              Novas contas são criadas exclusivamente pelo administrador do sistema.
-            </p>
           </form>
         )}
 

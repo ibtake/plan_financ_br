@@ -22,12 +22,12 @@ function stamp() {
 
 export function exportJSON(data) {
   const payload = {
-    app: 'planejador-financeiro',
+    app: 'dindin-10',
     version: 1,
     exportedAt: new Date().toISOString(),
     data,
   }
-  download(`planejador-backup-${stamp()}.json`, JSON.stringify(payload, null, 2), 'application/json')
+  download(`dindin-10-backup-${stamp()}.json`, JSON.stringify(payload, null, 2), 'application/json')
 }
 
 function csvCell(value) {
@@ -39,7 +39,7 @@ function csvCell(value) {
   return `"${s.replace(/"/g, '""')}"`
 }
 
-export function exportCSV(rows, categories, filename = `planejador-${stamp()}.csv`) {
+export function exportCSV(rows, categories, filename = `dindin-10-${stamp()}.csv`) {
   const header = [
     'Data',
     'Tipo',
@@ -138,7 +138,7 @@ function sanitizeObject(obj) {
 export function importJSON(file) {
   return new Promise((resolve, reject) => {
     if (file.size > MAX_FILE_BYTES) {
-      reject(new Error('Arquivo muito grande para ser um backup do Planejador (limite de 8 MB).'))
+      reject(new Error('Arquivo muito grande para ser um backup do DinDin 10 (limite de 8 MB).'))
       return
     }
 
@@ -152,11 +152,11 @@ export function importJSON(file) {
         const data = sanitized?.data ?? sanitized
 
         if (!data || typeof data !== 'object' || Array.isArray(data)) {
-          reject(new Error('Arquivo inválido: não parece um backup do Planejador.'))
+          reject(new Error('Arquivo inválido: não parece um backup do DinDin 10.'))
           return
         }
         if (!Array.isArray(data.transactions)) {
-          reject(new Error('Arquivo inválido: não parece um backup do Planejador.'))
+          reject(new Error('Arquivo inválido: não parece um backup do DinDin 10.'))
           return
         }
 

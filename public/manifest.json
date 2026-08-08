@@ -1,16 +1,16 @@
 {
-  "name": "Planejador Financeiro",
-  "short_name": "Planejador",
-  "description": "Controle mensal de receitas, despesas, orçamento e metas.",
+  "name": "DinDin 10",
+  "short_name": "DinDin 10",
+  "description": "Controle de receitas, despesas, orçamento e metas.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0b1120",
-  "theme_color": "#0b1120",
+  "background_color": "#17332D",
+  "theme_color": "#17332D",
   "icons": [
     {
-      "src": "/favicon.png",
+      "src": "/dindin-10-logo.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

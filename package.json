@@ -1,9 +1,9 @@
 {
-  "name": "planejador-financeiro",
+  "name": "dindin-10",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Planejador Financeiro Mensal - controle de receitas, despesas, orcamento e metas",
+  "description": "DinDin 10 - controle de receitas, despesas, orçamento e metas",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

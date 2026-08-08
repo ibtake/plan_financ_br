@@ -1,5 +1,5 @@
 /* ============================================================
-   Planejador Financeiro — Design System
+   DinDin 10 — Design System
    Inspirado em Apple, Linear, Stripe, Vercel e Notion.
 
    Convenções:
@@ -13,14 +13,14 @@
 
 :root {
   /* Superfícies */
-  --bg: #fbfbfd;
+  --bg: #FBFAF6;
   --surface: #ffffff;
-  --surface-2: #f6f7f9;
-  --bg-soft: #f1f2f5;
+  --surface-2: #f5f2ea;
+  --bg-soft: #f1eee6;
 
   /* Bordas */
-  --border: #e8e8ed;
-  --border-strong: #d6d6dd;
+  --border: #e5e0d4;
+  --border-strong: #d8d0c0;
 
   /* Texto */
   --text: #1c1c1e;
@@ -28,9 +28,9 @@
   --text-muted: #8e8e96;
 
   /* Marca */
-  --primary: #5b5bd6;
-  --primary-hover: #4a4ac4;
-  --primary-soft: #eef0fd;
+  --primary: #0b5d4b;
+  --primary-hover: #084b3d;
+  --primary-soft: #e3f1ec;
 
   /* Semânticas */
   --income: #12876f;
@@ -66,21 +66,21 @@
 }
 
 [data-theme='dark'] {
-  --bg: #0c0c0f;
-  --surface: #151519;
-  --surface-2: #1c1c21;
-  --bg-soft: #212127;
+  --bg: #17332D;
+  --surface: #20433b;
+  --surface-2: #294e45;
+  --bg-soft: #1c3c35;
 
-  --border: #26262c;
-  --border-strong: #3a3a42;
+  --border: #31574d;
+  --border-strong: #467064;
 
   --text: #f2f2f4;
   --text-soft: #a8a8b3;
   --text-muted: #74747f;
 
-  --primary: #8b8bf0;
-  --primary-hover: #a3a3f5;
-  --primary-soft: #23233a;
+  --primary: #67c6a9;
+  --primary-hover: #8bdbc3;
+  --primary-soft: #1d5044;
 
   --income: #3fc79f;
   --income-soft: #102b25;
@@ -3417,6 +3417,7 @@ canvas {
 .standard-badge { color: var(--income); }
 .goal-card.goal-completed { border:2px solid var(--income); box-shadow:0 6px 18px rgb(34 197 94 / .16); }
 .goal-card-expandable { cursor:pointer; }
+.goals-grid { align-items:start; }
 .goal-card-expandable :is(input, select, textarea) { cursor:auto; }
 .completion-status { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; }
 .completion-trophy { flex:0 0 auto; font-size:1.05rem; line-height:1; }

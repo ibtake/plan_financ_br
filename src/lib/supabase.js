@@ -42,7 +42,7 @@ export function configurationProblem() {
 // Aviso claro no console durante o desenvolvimento
 if (!isSupabaseConfigured && import.meta.env.DEV) {
   console.warn(
-    '[Planejador] Supabase nao configurado. Defina VITE_SUPABASE_URL e ' +
+    '[DinDin 10] Supabase nao configurado. Defina VITE_SUPABASE_URL e ' +
       'VITE_SUPABASE_ANON_KEY no arquivo .env (veja .env.example).',
   )
 }
@@ -60,7 +60,7 @@ export const supabase = isSupabaseConfigured
         flowType: 'pkce',
       },
       global: {
-        headers: { 'x-application-name': 'planejador-financeiro' },
+        headers: { 'x-application-name': 'dindin-10' },
       },
     })
   : null

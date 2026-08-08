@@ -191,12 +191,29 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!session) return
 
-    const reset = () => {
+    const clearTimer = () => {
       markUserActivity()
       if (idleTimer.current) clearTimeout(idleTimer.current)
+    }
+
+    const schedule = () => {
+      if (idleTimer.current) clearTimeout(idleTimer.current)
+      const elapsed = Date.now() - getLastActivityAt(session)
+      const remaining = Math.max(0, IDLE_TIMEOUT_MS - elapsed)
       idleTimer.current = setTimeout(() => {
-        signOut('idle_timeout')
-      }, IDLE_TIMEOUT_MS)
+        // O prazo e compartilhado entre abas: uma aba sem uso nao pode
+        // encerrar uma sessao que continua ativa em outra.
+        if (isIdleSession(session)) {
+          void signOut('idle_timeout')
+        } else {
+          schedule()
+        }
+      }, remaining)
+    }
+
+    const reset = () => {
+      clearTimer()
+      schedule()
     }
 
     if (isIdleSession(session)) {
@@ -206,10 +223,15 @@ export function AuthProvider({ children }) {
 
     const events = ['pointerdown', 'keydown', 'touchstart', 'scroll']
     events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
-    reset()
+    const handleSharedActivity = (event) => {
+      if (event.key === LAST_ACTIVITY_KEY && event.newValue) schedule()
+    }
+    window.addEventListener('storage', handleSharedActivity)
+    schedule()
 
     return () => {
       events.forEach((e) => window.removeEventListener(e, reset))
+      window.removeEventListener('storage', handleSharedActivity)
       if (idleTimer.current) clearTimeout(idleTimer.current)
     }
   }, [session, signOut])
@@ -292,7 +314,7 @@ export function AuthProvider({ children }) {
     if (!supabase) return { error: 'Supabase nao configurado.' }
     const { data, error } = await supabase.auth.mfa.enroll({
       factorType: 'totp',
-      friendlyName: `Planejador ${new Date().toISOString().slice(0, 10)}`,
+      friendlyName: `DinDin 10 ${new Date().toISOString().slice(0, 10)}`,
     })
     if (error) return { error: translateAuthError(error) }
     return {

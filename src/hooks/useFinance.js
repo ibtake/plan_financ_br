@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { useLocalStorage } from './useLocalStorage.js'
 import { DEFAULT_CATEGORIES, fallbackCategoryId, normalizeType } from '../utils/categories.js'
 import { expandMonth } from '../utils/recurrence.js'
+import { DEFAULT_TRANSACTION_FORM_FIELDS, normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
 import {
   addMonths,
   currentMonthKey,
@@ -16,6 +17,7 @@ const KEYS = {
   budgets: 'planejador:budgets',
   goals: 'planejador:goals',
   theme: 'planejador:theme',
+  transactionFormFields: 'planejador:transaction-form-fields',
 }
 
 /** Normaliza um lancamento vindo do formulario */
@@ -56,6 +58,11 @@ export function useFinance() {
   const [budgets, setBudgets, resetBudgets] = useLocalStorage(KEYS.budgets, {})
   const [goals, setGoals, resetGoals] = useLocalStorage(KEYS.goals, [])
   const [theme, setTheme] = useLocalStorage(KEYS.theme, 'light')
+  const [transactionFormFields, setStoredTransactionFormFields] = useLocalStorage(KEYS.transactionFormFields, DEFAULT_TRANSACTION_FORM_FIELDS)
+  const setTransactionFormFields = useCallback(
+    (fields) => setStoredTransactionFormFields(normalizeTransactionFormFields(fields)),
+    [setStoredTransactionFormFields],
+  )
 
   // ---------- Lancamentos ----------
 
@@ -273,6 +280,7 @@ export function useFinance() {
     budgets,
     goals,
     theme,
+    transactionFormFields: normalizeTransactionFormFields(transactionFormFields),
     // acoes
     addTransaction,
     updateTransaction,
@@ -287,6 +295,7 @@ export function useFinance() {
     updateGoal,
     deleteGoal,
     setTheme,
+    setTransactionFormFields,
     exportData,
     importData,
     clearAll,

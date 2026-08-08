@@ -1,4 +1,4 @@
-# Planejador Financeiro
+# DinDin 10
 
 Aplicação web para organizar receitas, despesas, orçamentos e metas financeiras mês a mês. A autenticação e os dados de cada usuário são armazenados no Supabase e protegidos por Row Level Security (RLS).
 

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
-import { AlertTriangle, Database, Download, FlaskConical, Moon, Palette, Sun, Upload } from 'lucide-react'
+import { AlertTriangle, Database, Download, FlaskConical, Moon, Palette, SlidersHorizontal, Sun, Upload } from 'lucide-react'
 import { importJSON } from '../utils/exporters.js'
+import { normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
 import AdminUserManagement from './AdminUserManagement.jsx'
 
 export default function SettingsPanel({
@@ -15,11 +16,22 @@ export default function SettingsPanel({
   onClearAll,
   reverseGoalRetentionMonths,
   onSetReverseGoalRetention,
+  transactionFormFields,
+  onTransactionFormFieldsChange,
 }) {
   const inputRef = useRef(null)
   const [message, setMessage] = useState(null)
   const [retentionMonths, setRetentionMonths] = useState(reverseGoalRetentionMonths ?? '')
   const [savingRetention, setSavingRetention] = useState(false)
+  const visibleTransactionFields = normalizeTransactionFormFields(transactionFormFields)
+  const transactionFields = [
+    ['method', 'Forma de pagamento'],
+    ['recurrence', 'Repetição'],
+    ['installments', 'Parcelas'],
+    ['tags', 'Tags'],
+    ['note', 'Observação'],
+    ['paid', 'Status pago/recebido'],
+  ]
 
   const applyRetention = async () => {
     const normalized = retentionMonths === '' ? null : Number(retentionMonths)
@@ -115,6 +127,33 @@ export default function SettingsPanel({
           </div>
         </section>
       </div>
+
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <div className="card-title">
+              <SlidersHorizontal size={18} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }} />
+              Campos do lançamento
+            </div>
+            <div className="card-sub">Escolha os campos opcionais exibidos ao criar um lançamento</div>
+          </div>
+        </div>
+        <div className="stack" style={{ gap: 10 }}>
+          {transactionFields.map(([key, label]) => (
+            <label className="checkbox" key={key}>
+              <input
+                type="checkbox"
+                checked={visibleTransactionFields[key]}
+                onChange={(event) => onTransactionFormFieldsChange({ ...visibleTransactionFields, [key]: event.target.checked })}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+        <p className="hint" style={{ marginTop: 12 }}>
+          Descrição, valor, data, categoria e tipo são obrigatórios e continuam sempre visíveis. As preferências ficam salvas apenas na sua conta.
+        </p>
+      </section>
 
       <section className="card">
         <div className="card-head">

@@ -373,10 +373,12 @@ create table if not exists public.profiles (
   id          uuid primary key references auth.users(id) on delete cascade,
   full_name   text,
   theme       text not null default 'light',
+  transaction_form_fields jsonb not null default '{"method": true, "recurrence": true, "installments": true, "tags": true, "note": true, "paid": true}'::jsonb,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
 
   constraint profiles_theme_check check (theme in ('light', 'dark')),
+  constraint profiles_transaction_form_fields_check check (jsonb_typeof(transaction_form_fields) = 'object'),
   constraint profiles_name_length check (full_name is null or char_length(full_name) <= 120)
 );
 
