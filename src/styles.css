@@ -765,19 +765,23 @@ canvas {
 
 /* ---------- Navegação inferior (mobile) ---------- */
 
-.bottom-nav {
+.mobile-nav-dock {
   display: none;
   position: fixed;
-  left: 50%;
-  /* Fallback para navegadores móveis que ainda não aceitam max() com env().
-     Sem ele, a declaração inteira de `bottom` é ignorada e a barra pode
-     aparecer no fim do conteúdo, em vez de flutuar sobre a viewport. */
+  right: 0;
   bottom: 12px;
-  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 0;
   z-index: 45;
+  pointer-events: none;
+}
+
+.bottom-nav {
+  display: none;
+  position: relative;
   width: min(560px, calc(100% - 24px));
+  margin: 0 auto;
   padding: 5px;
-  transform: translateX(-50%);
+  pointer-events: auto;
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: 28px;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
@@ -789,7 +793,7 @@ canvas {
 /* O backdrop do modal cobre toda a viewport, mas a barra inferior permanece
    visualmente nítida. Ela fica apenas como referência visual e não recebe
    interações enquanto o modal está aberto. */
-body:has(.modal-backdrop) .bottom-nav {
+body:has(.modal-backdrop) .mobile-nav-dock {
   z-index: 101;
   pointer-events: none;
 }
@@ -2459,11 +2463,9 @@ body:has(.modal-backdrop) .bottom-nav {
 
 .fab {
   display: none;
-  position: fixed;
+  position: absolute;
   right: 18px;
-  /* Mantém o botão alinhado acima da navegação também sem suporte a env(). */
-  bottom: 88px;
-  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 76px);
+  bottom: 76px;
   z-index: 46;
   width: 52px;
   height: 52px;
@@ -2474,6 +2476,7 @@ body:has(.modal-backdrop) .bottom-nav {
   place-items: center;
   box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 40%, transparent);
   transition: var(--transition);
+  pointer-events: auto;
 }
 
 .fab:active {
@@ -3163,6 +3166,11 @@ body:has(.modal-backdrop) .bottom-nav {
 
   .bottom-nav {
     display: block;
+  }
+
+  .mobile-nav-dock {
+    display: block;
+    bottom: max(12px, env(safe-area-inset-bottom));
   }
 
   .fab {

@@ -40,7 +40,7 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
   }
 
   return (
-    <>
+    <div className="mobile-nav-dock">
       <nav
         ref={navRef}
         className="bottom-nav"
@@ -124,6 +124,6 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
           <Plus size={24} strokeWidth={2.2} />
         </button>
       )}
-    </>
+    </div>
   )
 }
