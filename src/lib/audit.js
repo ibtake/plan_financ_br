@@ -155,10 +155,14 @@ export async function guarded(operation, context = {}) {
 /** Ultimos eventos do usuario autenticado (RLS garante o filtro) */
 export async function fetchEvents(limit = 60) {
   if (!supabase) return { data: [], error: null }
-  return supabase
-    .from('security_events')
-    .select('id, event_type, severity, email, user_agent, details, created_at')
-    .order('created_at', { ascending: false })
-    .limit(limit)
+  const safeLimit = Math.min(Math.max(Number(limit) || 60, 1), 100)
+  return guarded(
+    () => supabase
+      .from('security_events')
+      .select('id, event_type, severity, created_at')
+      .order('created_at', { ascending: false })
+      .limit(safeLimit),
+    { table: 'security_events', action: 'select' },
+  )
 }
 

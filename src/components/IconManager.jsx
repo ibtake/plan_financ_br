@@ -151,17 +151,20 @@ export default function IconManager() {
           </div>
         </div>
 
-        {message && <div className={`notice ${message.kind === 'danger' ? 'danger' : 'success'}`}>{message.text}</div>}
+        {message && <div className={`notice ${message.kind === 'danger' ? 'danger' : 'success'}`} role={message.kind === 'danger' ? 'alert' : 'status'}>{message.text}</div>}
 
         <div className="icon-toolbar">
+          <label className="sr-only" htmlFor="icon-manager-search">Buscar ícone</label>
           <input
+            id="icon-manager-search"
             className="input"
             type="search"
             placeholder="Buscar por nome ou tela..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
-          <select className="input" value={group} onChange={(event) => setGroup(event.target.value)}>
+          <label className="sr-only" htmlFor="icon-manager-group">Grupo de ícones</label>
+          <select id="icon-manager-group" className="input" value={group} onChange={(event) => setGroup(event.target.value)}>
             <option value="all">Todos os grupos ({TOTAL_ICONS})</option>
             {ICON_GROUPS.map((option) => (
               <option key={option.id} value={option.id}>

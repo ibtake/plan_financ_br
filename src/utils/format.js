@@ -177,7 +177,7 @@ export function isoDateInMonth(monthKey, day) {
 export function percentChange(current, previous) {
   const c = Number(current) || 0
   const p = Number(previous) || 0
-  if (p === 0) return c === 0 ? 0 : 100
+  if (p === 0) return c === 0 ? 0 : null
   return ((c - p) / Math.abs(p)) * 100
 }
 

@@ -62,11 +62,6 @@ function EventList() {
                   <div className="text-xs text-muted">
                     {new Date(event.created_at).toLocaleString('pt-BR')}
                   </div>
-                  {event.user_agent && (
-                    <div className="text-xs text-muted security-agent" title={event.user_agent}>
-                      {event.user_agent}
-                    </div>
-                  )}
                 </div>
                 <span className={`chip ${event.severity === 'critical' ? 'expense' : event.severity === 'warning' ? 'warning' : 'info'}`}>
                   {event.severity === 'critical' ? 'Crítico' : event.severity === 'warning' ? 'Atenção' : 'Informação'}

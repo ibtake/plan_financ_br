@@ -10,6 +10,7 @@
 
 /** PNG de icone nao precisa passar de 1 MB */
 const MAX_FILE_BYTES = 1024 * 1024
+const MAX_INPUT_DIMENSION = 4096
 
 /** Lado maximo do icone normalizado, suficiente para telas retina */
 const MAX_DIMENSION = 128
@@ -44,6 +45,10 @@ export function readIconFile(file) {
 
       image.onload = () => {
         try {
+          if (image.width > MAX_INPUT_DIMENSION || image.height > MAX_INPUT_DIMENSION) {
+            reject(new Error('Imagem muito grande. O limite e de 4096 px por lado.'))
+            return
+          }
           const largestSide = Math.max(image.width, image.height) || MAX_DIMENSION
           const scale = Math.min(1, MAX_DIMENSION / largestSide)
           const width = Math.max(1, Math.round(image.width * scale)) || MAX_DIMENSION
