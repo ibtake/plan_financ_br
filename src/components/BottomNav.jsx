@@ -1,16 +1,38 @@
-import { useState } from 'react'
-import { MoreHorizontal, Plus, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { MoreHorizontal, Plus } from 'lucide-react'
 import { MOBILE_PRIMARY, MOBILE_SECONDARY } from './navigation.js'
 
 /**
- * Navegacao inferior fixa do mobile.
+ * Navegacao inferior flutuante do mobile.
  *
- * Mostra os 4 itens principais + menu "Mais" que abre um sheet com os
+ * Mostra os 4 itens principais + menu "Mais" que abre um popover com os
  * itens restantes. Recebe e devolve `active`, `onChange` e `badges` iguais
  * ao componente de abas anterior.
  */
 export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) {
   const [moreOpen, setMoreOpen] = useState(false)
+  const navRef = useRef(null)
+  const primaryIndex = MOBILE_PRIMARY.findIndex((item) => item.id === active)
+  const moreIsActive = primaryIndex === -1
+  const activeIndex = moreIsActive ? MOBILE_PRIMARY.length : primaryIndex
+
+  useEffect(() => {
+    if (!moreOpen) return undefined
+
+    const closeOnOutsideInteraction = (event) => {
+      if (navRef.current && !navRef.current.contains(event.target)) setMoreOpen(false)
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setMoreOpen(false)
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsideInteraction)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideInteraction)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [moreOpen])
 
   const handleSelect = (id) => {
     onChange(id)
@@ -19,8 +41,14 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
 
   return (
     <>
-      <nav className="bottom-nav">
+      <nav
+        ref={navRef}
+        className="bottom-nav"
+        style={{ '--active-index': activeIndex }}
+        aria-label="Navegação principal"
+      >
         <div className="bottom-nav-list">
+          <span className="bottom-nav-active-pill" aria-hidden="true" />
           {MOBILE_PRIMARY.map((item) => {
             const Icon = item.icon
             const isActive = active === item.id
@@ -31,7 +59,7 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
                 key={item.id}
                 type="button"
                 className={`bottom-nav-link${isActive ? ' active' : ''}`}
-                onClick={() => onChange(item.id)}
+                onClick={() => handleSelect(item.id)}
               >
                 <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
                 <span>{item.short || item.label}</span>
@@ -42,16 +70,48 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
 
           <button
             type="button"
-            className="bottom-nav-link"
-            onClick={() => setMoreOpen(true)}
+            className={`bottom-nav-link${moreIsActive || moreOpen ? ' active' : ''}`}
+            onClick={() => setMoreOpen((isOpen) => !isOpen)}
+            aria-expanded={moreOpen}
+            aria-controls="bottom-nav-more-menu"
+            aria-haspopup="menu"
           >
-            <MoreHorizontal size={20} strokeWidth={1.8} />
+            <MoreHorizontal size={20} strokeWidth={moreIsActive || moreOpen ? 2.2 : 1.8} />
             <span>Mais</span>
           </button>
         </div>
+
+        <div
+          id="bottom-nav-more-menu"
+          className={`bottom-nav-popover${moreOpen ? ' is-open' : ''}`}
+          aria-hidden={!moreOpen}
+        >
+          <div className="bottom-nav-popover-title">Mais opções</div>
+          <div className="bottom-nav-popover-list" role="menu" aria-label="Mais opções">
+            {MOBILE_SECONDARY.map((item) => {
+              const Icon = item.icon
+              const isActive = active === item.id
+              const badge = badges[item.id]
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="menuitem"
+                  className={`bottom-nav-popover-item${isActive ? ' active' : ''}`}
+                  onClick={() => handleSelect(item.id)}
+                  tabIndex={moreOpen ? 0 : -1}
+                >
+                  <Icon size={18} strokeWidth={isActive ? 2.1 : 1.8} />
+                  <span>{item.label}</span>
+                  {badge > 0 && <span className="bottom-nav-popover-badge">{badge}</span>}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </nav>
 
-      {/* FAB: botão de "Novo lançamento" fixo */}
       {onOpenNew && (
         <button
           type="button"
@@ -61,49 +121,6 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
         >
           <Plus size={24} strokeWidth={2.2} />
         </button>
-      )}
-
-      {/* Sheet com os itens secundários */}
-      {moreOpen && (
-        <>
-          <div className="sheet-backdrop" onClick={() => setMoreOpen(false)} />
-          <div className="sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="sheet-handle" />
-            <div style={{ padding: '8px 0 12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 6px 12px' }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Mais opções</h3>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={() => setMoreOpen(false)}
-                  aria-label="Fechar"
-                >
-                  <X size={18} strokeWidth={2} />
-                </button>
-              </div>
-              <nav>
-                {MOBILE_SECONDARY.map((item) => {
-                  const Icon = item.icon
-                  const isActive = active === item.id
-                  const badge = badges[item.id]
-
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={`sidebar-link${isActive ? ' active' : ''}`}
-                      onClick={() => handleSelect(item.id)}
-                    >
-                      <Icon size={18} strokeWidth={1.9} />
-                      <span className="sidebar-link-label">{item.label}</span>
-                      {badge > 0 && <span className="sidebar-badge">{badge}</span>}
-                    </button>
-                  )
-                })}
-              </nav>
-            </div>
-          </div>
-        </>
       )}
     </>
   )

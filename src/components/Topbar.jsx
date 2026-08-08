@@ -3,6 +3,8 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  EyeOff,
   LogOut,
   Moon,
   Search,
@@ -51,6 +53,8 @@ export default function Topbar({
   onMonthChange,
   theme,
   onToggleTheme,
+  privacyVisible,
+  onTogglePrivacy,
   user,
   onSignOut,
   search,
@@ -206,6 +210,17 @@ export default function Topbar({
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          className={`topbar-btn${privacyVisible ? '' : ' active'}`}
+          onClick={onTogglePrivacy}
+          title={privacyVisible ? 'Ocultar valores' : 'Mostrar valores'}
+          aria-label={privacyVisible ? 'Ocultar valores financeiros' : 'Mostrar valores financeiros'}
+          aria-pressed={!privacyVisible}
+        >
+          {privacyVisible ? <Eye size={18} strokeWidth={1.9} /> : <EyeOff size={18} strokeWidth={1.9} />}
+        </button>
 
         {/* Tema */}
         <button
