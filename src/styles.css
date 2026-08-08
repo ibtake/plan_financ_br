@@ -1878,7 +1878,7 @@ body:has(.modal-backdrop) .mobile-nav-dock {
 
   .fixed-expense .tx-icon {
     grid-column: 1;
-    grid-row: 1 / span 3;
+    grid-row: 1 / span 2;
   }
 
   .fixed-expense .tx-main {
@@ -1900,14 +1900,6 @@ body:has(.modal-backdrop) .mobile-nav-dock {
   .fixed-expense .tx-meta {
     grid-column: 2 / 4;
     grid-row: 2;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-  }
     display: flex;
     align-items: center;
     justify-content: space-between;
