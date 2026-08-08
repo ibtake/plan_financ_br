@@ -44,6 +44,47 @@ function ChartFallback({ height = 240 }) {
   )
 }
 
+/** Mantem o contexto da dashboard visivel enquanto os dados autenticados chegam. */
+function FinanceLoadingScreen() {
+  return (
+    <div className="finance-loading-shell" role="status" aria-live="polite" aria-label="Carregando seus dados financeiros" aria-busy="true">
+      <aside className="finance-loading-sidebar" aria-hidden="true">
+        <div className="loading-brand"><span className="skeleton skeleton-logo" /><span className="skeleton skeleton-brand" /></div>
+        <div className="loading-nav">
+          {[1, 2, 3, 4, 5, 6].map((item) => <span className="skeleton skeleton-nav" key={item} />)}
+        </div>
+      </aside>
+      <main className="finance-loading-main">
+        <div className="finance-loading-topbar" aria-hidden="true">
+          <span className="skeleton skeleton-title" />
+          <span className="skeleton skeleton-action" />
+        </div>
+        <div className="finance-loading-content">
+          <div className="finance-loading-heading">
+            <span className="skeleton skeleton-heading" />
+            <span className="skeleton skeleton-subheading" />
+          </div>
+          <div className="finance-loading-kpis" aria-hidden="true">
+            {[1, 2, 3, 4].map((item) => (
+              <div className="finance-loading-kpi" key={item}>
+                <span className="skeleton skeleton-label" />
+                <span className="skeleton skeleton-number" />
+                <span className="skeleton skeleton-detail" />
+              </div>
+            ))}
+          </div>
+          <div className="finance-loading-chart skeleton" aria-hidden="true" />
+          <div className="finance-loading-bottom" aria-hidden="true">
+            <div className="finance-loading-panel skeleton" />
+            <div className="finance-loading-panel skeleton" />
+          </div>
+        </div>
+        <span className="finance-loading-message">Atualizando seu resumo financeiro…</span>
+      </main>
+    </div>
+  )
+}
+
 /** Titulo e descricao exibidos no topo de cada painel */
 const PAGE_META = {
   overview: { title: 'Visão geral', sub: 'Resumo do mês, gráficos e alertas' },
@@ -193,13 +234,13 @@ function AuthenticatedApp() {
   )
 
   if (finance.loading) {
-    return <div className="app-loading"><div className="spinner" /><span>Carregando seus dados...</span></div>
+    return <FinanceLoadingScreen />
   }
 
   const page = PAGE_META[activeTab] || PAGE_META.overview
 
   return (
-    <div className="app-shell">
+    <div className="app-shell finance-content-enter">
       {finance.isDeletingGoal && (
         <div className="sync-overlay" role="status" aria-live="assertive" aria-label="Atualizando metas">
           <div className="sync-overlay-card">

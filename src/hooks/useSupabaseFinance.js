@@ -98,7 +98,7 @@ const toGoal = (goal, userId) => ({
 })
 
 export function useSupabaseFinance() {
-  const { user, session, signOut } = useAuth()
+  const { user, signOut } = useAuth()
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [budgets, setBudgets] = useState({})
@@ -140,21 +140,26 @@ export function useSupabaseFinance() {
       () => supabase.from('profiles').select('transaction_form_fields').maybeSingle(),
       { table: 'profiles', action: 'select_transaction_form_fields' },
     )
-    const [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult] = await Promise.all([
-      guarded(() => supabase.from('transactions').select('*').order('created_at', { ascending: false }), { table: 'transactions', action: 'select' }),
-      guarded(() => supabase.from('categories').select('*').order('created_at'), { table: 'categories', action: 'select' }),
-      guarded(() => supabase.from('budgets').select('*'), { table: 'budgets', action: 'select' }),
-      guarded(() => supabase.from('goals').select('*').order('created_at'), { table: 'goals', action: 'select' }),
+    // O resumo principal nao depende dos historicos de metas. Eles continuam
+    // sendo buscados em paralelo, mas nao devem segurar a primeira tela apos
+    // login, especialmente em redes moveis.
+    const supportingDataRequest = Promise.all([
       guarded(() => supabase.from('reverse_goal_history').select('*').order('reference_month', { ascending: false }), { table: 'reverse_goal_history', action: 'select' }),
       guarded(() => supabase.from('reverse_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_contributions', action: 'select' }),
       guarded(() => supabase.from('standard_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'standard_goal_contributions', action: 'select' }),
       guarded(() => supabase.from('reverse_goal_events').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_events', action: 'select' }),
       guarded(() => supabase.from('reverse_goal_retention_settings').select('completed_goal_retention_months').maybeSingle(), { table: 'reverse_goal_retention_settings', action: 'select' }),
     ])
+    const [txResult, catResult, budgetResult, goalResult] = await Promise.all([
+      guarded(() => supabase.from('transactions').select('*').order('created_at', { ascending: false }), { table: 'transactions', action: 'select' }),
+      guarded(() => supabase.from('categories').select('*').order('created_at'), { table: 'categories', action: 'select' }),
+      guarded(() => supabase.from('budgets').select('*'), { table: 'budgets', action: 'select' }),
+      guarded(() => supabase.from('goals').select('*').order('created_at'), { table: 'goals', action: 'select' }),
+    ])
     // Uma carga iniciada antes de uma mutacao nao pode restaurar um snapshot
     // antigo sobre os dados que acabaram de ser confirmados pelo servidor.
     if (requestId !== latestLoadRequest.current) return false
-    const firstError = [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult].find((r) => r.error)?.error
+    const firstError = [txResult, catResult, budgetResult, goalResult].find((r) => r.error)?.error
     if (firstError) {
       const code = String(firstError.code || '')
       const message = String(firstError.message || '').toLowerCase()
@@ -173,12 +178,27 @@ export function useSupabaseFinance() {
     setCategories((catResult.data || []).map(fromCategory))
     setBudgets(Object.fromEntries((budgetResult.data || []).map((row) => [row.category_id, Number(row.limit_amount)])))
     setGoals((goalResult.data || []).map(fromGoal))
-    setReverseGoalHistory(reverseHistoryResult.data || [])
-    setReverseGoalContributions(reverseContributionsResult.data || [])
-    setStandardGoalContributions(standardContributionsResult.data || [])
-    setReverseGoalEvents(reverseEventsResult.data || [])
-    setReverseGoalRetentionMonths(retentionResult.data?.completed_goal_retention_months ?? null)
     setLoading(false)
+
+    void supportingDataRequest.then(async ([reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult]) => {
+      if (requestId !== latestLoadRequest.current) return
+      const supportingError = [reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult].find((result) => result.error)?.error
+      if (supportingError) {
+        const code = String(supportingError.code || '')
+        const message = String(supportingError.message || '').toLowerCase()
+        if (code === 'PGRST301' || message.includes('jwt expired') || message.includes('token is expired')) {
+          await signOut('session_expired')
+          return
+        }
+        reportError(supportingError)
+        return
+      }
+      setReverseGoalHistory(reverseHistoryResult.data || [])
+      setReverseGoalContributions(reverseContributionsResult.data || [])
+      setStandardGoalContributions(standardContributionsResult.data || [])
+      setReverseGoalEvents(reverseEventsResult.data || [])
+      setReverseGoalRetentionMonths(retentionResult.data?.completed_goal_retention_months ?? null)
+    })
 
     void profileRequest.then((profileResult) => {
       if (requestId !== latestLoadRequest.current) return
@@ -191,7 +211,9 @@ export function useSupabaseFinance() {
       setTransactionFormFieldsState(confirmedFields)
     })
     return true
-  }, [reportError, session, signOut, user])
+  // A troca do access token nao muda o usuario nem os dados. Deixar a sessao
+  // fora das dependencias evita uma nova carga completa a cada TOKEN_REFRESHED.
+  }, [reportError, signOut, user])
 
   useEffect(() => { load() }, [load])
 
