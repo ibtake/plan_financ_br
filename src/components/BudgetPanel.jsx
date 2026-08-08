@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { AlertTriangle, Pencil, Plus, Target, Trash2 } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { categoriesByType, getCategory } from '../utils/categories.js'
-import { formatCurrency, formatPercent, monthLabel, parseAmount } from '../utils/format.js'
+import { amountToInput, formatAmountInput, formatCurrency, formatPercent, monthLabel, parseAmount } from '../utils/format.js'
 
 function barClass(percent) {
   if (percent >= 100) return 'over'
@@ -12,7 +12,7 @@ function barClass(percent) {
 
 function BudgetRow({ category, spent, limit, onChange, onRemove }) {
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(String(limit))
+  const [draft, setDraft] = useState(() => amountToInput(limit))
   const percent = limit > 0 ? (spent / limit) * 100 : 0
   const remaining = limit - spent
 
@@ -52,13 +52,13 @@ function BudgetRow({ category, spent, limit, onChange, onRemove }) {
                 className="input mono"
                 style={{ width: 120 }}
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => setDraft(formatAmountInput(e.target.value))}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') save()
                   if (e.key === 'Escape') setEditing(false)
                 }}
                 autoFocus
-                inputMode="decimal"
+                inputMode="numeric"
                 aria-label={`Limite de ${category.name}`}
               />
               <button type="button" className="btn btn-sm btn-primary" onClick={save}>
@@ -76,7 +76,7 @@ function BudgetRow({ category, spent, limit, onChange, onRemove }) {
                 type="button"
                 className="icon-btn"
                 onClick={() => {
-                  setDraft(String(limit))
+                  setDraft(amountToInput(limit))
                   setEditing(true)
                 }}
                 title="Editar limite"
@@ -213,8 +213,8 @@ export default function BudgetPanel({ budgets, byCategory, categories, monthKey,
             style={{ width: 150 }}
             placeholder="Limite R$"
             value={newLimit}
-            onChange={(e) => setNewLimit(e.target.value)}
-            inputMode="decimal"
+            onChange={(e) => setNewLimit(formatAmountInput(e.target.value))}
+            inputMode="numeric"
             aria-label="Valor limite"
           />
           <button className="btn btn-primary" type="submit" disabled={!newCategory}>

@@ -5,7 +5,8 @@ import {
   RECURRENCE_OPTIONS,
   categoriesByType,
 } from '../utils/categories.js'
-import { parseAmount, todayISO } from '../utils/format.js'
+import { amountToInput, formatAmountInput, parseAmount, todayISO } from '../utils/format.js'
+import { normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
 
 const EMPTY = {
   type: 'expense',
@@ -22,10 +23,11 @@ const EMPTY = {
   note: '',
 }
 
-export default function TransactionForm({ open, onClose, onSubmit, initial, categories, defaultDate }) {
+export default function TransactionForm({ open, onClose, onSubmit, initial, categories, defaultDate, fieldVisibility }) {
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
   const isEditing = Boolean(initial?.id)
+  const visibleFields = normalizeTransactionFormFields(fieldVisibility)
 
   useEffect(() => {
     if (!open) return
@@ -33,7 +35,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
       setForm({
         ...EMPTY,
         ...initial,
-        amount: String(initial.amount ?? ''),
+        amount: amountToInput(initial.amount),
         tags: Array.isArray(initial.tags) ? initial.tags.join(', ') : initial.tags || '',
       })
     } else {
@@ -59,6 +61,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
   if (!open) return null
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
+  const showField = (field) => isEditing || visibleFields[field]
 
   const validate = () => {
     const e = {}
@@ -168,9 +171,9 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                   id="tx-amount"
                   className={`input mono${errors.amount ? ' input-invalid' : ''}`}
                   value={form.amount}
-                  onChange={(e) => set({ amount: e.target.value })}
+                  onChange={(e) => set({ amount: formatAmountInput(e.target.value) })}
                   placeholder="0,00"
-                  inputMode="decimal"
+                  inputMode="numeric"
                 />
                 {errors.amount && <span className="field-error">{errors.amount}</span>}
               </div>
@@ -208,7 +211,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                 {errors.categoryId && <span className="field-error">{errors.categoryId}</span>}
               </div>
 
-              <div className="field">
+              {showField('method') && <div className="field">
                 <label className="label" htmlFor="tx-method">
                   Forma de pagamento
                 </label>
@@ -224,9 +227,9 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                     </option>
                   ))}
                 </select>
-              </div>
+              </div>}
 
-              <div className="field">
+              {showField('recurrence') && <div className="field">
                 <label className="label" htmlFor="tx-rec">
                   Repetição
                 </label>
@@ -245,9 +248,9 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                     </option>
                   ))}
                 </select>
-              </div>
+              </div>}
 
-              <div className="field">
+              {showField('installments') && <div className="field">
                 <label className="label" htmlFor="tx-inst">
                   Parcelas
                 </label>
@@ -271,9 +274,9 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                     ? `${installments}x de R$ ${(amountValue).toFixed(2).replace('.', ',')} (por mês)`
                     : 'Deixe 1 para pagamento único'}
                 </span>
-              </div>
+              </div>}
 
-              {form.recurrence !== 'none' && (
+              {showField('recurrence') && form.recurrence !== 'none' && (
                 <div className="field span-2">
                   <label className="label" htmlFor="tx-rec-end">
                     Repetir até (opcional)
@@ -289,7 +292,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                 </div>
               )}
 
-              <div className="field span-2">
+              {showField('tags') && <div className="field span-2">
                 <label className="label" htmlFor="tx-tags">
                   Tags (opcional)
                 </label>
@@ -300,9 +303,9 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                   onChange={(e) => set({ tags: e.target.value })}
                   placeholder="Ex.: viagem, trabalho, urgente"
                 />
-              </div>
+              </div>}
 
-              <div className="field span-2">
+              {showField('note') && <div className="field span-2">
                 <label className="label" htmlFor="tx-note">
                   Observação (opcional)
                 </label>
@@ -313,9 +316,9 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                   onChange={(e) => set({ note: e.target.value })}
                   placeholder="Anotações extras sobre este lançamento..."
                 />
-              </div>
+              </div>}
 
-              <label className="checkbox span-2">
+              {showField('paid') && <label className="checkbox span-2">
                 <input
                   type="checkbox"
                   checked={form.paid !== false}
@@ -328,7 +331,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                     — desmarque para tratar como {form.type === 'income' ? 'a receber' : 'conta a pagar'}
                   </span>
                 </span>
-              </label>
+              </label>}
             </div>
           </div>
 

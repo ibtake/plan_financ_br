@@ -286,10 +286,11 @@ function AuthenticatedApp() {
               onClearAll={finance.clearAll}
               reverseGoalRetentionMonths={finance.reverseGoalRetentionMonths}
               onSetReverseGoalRetention={finance.setReverseGoalRetention}
+              transactionFormFields={finance.transactionFormFields}
+              onTransactionFormFieldsChange={finance.setTransactionFormFields}
             />
           )}
 
-          <footer className="footer">Planejador Financeiro • Dados privados e isolados por conta</footer>
         </main>
       </div>
 
@@ -307,6 +308,7 @@ function AuthenticatedApp() {
         initial={editing}
         categories={finance.categories}
         defaultDate={isoDateInMonth(monthKey, new Date().getDate())}
+        fieldVisibility={finance.transactionFormFields}
       />
     </div>
   )

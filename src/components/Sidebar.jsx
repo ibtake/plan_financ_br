@@ -12,10 +12,10 @@ export default function Sidebar({ active, onChange, badges = {} }) {
     <aside className="sidebar">
       <div className="sidebar-brand">
         <div className="brand-logo">
-          <img className="brand-favicon" src="/favicon.png" alt="Planejador Financeiro" />
+          <img className="brand-favicon" src="/dindin-10-logo.png" alt="DinDin 10" />
         </div>
         <div style={{ minWidth: 0 }}>
-          <div className="brand-title">Planejador</div>
+          <div className="brand-title">DinDin 10</div>
           <div className="brand-sub">Finanças sob controle</div>
         </div>
       </div>

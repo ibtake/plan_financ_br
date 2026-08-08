@@ -112,7 +112,7 @@ const RAW = [
   ['🔒', 'Conexão segura', 'security', 'Tela de login'],
 
   // Marca e tema
-  ['💰', 'Logo do Planejador', 'brand', 'Cabeçalho e tela de login'],
+  ['💰', 'Logo do DinDin 10', 'brand', 'Cabeçalho e tela de login'],
   ['☀️', 'Tema claro', 'brand', 'Cabeçalho e configurações'],
   ['🌙', 'Tema escuro', 'brand', 'Cabeçalho e configurações'],
   ['🎨', 'Aparência', 'brand', 'Configurações'],

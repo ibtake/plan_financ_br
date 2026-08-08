@@ -185,3 +185,23 @@ export function parseAmount(input) {
   const n = parseFloat(s)
   return Number.isFinite(n) ? n : 0
 }
+
+/**
+ * Mascara monetaria para digitacao: os dois ultimos digitos sao os centavos.
+ * Ex.: "123456" -> "1.234,56" e "1" -> "0,01".
+ */
+export function formatAmountInput(input) {
+  const digits = String(input ?? '').replace(/\D/g, '')
+  if (!digits) return ''
+
+  const cents = digits.replace(/^0+(?=\d)/, '').padStart(3, '0')
+  const integer = cents.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `${integer},${cents.slice(-2)}`
+}
+
+/** Converte um valor numerico ja salvo para a mascara de digitacao. */
+export function amountToInput(value) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) return ''
+  return formatAmountInput(String(Math.round(Math.abs(amount) * 100)))
+}
