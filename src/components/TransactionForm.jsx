@@ -109,9 +109,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
               <div className="card-title">
                 {isEditing ? 'Editar lançamento' : 'Novo lançamento'}
               </div>
-              <div className="card-sub">
-                {isEditing ? 'Altere os dados e salve' : 'Registre uma receita, despesa ou reinvestimento'}
-              </div>
+              {isEditing && <div className="card-sub">Altere os dados e salve</div>}
             </div>
             <button type="button" className="icon-btn" onClick={closeWithAnimation} aria-label="Fechar">
               <X size={18} strokeWidth={2} />

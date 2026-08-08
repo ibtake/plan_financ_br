@@ -686,10 +686,11 @@ canvas {
   -webkit-backdrop-filter: saturate(180%) blur(24px);
   opacity: 0;
   visibility: hidden;
-  transform: translateY(-10px) scale(0.96);
+  transform: translateY(-6px) scale(0.985);
   transform-origin: top right;
   pointer-events: none;
-  transition: opacity 180ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 260ms;
+  will-change: opacity, transform;
+  transition: opacity 280ms ease, transform 420ms cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 420ms;
 }
 
 .glass-popover.is-open {
@@ -806,6 +807,14 @@ body:has(.modal-backdrop) .mobile-nav-dock {
   pointer-events: none;
 }
 
+/* O lanÃ§amento aberto assume o foco; o FAB volta apenas depois que o modal
+   termina de fechar, aproveitando a mesma transiÃ§Ã£o de entrada/saÃ­da. */
+body:has(.modal-backdrop) .fab {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.82) translateY(8px);
+}
+
 .bottom-nav-list {
   position: relative;
   display: grid;
@@ -903,10 +912,11 @@ body:has(.modal-backdrop) .mobile-nav-dock {
   -webkit-backdrop-filter: saturate(180%) blur(24px);
   opacity: 0;
   visibility: hidden;
-  transform: translateY(10px) scale(0.96);
+  transform: translateY(8px) scale(0.985);
   transform-origin: bottom right;
   pointer-events: none;
-  transition: opacity 180ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 260ms;
+  will-change: opacity, transform;
+  transition: opacity 280ms ease, transform 420ms cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 420ms;
 }
 
 .bottom-nav-popover.is-open {
@@ -3325,10 +3335,11 @@ body:has(.modal-backdrop) .mobile-nav-dock {
     -webkit-backdrop-filter: saturate(180%) blur(24px);
     opacity: 0;
     visibility: hidden;
-    transform: translateY(-10px) scale(0.96);
+    transform: translateY(-6px) scale(0.985);
     transform-origin: top right;
     pointer-events: none;
-    transition: opacity 180ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 260ms;
+    will-change: opacity, transform;
+    transition: opacity 280ms ease, transform 420ms cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 420ms;
   }
 
   .topbar-search-toggle {
@@ -3493,7 +3504,7 @@ body:has(.modal-backdrop) .mobile-nav-dock {
     /* O backdrop precisa cobrir inclusive a área da navegação inferior.
        A barra e o FAB têm z-index menor e ficam corretamente desfocados. */
     inset: 0;
-    padding: 12px;
+    padding: 12px 12px calc(var(--bottom-nav-h) + 24px + env(safe-area-inset-bottom));
     align-items: center;
     justify-content: center;
     /* Impede arraste horizontal também no backdrop */
@@ -3502,7 +3513,7 @@ body:has(.modal-backdrop) .mobile-nav-dock {
 
   .modal {
     max-width: 600px;
-    max-height: calc(100dvh - var(--bottom-nav-h) - env(safe-area-inset-bottom) - 24px);
+    max-height: calc(100dvh - var(--bottom-nav-h) - env(safe-area-inset-bottom) - 48px);
     border-radius: var(--radius-lg);
     border-bottom: 1px solid var(--border);
     animation: popIn 180ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
