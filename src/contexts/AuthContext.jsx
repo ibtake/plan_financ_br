@@ -29,6 +29,7 @@ const AuthContext = createContext(null)
 /** Encerra a sessao apos este periodo sem interacao */
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000
 const LAST_ACTIVITY_KEY = 'planejador:last-activity-at'
+const SESSION_REFRESH_SKEW_MS = 60 * 1000
 
 function getStoredLastActivityAt() {
   try {
@@ -77,6 +78,7 @@ export function AuthProvider({ children }) {
   const [assuranceLevel, setAssuranceLevel] = useState(null)
   const idleTimer = useRef(null)
   const lastActivityAt = useRef(0)
+  const refreshInFlight = useRef(null)
 
   const getLastActivityAt = useCallback((currentSession) => (
     Math.max(
@@ -157,23 +159,37 @@ export function AuthProvider({ children }) {
     // Dashboard; uma sessão inválida volta para a tela de login.
     const refreshSessionOnReturn = async () => {
       if (!active || document.visibilityState !== 'visible') return
-      const { data: current } = await supabase.auth.getSession()
-      if (!current.session) {
-        await applySession(null)
-        return
+      // Em celulares, focus, pageshow e visibilitychange podem acontecer juntos.
+      // Compartilhar a mesma promessa impede rotacoes concorrentes do refresh token.
+      if (refreshInFlight.current) return refreshInFlight.current
+
+      refreshInFlight.current = (async () => {
+        const { data: current } = await supabase.auth.getSession()
+        if (!current.session) {
+          await applySession(null)
+          return
+        }
+        if (isIdleSession(current.session)) {
+          clearUserActivity()
+          await supabase.auth.signOut()
+          await applySession(null)
+          return
+        }
+
+        // Nao rotaciona um token ainda saudavel ao simples toque/foco na tela.
+        // O cliente Supabase continua renovando automaticamente em segundo plano.
+        const expiresAt = Number(current.session.expires_at || 0) * 1000
+        if (expiresAt && expiresAt - Date.now() > SESSION_REFRESH_SKEW_MS) return
+
+        const { data, error } = await supabase.auth.refreshSession()
+        if (error || !data.session) await applySession(null)
+      })()
+
+      try {
+        await refreshInFlight.current
+      } finally {
+        refreshInFlight.current = null
       }
-      if (isIdleSession(current.session)) {
-        clearUserActivity()
-        await supabase.auth.signOut()
-        await applySession(null)
-        return
-      }
-      const { data, error } = await supabase.auth.refreshSession()
-      if (error || !data.session) {
-        await applySession(null)
-        return
-      }
-      await applySession(data.session)
     }
 
     const handleVisibilityChange = () => { void refreshSessionOnReturn() }
