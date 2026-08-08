@@ -1870,7 +1870,7 @@ body:has(.modal-backdrop) .mobile-nav-dock {
 @media (max-width: 640px) {
   .fixed-expense {
     display: grid;
-    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-columns: 36px minmax(0, 1fr) auto;
     align-items: center;
     column-gap: 10px;
     row-gap: 2px;
@@ -1888,17 +1888,26 @@ body:has(.modal-backdrop) .mobile-nav-dock {
   .fixed-expense .tx-desc {
     grid-column: 2;
     grid-row: 1;
+    min-width: 0;
   }
 
   .fixed-expense .tx-amount {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 1;
     justify-self: end;
   }
 
   .fixed-expense .tx-meta {
-    grid-column: 2;
+    grid-column: 2 / 4;
     grid-row: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
     display: flex;
     align-items: center;
     justify-content: space-between;
