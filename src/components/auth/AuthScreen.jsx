@@ -2,7 +2,7 @@
 // Tela de autenticacao: login, recuperacao e desafio MFA
 // =====================================================================
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 import { configurationProblem } from '../../lib/supabase.js'
 import CodeInput from './CodeInput.jsx'
@@ -21,6 +21,7 @@ export default function AuthScreen() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [captchaToken, setCaptchaToken] = useState(null)
+  const submittedMfaCode = useRef(null)
 
   const missingConfig = useMemo(() => configurationProblem(), [])
   const captchaEnabled = isTurnstileConfigured()
@@ -39,6 +40,7 @@ export default function AuthScreen() {
   const switchMode = (next) => {
     resetMessages()
     setCode('')
+    submittedMfaCode.current = null
     setCaptchaToken(null)
     setMode(next)
   }
@@ -139,22 +141,56 @@ export default function AuthScreen() {
     )
   }
 
-  const handleMfa = async (event) => {
-    event.preventDefault()
+  const verifyMfaCode = async (value) => {
+    const normalizedCode = String(value || '').replace(/\D/g, '').slice(0, 6)
     resetMessages()
 
-    if (code.length !== 6) {
+    if (normalizedCode.length !== 6) {
       setError('Digite os 6 dígitos do código.')
       return
     }
 
+    if (submittedMfaCode.current === normalizedCode) return
+    submittedMfaCode.current = normalizedCode
     setBusy(true)
-    const result = await auth.verifyMfaChallenge(code)
+    const result = await auth.verifyMfaChallenge(normalizedCode)
     setBusy(false)
 
     if (result.error) {
       setError(result.error)
       setCode('')
+      submittedMfaCode.current = null
+    }
+  }
+
+  const handleMfa = async (event) => {
+    event.preventDefault()
+    await verifyMfaCode(code)
+  }
+
+  useEffect(() => {
+    if (mode !== 'mfa' || code.length !== 6 || busy) return
+    void verifyMfaCode(code)
+  }, [mode, code, busy])
+
+  const pasteMfaCode = async () => {
+    resetMessages()
+    if (!navigator.clipboard?.readText) {
+      setError('A colagem automática não está disponível neste navegador. Use Ctrl+V ou cole o código nos campos.')
+      return
+    }
+
+    try {
+      const clipboardText = await navigator.clipboard.readText()
+      const pastedCode = clipboardText.replace(/\D/g, '').slice(0, 6)
+      if (!pastedCode) {
+        setError('Não encontramos um código numérico na área de transferência.')
+        return
+      }
+      submittedMfaCode.current = null
+      setCode(pastedCode)
+    } catch {
+      setError('Não foi possível acessar a área de transferência. Verifique a permissão do navegador ou cole o código manualmente.')
     }
   }
 
@@ -292,6 +328,10 @@ export default function AuthScreen() {
             </div>
 
             <CodeInput value={code} onChange={setCode} disabled={busy} />
+
+            <button type="button" className="btn btn-block" onClick={pasteMfaCode} disabled={busy}>
+              Colar código
+            </button>
 
             <button
               className="btn btn-primary btn-block"
