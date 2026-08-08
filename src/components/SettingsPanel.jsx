@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Database, Download, FlaskConical, Moon, Palette, SlidersHorizontal, Sun, Upload } from 'lucide-react'
 import { importJSON } from '../utils/exporters.js'
 import { normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
@@ -15,6 +15,7 @@ export default function SettingsPanel({
   onLoadSample,
   onClearAll,
   reverseGoalRetentionMonths,
+  reverseGoalRetentionLoaded,
   onSetReverseGoalRetention,
   transactionFormFields,
   onTransactionFormFieldsChange,
@@ -23,6 +24,12 @@ export default function SettingsPanel({
   const [message, setMessage] = useState(null)
   const [retentionMonths, setRetentionMonths] = useState(reverseGoalRetentionMonths ?? '')
   const [savingRetention, setSavingRetention] = useState(false)
+
+  // A configuracao vem junto dos dados auxiliares. Enquanto ela nao chegou,
+  // o select fica bloqueado para nao gravar acidentalmente "Nunca excluir".
+  useEffect(() => {
+    if (reverseGoalRetentionLoaded) setRetentionMonths(reverseGoalRetentionMonths ?? '')
+  }, [reverseGoalRetentionLoaded, reverseGoalRetentionMonths])
   const visibleTransactionFields = normalizeTransactionFormFields(transactionFormFields)
   const transactionFields = [
     ['method', 'Forma de pagamento'],
@@ -191,12 +198,12 @@ export default function SettingsPanel({
         <div className="setting-row" style={{ alignItems: 'flex-end', gap: 16 }}>
           <div className="field grow">
             <label className="label">Excluir metas concluídas após</label>
-            <select className="input" value={retentionMonths} onChange={(event) => setRetentionMonths(event.target.value)}>
+            <select className="input" value={retentionMonths} onChange={(event) => setRetentionMonths(event.target.value)} disabled={!reverseGoalRetentionLoaded || savingRetention}>
               <option value="">Nunca excluir</option>
               {Array.from({ length: 12 }, (_, index) => index + 1).map((months) => <option key={months} value={months}>{months} {months === 1 ? 'mês' : 'meses'}</option>)}
             </select>
           </div>
-          <button className="btn btn-primary" onClick={applyRetention} disabled={savingRetention}>{savingRetention ? 'Aplicando...' : 'Aplicar configuração'}</button>
+          <button className="btn btn-primary" onClick={applyRetention} disabled={!reverseGoalRetentionLoaded || savingRetention}>{savingRetention ? 'Aplicando...' : 'Aplicar configuração'}</button>
         </div>
         <p className="hint" style={{ marginTop: 12 }}>Quando ativada, esta opção removerá permanentemente do banco de dados as Metas Reversas concluídas após o período definido. Metas em andamento nunca serão excluídas.</p>
       </section>
