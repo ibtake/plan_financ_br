@@ -348,6 +348,7 @@ function AuthenticatedApp() {
               onLoadSample={() => finance.importData(buildSampleData())}
               onClearAll={finance.clearAll}
               reverseGoalRetentionMonths={finance.reverseGoalRetentionMonths}
+              reverseGoalRetentionLoaded={finance.reverseGoalRetentionLoaded}
               onSetReverseGoalRetention={finance.setReverseGoalRetention}
               transactionFormFields={finance.transactionFormFields}
               onTransactionFormFieldsChange={finance.setTransactionFormFields}
