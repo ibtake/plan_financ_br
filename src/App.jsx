@@ -212,7 +212,7 @@ function AuthenticatedApp() {
             byCategory={{ ...monthly.byCategory, ...monthly.byCategoryReinvested }}
             categories={finance.categories}
             total={monthly.summary.expense + monthly.summary.reinvested}
-            budgets={finance.budgets}
+            incomeTotal={monthly.summary.income}
           />
         </Suspense>
       </div>

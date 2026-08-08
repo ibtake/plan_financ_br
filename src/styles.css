@@ -24,8 +24,8 @@
 
   /* Texto */
   --text: #1c1c1e;
-  --text-soft: #56565c;
-  --text-muted: #8e8e96;
+  --text-soft: #4d4d54;
+  --text-muted: #74747d;
 
   /* Marca */
   --primary: #0b5d4b;
@@ -75,8 +75,8 @@
   --border-strong: #467064;
 
   --text: #f2f2f4;
-  --text-soft: #a8a8b3;
-  --text-muted: #74747f;
+  --text-soft: #bdbdc7;
+  --text-muted: #9c9ca8;
 
   --primary: #67c6a9;
   --primary-hover: #8bdbc3;
@@ -315,6 +315,7 @@ canvas {
 
 .sidebar-hover-pill {
   position: absolute;
+  top: 0;
   z-index: 0;
   left: 12px;
   right: 12px;
@@ -470,10 +471,20 @@ canvas {
   gap: 12px;
   padding: 10px 32px;
   padding-top: max(10px, env(safe-area-inset-top));
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface) 76%, transparent));
   backdrop-filter: saturate(180%) blur(16px);
   -webkit-backdrop-filter: saturate(180%) blur(16px);
-  border-bottom: 1px solid var(--border);
+}
+
+.topbar::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -14px;
+  left: 0;
+  height: 14px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--surface) 34%, transparent), transparent);
 }
 
 .topbar-mobile-brand {

@@ -27,11 +27,11 @@ function ShowAllButton({ expanded, onClick }) {
 }
 
 /** Dois cards de apresentação que preservam os mesmos cálculos e dados do gráfico anterior. */
-export default function CategoryChart({ byCategory, categories, total, budgets = {} }) {
+export default function CategoryChart({ byCategory, categories, total, incomeTotal = 0 }) {
   const [activeId, setActiveId] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
   const [showAll, setShowAll] = useState(false)
-  const { data, budgetUsage } = useMemo(() => {
+  const data = useMemo(() => {
     const rawData = Object.entries(byCategory).filter(([, value]) => value > 0).sort((a, b) => b[1] - a[1]).map(([id, value]) => {
       const cat = getCategory(categories, id)
       const target = Math.max(0, Math.min(100, Number(cat.targetPercentage) || 0))
@@ -42,22 +42,21 @@ export default function CategoryChart({ byCategory, categories, total, budgets =
     const small = rawData.filter((item) => item.share < SMALL_CATEGORY_SHARE)
     const regular = rawData.filter((item) => item.share >= SMALL_CATEGORY_SHARE)
     const grouped = small.length ? [{ id: 'other-categories', name: 'Outras categorias', icon: '⋯', color: '#94a3b8', value: small.reduce((sum, item) => sum + item.value, 0), share: small.reduce((sum, item) => sum + item.share, 0), target: small.reduce((sum, item) => sum + item.target, 0), targetValue: small.reduce((sum, item) => sum + item.targetValue, 0), difference: small.reduce((sum, item) => sum + item.difference, 0), items: small }] : []
-    const budgetRows = rawData.filter((item) => Number(budgets[item.id]) > 0)
-    const budgetLimit = budgetRows.reduce((sum, item) => sum + Number(budgets[item.id]), 0)
-    return { data: [...regular, ...grouped], budgetUsage: budgetLimit > 0 ? (budgetRows.reduce((sum, item) => sum + item.value, 0) / budgetLimit) * 100 : null }
-  }, [byCategory, budgets, categories, total])
+    return [...regular, ...grouped]
+  }, [byCategory, categories, total])
 
   if (!data.length) return <div className="card"><div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div><div className="empty"><div className="empty-icon"><PieChartIcon size={22} strokeWidth={1.6} /></div><div className="empty-title">Nenhuma saída neste mês</div><div className="text-sm">Adicione lançamentos para ver a distribuição.</div></div></div>
 
   const displayedLegend = showAll ? data : data.slice(0, 7)
   const displayedRows = showAll ? data : data.slice(0, 7)
   const toggleAll = () => setShowAll((value) => !value)
+  const expenseOfIncome = incomeTotal > 0 ? (total / incomeTotal) * 100 : null
 
   return <div className="expense-cards-layout">
     <section className="card expense-distribution-card">
       <div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div>
       <div className="expense-donut-wrap">
-        <div className="expense-donut-center" aria-label={`Total gasto: ${formatCurrency(total)}`}><strong>{formatCurrency(total)}</strong><span>Total gasto</span><small>{budgetUsage === null ? 'Sem meta mensal' : `${formatPercent(budgetUsage, 0)} da meta`}</small></div>
+        <div className="expense-donut-center" aria-label={`Total gasto: ${formatCurrency(total)}`}><strong>{formatCurrency(total)}</strong><span>Total gasto</span><small>{expenseOfIncome === null ? 'Sem receita no mês' : `Já gastou ${formatPercent(expenseOfIncome, 0)}`}</small></div>
         <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={82} outerRadius={132} paddingAngle={2} stroke="none" onMouseEnter={(item) => setActiveId(item.id)} onMouseLeave={() => setActiveId(null)} onClick={(item) => setActiveId(item.id)}>{data.map((item) => <Cell key={item.id} fill={item.color} fillOpacity={activeId && activeId !== item.id ? 0.3 : 1} stroke={activeId === item.id ? 'var(--surface)' : 'none'} strokeWidth={activeId === item.id ? 3 : 0} />)}</Pie><Tooltip content={<TooltipContent />} /></PieChart></ResponsiveContainer>
       </div>
       <div className="expense-donut-legend">{displayedLegend.map((item) => <button type="button" key={item.id} className={`expense-legend-row${activeId === item.id ? ' is-active' : ''}`} onMouseEnter={() => setActiveId(item.id)} onMouseLeave={() => setActiveId(null)} onClick={() => setActiveId(item.id)} aria-label={`${item.name}: ${formatCurrency(item.value)}, ${formatPercent(item.share, 1)} do total`}><span className="chart-dot" style={{ background: item.color }} /><span className="expense-legend-name"><AppIcon emoji={item.icon} /> {item.name}</span><strong>{formatCurrency(item.value)}</strong><span>{formatPercent(item.share, 1)}</span></button>)}</div>
