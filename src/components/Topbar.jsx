@@ -89,6 +89,7 @@ export default function Topbar({
   }
 
   return (
+    <>
     <header className="topbar">
       <div className="topbar-mobile-brand">
         <div className="brand-logo" style={{ width: 30, height: 30 }}>
@@ -262,5 +263,38 @@ export default function Topbar({
         </div>
       </div>
     </header>
+
+    <div className="month-nav-scroll">
+      <div className="month-nav">
+        <button
+          type="button"
+          onClick={() => onMonthChange(addMonths(monthKey, -1))}
+          title="Mês anterior"
+          aria-label="Mês anterior"
+        >
+          <ChevronLeft size={16} strokeWidth={2} />
+        </button>
+        <div className="month-nav-label">{monthLabel(monthKey)}</div>
+        <button
+          type="button"
+          onClick={() => onMonthChange(addMonths(monthKey, 1))}
+          title="Próximo mês"
+          aria-label="Próximo mês"
+        >
+          <ChevronRight size={16} strokeWidth={2} />
+        </button>
+        {!isCurrent && (
+          <button
+            type="button"
+            className="month-nav-today"
+            onClick={() => onMonthChange(currentMonthKey())}
+            title="Voltar para o mês atual"
+          >
+            Hoje
+          </button>
+        )}
+      </div>
+    </div>
+    </>
   )
 }

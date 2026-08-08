@@ -439,6 +439,15 @@ canvas {
 }
 
 /* Seletor de período */
+.topbar > .month-nav {
+  display: none;
+}
+
+.month-nav-scroll {
+  display: flex;
+  padding: 14px 32px 0;
+}
+
 .month-nav {
   display: flex;
   align-items: center;
@@ -2324,7 +2333,7 @@ canvas {
   display: none;
   position: fixed;
   right: 18px;
-  bottom: calc(var(--bottom-nav-h) + max(14px, env(safe-area-inset-bottom)));
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 76px);
   z-index: 46;
   width: 52px;
   height: 52px;
@@ -3026,9 +3035,18 @@ canvas {
    O desktop permanece inalterado. */
 @media (max-width: 768px) {
   .topbar {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     /* Espaçamento consistente entre a linha de ícones e o seletor */
     row-gap: 16px;
+  }
+
+  .topbar-actions {
+    gap: 3px;
+  }
+
+  .month-nav-scroll {
+    justify-content: center;
+    padding: 12px 16px 0;
   }
 
   /* O seletor ocupa a própria linha, abaixo dos ícones */
@@ -3490,8 +3508,38 @@ canvas {
 .reverse-timeline article { border-left:3px solid var(--primary); padding:9px 12px; border-radius:0 8px 8px 0; background:var(--surface-2); }
 .reverse-timeline p { margin:5px 0 0; font-size:.82rem; color:var(--muted); line-height:1.45; }
 @media (max-width: 768px) { .reverse-modal-backdrop { align-items:flex-end; padding:0; } .reverse-details { width:100%; max-height:88vh; border-radius:18px 18px 0 0; padding:18px; } .reverse-modal-backdrop:has(.reverse-details:not(.aporte-modal)) { inset:0 0 calc(var(--bottom-nav-h) + env(safe-area-inset-bottom)); z-index:44; align-items:center; padding:12px; background:rgb(15 23 42 / .58); } .reverse-details:not(.aporte-modal) { width:min(680px,100%); max-height:min(64dvh,620px); border-radius:18px; padding:16px; } }
-/* Datas seguem a mesma altura dos demais .input e nunca ultrapassam a coluna
-   do formulario, inclusive no controle nativo de navegadores moveis. */
+/* Datas seguem a mesma largura dos demais .input e nunca ultrapassam a coluna
+   do formulário, inclusive no controle nativo de navegadores móveis. */
+.input[type='date'] {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  box-sizing: border-box;
+}
+
+.input[type='date']::-webkit-date-and-time-value {
+  min-inline-size: 0;
+  text-align: left;
+}
+
+/* O seletor nativo do Safari/iOS impõe uma largura interna mínima. Sem
+   remover a funcionalidade de calendário, liberamos o encolhimento para que
+   ele permaneça dentro da coluna dos formulários em telas estreitas. */
+@supports (-webkit-touch-callout: none) {
+  .input[type='date'] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .input[type='date']::-webkit-datetime-edit,
+  .input[type='date']::-webkit-date-and-time-value {
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+  }
+}
+
 .goal-date-input {
   inline-size: 100%;
   max-inline-size: 100%;
