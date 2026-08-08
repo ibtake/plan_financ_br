@@ -769,6 +769,10 @@ canvas {
   display: none;
   position: fixed;
   left: 50%;
+  /* Fallback para navegadores móveis que ainda não aceitam max() com env().
+     Sem ele, a declaração inteira de `bottom` é ignorada e a barra pode
+     aparecer no fim do conteúdo, em vez de flutuar sobre a viewport. */
+  bottom: 12px;
   bottom: max(12px, env(safe-area-inset-bottom));
   z-index: 45;
   width: min(560px, calc(100% - 24px));
@@ -2457,6 +2461,8 @@ body:has(.modal-backdrop) .bottom-nav {
   display: none;
   position: fixed;
   right: 18px;
+  /* Mantém o botão alinhado acima da navegação também sem suporte a env(). */
+  bottom: 88px;
   bottom: calc(max(12px, env(safe-area-inset-bottom)) + 76px);
   z-index: 46;
   width: 52px;
