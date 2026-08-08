@@ -115,9 +115,11 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
       {onOpenNew && (
         <button
           type="button"
-          className="fab"
+          className={`fab${moreOpen ? ' is-hidden' : ''}`}
           onClick={onOpenNew}
           aria-label="Novo lançamento"
+          aria-hidden={moreOpen}
+          tabIndex={moreOpen ? -1 : 0}
         >
           <Plus size={24} strokeWidth={2.2} />
         </button>
