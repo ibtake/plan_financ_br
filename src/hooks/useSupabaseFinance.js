@@ -117,6 +117,8 @@ export function useSupabaseFinance() {
   const latestLoadRequest = useRef(0)
   const deleteGoalInFlight = useRef(false)
   const transactionFormFieldsQueue = useRef(Promise.resolve())
+  const confirmedTransactionFormFields = useRef(DEFAULT_TRANSACTION_FORM_FIELDS)
+  const transactionFormFieldsVersion = useRef(0)
 
   const reportError = useCallback((dbError) => {
     setError(translateAuthError(dbError))
@@ -184,7 +186,9 @@ export function useSupabaseFinance() {
         setTransactionFormFieldsState(DEFAULT_TRANSACTION_FORM_FIELDS)
         return
       }
-      setTransactionFormFieldsState(normalizeTransactionFormFields(profileResult.data?.transaction_form_fields))
+      const confirmedFields = normalizeTransactionFormFields(profileResult.data?.transaction_form_fields)
+      confirmedTransactionFormFields.current = confirmedFields
+      setTransactionFormFieldsState(confirmedFields)
     })
     return true
   }, [reportError, session, signOut, user])
@@ -514,8 +518,12 @@ export function useSupabaseFinance() {
 
   const setTransactionFormFields = useCallback((fields) => {
     const next = normalizeTransactionFormFields(fields)
+    const version = ++transactionFormFieldsVersion.current
     setTransactionFormFieldsState(next)
-    if (!supabase || !user) return Promise.resolve(false)
+    if (!supabase || !user) {
+      setTransactionFormFieldsState(confirmedTransactionFormFields.current)
+      return Promise.resolve(false)
+    }
 
     // Cada alteracao grava o objeto inteiro, portanto as requisicoes precisam
     // ser seriadas. Sem a fila, uma resposta antiga pode sobrescrever uma
@@ -529,8 +537,15 @@ export function useSupabaseFinance() {
         )
         if (updateError) {
           reportError(updateError)
+          // Uma falha antiga nao pode desfazer uma alteracao mais recente que
+          // ainda esteja na fila. Se esta for a ultima preferencia escolhida,
+          // restaura o ultimo estado efetivamente confirmado pelo servidor.
+          if (version === transactionFormFieldsVersion.current) {
+            setTransactionFormFieldsState(confirmedTransactionFormFields.current)
+          }
           return false
         }
+        confirmedTransactionFormFields.current = next
         return true
       })
 
