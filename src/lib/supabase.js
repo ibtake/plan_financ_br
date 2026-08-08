@@ -42,7 +42,7 @@ export function configurationProblem() {
 // Aviso claro no console durante o desenvolvimento
 if (!isSupabaseConfigured && import.meta.env.DEV) {
   console.warn(
-    '[DinDin 10] Supabase nao configurado. Defina VITE_SUPABASE_URL e ' +
+    '[DinDin 10!] Supabase nao configurado. Defina VITE_SUPABASE_URL e ' +
       'VITE_SUPABASE_ANON_KEY no arquivo .env (veja .env.example).',
   )
 }

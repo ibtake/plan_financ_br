@@ -51,10 +51,10 @@ export default function AuthScreen() {
         <div className="auth-card">
           <div className="auth-brand">
             <div className="brand-logo">
-              <img className="brand-favicon" src="/dindin-10-logo.png" alt="DinDin 10" />
+              <img className="brand-favicon" src="/dindin-10-logo.png" alt="DinDin 10!" />
             </div>
             <div>
-              <div className="brand-title">DinDin 10</div>
+              <div className="brand-title">DinDin 10!</div>
               <div className="brand-sub">Configuração pendente</div>
             </div>
           </div>
@@ -176,10 +176,10 @@ export default function AuthScreen() {
       <div className="auth-card">
         <div className="auth-brand">
           <div className="brand-logo">
-            <img className="brand-favicon" src="/dindin-10-logo.png" alt="DinDin 10" />
+            <img className="brand-favicon" src="/dindin-10-logo.png" alt="DinDin 10!" />
           </div>
           <div>
-            <div className="brand-title">DinDin 10</div>
+            <div className="brand-title">DinDin 10!</div>
             <div className="brand-sub">Suas finanças sob controle</div>
           </div>
         </div>

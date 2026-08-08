@@ -19,7 +19,7 @@ export const ICON_GROUPS = [
   { id: 'status', name: 'Status e alertas', hint: 'Pago, pendente, avisos e erros' },
   { id: 'insight', name: 'Análises e destaques', hint: 'Cartão de insights e maiores despesas' },
   { id: 'security', name: 'Eventos de segurança', hint: 'Histórico da aba Segurança' },
-  { id: 'brand', name: 'Marca e tema', hint: 'Logo, tela de login e alternância de tema' },
+  { id: 'brand', name: 'Tema e aparência', hint: 'Alternância de tema e aparência da interface' },
 ]
 
 /**
@@ -111,8 +111,7 @@ const RAW = [
   ['📧', 'E-mail enviado', 'security', 'Histórico de segurança'],
   ['🔒', 'Conexão segura', 'security', 'Tela de login'],
 
-  // Marca e tema
-  ['💰', 'Logo do DinDin 10', 'brand', 'Cabeçalho e tela de login'],
+  // Tema e aparência
   ['☀️', 'Tema claro', 'brand', 'Cabeçalho e configurações'],
   ['🌙', 'Tema escuro', 'brand', 'Cabeçalho e configurações'],
   ['🎨', 'Aparência', 'brand', 'Configurações'],

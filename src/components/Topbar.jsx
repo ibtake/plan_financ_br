@@ -88,7 +88,7 @@ export default function Topbar({
     <header className="topbar">
       <div className="topbar-mobile-brand">
         <div className="brand-logo" style={{ width: 30, height: 30 }}>
-          <img className="brand-favicon" src="/dindin-10-logo.png" alt="DinDin 10" />
+          <img className="brand-favicon" src="/dindin-10-logo.png" alt="DinDin 10!" />
         </div>
       </div>
 

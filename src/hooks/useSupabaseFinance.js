@@ -116,6 +116,7 @@ export function useSupabaseFinance() {
   const [goalDeletionPhase, setGoalDeletionPhase] = useState('')
   const latestLoadRequest = useRef(0)
   const deleteGoalInFlight = useRef(false)
+  const transactionFormFieldsQueue = useRef(Promise.resolve())
 
   const reportError = useCallback((dbError) => {
     setError(translateAuthError(dbError))
@@ -130,7 +131,14 @@ export function useSupabaseFinance() {
     }
     setLoading(true)
     if (!preserveError) setError('')
-    const [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult, profileResult] = await Promise.all([
+    // Preferencias de interface nao podem impedir o acesso aos dados financeiros.
+    // A leitura permanece paralela, mas e tratada separadamente para manter a
+    // compatibilidade caso o frontend seja publicado antes da migracao.
+    const profileRequest = guarded(
+      () => supabase.from('profiles').select('transaction_form_fields').maybeSingle(),
+      { table: 'profiles', action: 'select_transaction_form_fields' },
+    )
+    const [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult] = await Promise.all([
       guarded(() => supabase.from('transactions').select('*').order('created_at', { ascending: false }), { table: 'transactions', action: 'select' }),
       guarded(() => supabase.from('categories').select('*').order('created_at'), { table: 'categories', action: 'select' }),
       guarded(() => supabase.from('budgets').select('*'), { table: 'budgets', action: 'select' }),
@@ -140,12 +148,11 @@ export function useSupabaseFinance() {
       guarded(() => supabase.from('standard_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'standard_goal_contributions', action: 'select' }),
       guarded(() => supabase.from('reverse_goal_events').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_events', action: 'select' }),
       guarded(() => supabase.from('reverse_goal_retention_settings').select('completed_goal_retention_months').maybeSingle(), { table: 'reverse_goal_retention_settings', action: 'select' }),
-      guarded(() => supabase.from('profiles').select('transaction_form_fields').maybeSingle(), { table: 'profiles', action: 'select' }),
     ])
     // Uma carga iniciada antes de uma mutacao nao pode restaurar um snapshot
     // antigo sobre os dados que acabaram de ser confirmados pelo servidor.
     if (requestId !== latestLoadRequest.current) return false
-    const firstError = [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult, profileResult].find((r) => r.error)?.error
+    const firstError = [txResult, catResult, budgetResult, goalResult, reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult].find((r) => r.error)?.error
     if (firstError) {
       const code = String(firstError.code || '')
       const message = String(firstError.message || '').toLowerCase()
@@ -169,8 +176,16 @@ export function useSupabaseFinance() {
     setStandardGoalContributions(standardContributionsResult.data || [])
     setReverseGoalEvents(reverseEventsResult.data || [])
     setReverseGoalRetentionMonths(retentionResult.data?.completed_goal_retention_months ?? null)
-    setTransactionFormFieldsState(normalizeTransactionFormFields(profileResult.data?.transaction_form_fields))
     setLoading(false)
+
+    void profileRequest.then((profileResult) => {
+      if (requestId !== latestLoadRequest.current) return
+      if (profileResult.error) {
+        setTransactionFormFieldsState(DEFAULT_TRANSACTION_FORM_FIELDS)
+        return
+      }
+      setTransactionFormFieldsState(normalizeTransactionFormFields(profileResult.data?.transaction_form_fields))
+    })
     return true
   }, [reportError, session, signOut, user])
 
@@ -497,20 +512,30 @@ export function useSupabaseFinance() {
     await load()
   }, [load, reportError, user])
 
-  const setTransactionFormFields = useCallback(async (fields) => {
+  const setTransactionFormFields = useCallback((fields) => {
     const next = normalizeTransactionFormFields(fields)
     setTransactionFormFieldsState(next)
-    const { error: updateError } = await guarded(
-      () => supabase.from('profiles').update({ transaction_form_fields: next }).eq('id', user.id),
-      { table: 'profiles', action: 'update_transaction_form_fields' },
-    )
-    if (updateError) {
-      reportError(updateError)
-      await load({ preserveError: true })
-      return false
-    }
-    return true
-  }, [load, reportError, user])
+    if (!supabase || !user) return Promise.resolve(false)
+
+    // Cada alteracao grava o objeto inteiro, portanto as requisicoes precisam
+    // ser seriadas. Sem a fila, uma resposta antiga pode sobrescrever uma
+    // preferencia mais recente em redes lentas ou instaveis.
+    transactionFormFieldsQueue.current = transactionFormFieldsQueue.current
+      .catch(() => undefined)
+      .then(async () => {
+        const { error: updateError } = await guarded(
+          () => supabase.from('profiles').update({ transaction_form_fields: next }).eq('id', user.id),
+          { table: 'profiles', action: 'update_transaction_form_fields' },
+        )
+        if (updateError) {
+          reportError(updateError)
+          return false
+        }
+        return true
+      })
+
+    return transactionFormFieldsQueue.current
+  }, [reportError, user])
 
   return { transactions, categories, budgets, goals, theme, transactionFormFields, loading, error, isDeletingGoal, goalDeletionPhase, reload: load,
     addTransaction, updateTransaction, deleteTransaction, duplicateTransaction, togglePaid,
