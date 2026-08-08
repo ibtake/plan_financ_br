@@ -67,18 +67,30 @@ function ReverseMetadataForm({ initial, onSave, onCancel }) {
 function AporteModal({ goal, onSave, onClose }) {
   const [amount, setAmount] = useState('')
   const [occurredOn, setOccurredOn] = useState(new Date().toISOString().slice(0, 10))
-  const submit = async (event) => { event.preventDefault(); if (await onSave(goal.id, { amount: parseAmount(amount), occurredOn })) onClose() }
-  return <div className="reverse-modal-backdrop" onMouseDown={onClose}><form className="reverse-details aporte-modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}><div className="row-between"><strong>Fazer aporte</strong><button type="button" className="icon-btn" onClick={onClose}><X size={18} /></button></div><label className="label">Valor *</label><input className="input mono aporte-value" value={amount} onChange={(event) => setAmount(formatAmountInput(event.target.value))} inputMode="numeric" required autoFocus /><label className="label">Data real *</label><input className="input" type="date" min={goal.reverseStartDate} max={new Date().toISOString().slice(0, 10)} value={occurredOn} onChange={(event) => setOccurredOn(event.target.value)} required /><button className="btn btn-primary">Salvar aporte</button></form></div>
+  const [closing, setClosing] = useState(false)
+  const closeWithAnimation = () => {
+    if (closing) return
+    setClosing(true)
+    window.setTimeout(onClose, 240)
+  }
+  const submit = async (event) => { event.preventDefault(); if (await onSave(goal.id, { amount: parseAmount(amount), occurredOn })) closeWithAnimation() }
+  return <div className={`reverse-modal-backdrop${closing ? ' is-closing' : ''}`} onMouseDown={closeWithAnimation}><form className={`reverse-details aporte-modal${closing ? ' is-closing' : ''}`} onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}><div className="row-between"><strong>Fazer aporte</strong><button type="button" className="icon-btn" onClick={closeWithAnimation}><X size={18} /></button></div><label className="label">Valor *</label><input className="input mono aporte-value" value={amount} onChange={(event) => setAmount(formatAmountInput(event.target.value))} inputMode="numeric" required autoFocus /><label className="label">Data real *</label><input className="input" type="date" min={goal.reverseStartDate} max={new Date().toISOString().slice(0, 10)} value={occurredOn} onChange={(event) => setOccurredOn(event.target.value)} required /><button className="btn btn-primary">Salvar aporte</button></form></div>
 }
 
 function StandardAporteModal({ goal, onSave, onClose }) {
   const [amount, setAmount] = useState('')
   const [occurredOn, setOccurredOn] = useState(new Date().toISOString().slice(0, 10))
+  const [closing, setClosing] = useState(false)
+  const closeWithAnimation = () => {
+    if (closing) return
+    setClosing(true)
+    window.setTimeout(onClose, 240)
+  }
   const submit = async (event) => {
     event.preventDefault()
-    if (await onSave(goal.id, { amount: parseAmount(amount), occurredOn })) onClose()
+    if (await onSave(goal.id, { amount: parseAmount(amount), occurredOn })) closeWithAnimation()
   }
-  return <div className="reverse-modal-backdrop" onMouseDown={onClose}><form className="reverse-details aporte-modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}><div className="row-between"><strong>Registrar aporte</strong><button type="button" className="icon-btn" onClick={onClose}><X size={18} /></button></div><label className="label">Valor *</label><input className="input mono aporte-value" value={amount} onChange={(event) => setAmount(formatAmountInput(event.target.value))} inputMode="numeric" required autoFocus /><label className="label">Data do aporte *</label><input className="input" type="date" max={new Date().toISOString().slice(0, 10)} value={occurredOn} onChange={(event) => setOccurredOn(event.target.value)} required /><button className="btn btn-primary">Salvar aporte</button></form></div>
+  return <div className={`reverse-modal-backdrop${closing ? ' is-closing' : ''}`} onMouseDown={closeWithAnimation}><form className={`reverse-details aporte-modal${closing ? ' is-closing' : ''}`} onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}><div className="row-between"><strong>Registrar aporte</strong><button type="button" className="icon-btn" onClick={closeWithAnimation}><X size={18} /></button></div><label className="label">Valor *</label><input className="input mono aporte-value" value={amount} onChange={(event) => setAmount(formatAmountInput(event.target.value))} inputMode="numeric" required autoFocus /><label className="label">Data do aporte *</label><input className="input" type="date" max={new Date().toISOString().slice(0, 10)} value={occurredOn} onChange={(event) => setOccurredOn(event.target.value)} required /><button className="btn btn-primary">Salvar aporte</button></form></div>
 }
 
 function ReverseCard({ goal, onAporte, onEdit, onDelete, history = [], contributions = [], events = [], onUpdateContribution, isDeleting }) {

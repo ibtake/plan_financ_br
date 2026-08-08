@@ -192,7 +192,9 @@ canvas {
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   background: var(--bg);
-  overflow-x: hidden;
+  /* `clip` evita que este contêiner vire a referência de rolagem no mobile;
+     assim a topbar sticky permanece presa à viewport. */
+  overflow-x: clip;
   max-width: 100vw;
 }
 
@@ -303,13 +305,32 @@ canvas {
   flex-direction: column;
   gap: 4px;
   padding: 20px 12px;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+  position: relative;
+  background: linear-gradient(105deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface) 74%, transparent));
+  backdrop-filter: saturate(180%) blur(22px);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
+.sidebar-hover-pill {
+  position: absolute;
+  z-index: 0;
+  left: 12px;
+  right: 12px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--primary-soft) 76%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 38%, transparent), 0 5px 14px color-mix(in srgb, var(--primary) 13%, transparent);
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  pointer-events: none;
+  transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1), height 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .sidebar-brand {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -355,6 +376,8 @@ canvas {
 }
 
 .sidebar-section {
+  position: relative;
+  z-index: 1;
   padding: 16px 10px 6px;
   font-size: 11px;
   font-weight: 600;
@@ -364,12 +387,16 @@ canvas {
 }
 
 .sidebar-nav {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
 .sidebar-link {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -385,15 +412,14 @@ canvas {
   transition: var(--transition);
 }
 
-.sidebar-link:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-
 .sidebar-link.active {
-  background: var(--primary-soft);
+  background: transparent;
   color: var(--primary);
   font-weight: 600;
+}
+
+.sidebar-link.is-hovered {
+  color: var(--primary);
 }
 
 .sidebar-link svg {
@@ -424,7 +450,7 @@ canvas {
 }
 
 .sidebar-link.active .sidebar-badge {
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
 }
 
 .sidebar-foot {
@@ -628,11 +654,31 @@ canvas {
   z-index: 60;
   width: min(304px, calc(100vw - 32px));
   padding: 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
-  animation: popIn 140ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+
+/* Superfície translúcida compartilhada pelos popups da topbar. Mantém a
+   mesma sensação de profundidade e movimento do menu "Mais" mobile. */
+.glass-popover {
+  background: color-mix(in srgb, var(--surface) 91%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
+  border-radius: 22px;
+  box-shadow: 0 16px 40px color-mix(in srgb, var(--text) 18%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 32%, transparent);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px) scale(0.96);
+  transform-origin: top right;
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 260ms;
+}
+
+.glass-popover.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+  transition-delay: 0s;
 }
 
 .popover-anchor {
@@ -723,6 +769,14 @@ canvas {
   box-shadow: 0 10px 30px color-mix(in srgb, var(--text) 12%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 32%, transparent);
   backdrop-filter: saturate(180%) blur(22px);
   -webkit-backdrop-filter: saturate(180%) blur(22px);
+}
+
+/* O backdrop do modal cobre toda a viewport, mas a barra inferior permanece
+   visualmente nítida. Ela fica apenas como referência visual e não recebe
+   interações enquanto o modal está aberto. */
+body:has(.modal-backdrop) .bottom-nav {
+  z-index: 101;
+  pointer-events: none;
 }
 
 .bottom-nav-list {
@@ -1492,7 +1546,7 @@ canvas {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  animation: fade 140ms ease;
+  animation: modal-backdrop-enter 180ms ease both;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -1509,10 +1563,18 @@ canvas {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  animation: popIn 180ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  animation: modal-surface-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
   /* Impede movimento horizontal no modal */
   touch-action: pan-y pinch-zoom;
   overscroll-behavior-x: none;
+}
+
+.modal-backdrop.is-closing {
+  animation: modal-backdrop-leave 220ms ease both;
+}
+
+.modal.is-closing {
+  animation: modal-surface-leave 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .modal > form {
@@ -1564,6 +1626,26 @@ canvas {
     opacity: 0;
     transform: translateY(8px) scale(0.985);
   }
+}
+
+@keyframes modal-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-backdrop-leave {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes modal-surface-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes modal-surface-leave {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(10px) scale(0.96); }
 }
 
 /* ============================================================
@@ -3104,7 +3186,25 @@ canvas {
 
   /* Busca vira ícone; o campo aparece expandido abaixo do topo */
   .topbar-search {
-    display: none;
+    display: block;
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 12px;
+    left: 12px;
+    z-index: 55;
+    padding: 8px;
+    border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
+    border-radius: 22px;
+    background: color-mix(in srgb, var(--surface) 91%, transparent);
+    box-shadow: 0 16px 40px color-mix(in srgb, var(--text) 18%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 32%, transparent);
+    backdrop-filter: saturate(180%) blur(24px);
+    -webkit-backdrop-filter: saturate(180%) blur(24px);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px) scale(0.96);
+    transform-origin: top right;
+    pointer-events: none;
+    transition: opacity 180ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 260ms;
   }
 
   .topbar-search-toggle {
@@ -3112,15 +3212,11 @@ canvas {
   }
 
   .topbar-search.open {
-    display: block;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    flex: none;
-    padding: 10px 16px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+    transition-delay: 0s;
   }
 
   .stack {
@@ -3270,7 +3366,9 @@ canvas {
   }
 
   .modal-backdrop {
-    inset: 0 0 calc(var(--bottom-nav-h) + env(safe-area-inset-bottom));
+    /* O backdrop precisa cobrir inclusive a área da navegação inferior.
+       A barra e o FAB têm z-index menor e ficam corretamente desfocados. */
+    inset: 0;
     padding: 12px;
     align-items: center;
     justify-content: center;
@@ -3632,8 +3730,10 @@ canvas {
 .reverse-summary, .standard-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:16px; }
 .reverse-summary span, .standard-summary span { display:flex; flex-direction:column; gap:2px; padding:9px; border-radius:8px; background:var(--surface-2); font-size:.75rem; color:var(--muted); }
 .reverse-summary strong, .standard-summary strong { color:var(--text); font-size:.88rem; }
-.reverse-modal-backdrop { position:fixed; z-index:100; inset:0; display:flex; align-items:center; justify-content:center; padding:20px; background:rgb(15 23 42 / .58); }
-.reverse-details { width:min(720px,100%); max-height:min(82vh,760px); overflow:auto; padding:22px; border-radius:16px; background:var(--surface); box-shadow:0 24px 80px rgb(0 0 0 / .3); }
+.reverse-modal-backdrop { position:fixed; z-index:100; inset:0; display:flex; align-items:center; justify-content:center; padding:20px; background:rgb(15 23 42 / .58); animation:modal-backdrop-enter 180ms ease both; }
+.reverse-modal-backdrop.is-closing { animation:modal-backdrop-leave 220ms ease both; }
+.reverse-details { width:min(720px,100%); max-height:min(82vh,760px); overflow:auto; padding:22px; border-radius:16px; background:var(--surface); box-shadow:0 24px 80px rgb(0 0 0 / .3); animation:modal-surface-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.reverse-details.is-closing { animation:modal-surface-leave 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .reverse-details:not(.aporte-modal) { width:min(860px,100%); max-height:min(78dvh,820px); display:flex; flex-direction:column; overflow:hidden; }
 .reverse-details:not(.aporte-modal) > .row-between { flex:0 0 auto; }
 .reverse-details:not(.aporte-modal) .reverse-timeline { min-height:0; overflow:auto; padding-right:4px; }

@@ -170,8 +170,7 @@ export default function Topbar({
             {count > 0 && <span className="topbar-dot">{count > 9 ? '9+' : count}</span>}
           </button>
 
-          {bellOpen && (
-            <div className="popover" role="dialog" aria-label="Notificações">
+          <div className={`popover glass-popover${bellOpen ? ' is-open' : ''}`} role="dialog" aria-label="Notificações" aria-hidden={!bellOpen}>
               <div className="popover-head">
                 <div className="popover-title">Pendências do mês</div>
                 <div className="popover-sub">
@@ -192,6 +191,7 @@ export default function Topbar({
                     type="button"
                     className={`popover-item${isDueToday ? ' due-today' : ''}`}
                     onClick={() => goToPending(item)}
+                    tabIndex={bellOpen ? 0 : -1}
                   >
                     <span className="grow" style={{ display: 'grid' }}>
                       <span className="tx-desc">{item.description}</span>
@@ -208,8 +208,7 @@ export default function Topbar({
                   )
                 })
               )}
-            </div>
-          )}
+          </div>
         </div>
 
         <button
@@ -248,18 +247,16 @@ export default function Topbar({
             <span className="avatar">{initials(user?.email)}</span>
           </button>
 
-          {profileOpen && (
-            <div className="popover" role="menu" aria-label="Conta">
+          <div className={`popover glass-popover${profileOpen ? ' is-open' : ''}`} role="menu" aria-label="Conta" aria-hidden={!profileOpen}>
               <div className="popover-head">
                 <div className="popover-title">Conta</div>
                 <div className="popover-sub" title={user?.email}>{user?.email}</div>
               </div>
-              <button type="button" className="popover-item danger" onClick={onSignOut} role="menuitem">
+              <button type="button" className="popover-item danger" onClick={onSignOut} role="menuitem" tabIndex={profileOpen ? 0 : -1}>
                 <LogOut size={16} strokeWidth={1.9} />
                 Sair da conta
               </button>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </header>

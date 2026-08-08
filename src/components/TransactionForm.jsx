@@ -26,11 +26,13 @@ const EMPTY = {
 export default function TransactionForm({ open, onClose, onSubmit, initial, categories, defaultDate, fieldVisibility }) {
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
+  const [closing, setClosing] = useState(false)
   const isEditing = Boolean(initial?.id)
   const visibleFields = normalizeTransactionFormFields(fieldVisibility)
 
   useEffect(() => {
     if (!open) return
+    setClosing(false)
     if (initial) {
       setForm({
         ...EMPTY,
@@ -62,6 +64,11 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
   const showField = (field) => isEditing || visibleFields[field]
+  const closeWithAnimation = () => {
+    if (closing) return
+    setClosing(true)
+    window.setTimeout(onClose, 240)
+  }
 
   const validate = () => {
     const e = {}
@@ -81,16 +88,16 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
       amount: parseAmount(form.amount),
       installments: Math.max(1, Number(form.installments) || 1),
     })
-    onClose()
+    closeWithAnimation()
   }
 
   const installments = Math.max(1, Number(form.installments) || 1)
   const amountValue = parseAmount(form.amount)
 
   return (
-    <div className="modal-backdrop" onClick={onClose} role="presentation">
+    <div className={`modal-backdrop${closing ? ' is-closing' : ''}`} onClick={closeWithAnimation} role="presentation">
       <div
-        className="modal"
+        className={`modal${closing ? ' is-closing' : ''}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -106,7 +113,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                 {isEditing ? 'Altere os dados e salve' : 'Registre uma receita, despesa ou reinvestimento'}
               </div>
             </div>
-            <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar">
+            <button type="button" className="icon-btn" onClick={closeWithAnimation} aria-label="Fechar">
               <X size={18} strokeWidth={2} />
             </button>
           </div>
@@ -336,7 +343,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
           </div>
 
           <div className="modal-foot">
-            <button type="button" className="btn" onClick={onClose}>
+            <button type="button" className="btn" onClick={closeWithAnimation}>
               Cancelar
             </button>
             <button type="submit" className="btn btn-primary">
