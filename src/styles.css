@@ -3076,6 +3076,9 @@ body:has(.modal-backdrop) .fab {
 .code-digit {
   width: 100%;
   min-width: 0;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   aspect-ratio: 1;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
