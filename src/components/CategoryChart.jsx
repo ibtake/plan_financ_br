@@ -1,11 +1,37 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, MinusCircle, PieChart as PieChartIcon } from 'lucide-react'
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import AppIcon from './AppIcon.jsx'
+import ChartInfoTooltip from './ChartInfoTooltip.jsx'
 import { getCategory } from '../utils/categories.js'
 import { formatCurrency, formatPercent } from '../utils/format.js'
 
 const SMALL_CATEGORY_SHARE = 5
+const HEX_COLUMNS = 13
+const HEX_ROWS = 9
+
+function buildHexGrid(data) {
+  const slots = []
+  for (let row = 0; row < HEX_ROWS; row += 1) {
+    for (let column = 0; column < HEX_COLUMNS; column += 1) {
+      const x = (column - (HEX_COLUMNS - 1) / 2) / 5.7
+      const y = (row - (HEX_ROWS - 1) / 2) / 3.8
+      slots.push({ row, column, filled: (x * x) + (y * y) <= 1.08 })
+    }
+  }
+  const filledSlots = slots.filter((slot) => slot.filled)
+  let cursor = 0
+  return slots.map((slot) => {
+    if (!slot.filled) return { ...slot, category: null }
+    const position = ((cursor + 0.5) / filledSlots.length) * 100
+    let accumulated = 0
+    const category = data.find((item) => {
+      accumulated += item.share
+      return position <= accumulated
+    }) || data[data.length - 1]
+    cursor += 1
+    return { ...slot, category }
+  })
+}
 
 function getStatus(item) {
   if (item.target <= 0) return { tone: 'neutral', label: 'Sem meta', Icon: MinusCircle }
@@ -29,6 +55,7 @@ function ShowAllButton({ expanded, onClick }) {
 /** Dois cards de apresentação que preservam os mesmos cálculos e dados do gráfico anterior. */
 export default function CategoryChart({ byCategory, categories, total, incomeTotal = 0 }) {
   const [activeId, setActiveId] = useState(null)
+  const [hoveredId, setHoveredId] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
   const [showAll, setShowAll] = useState(false)
   const data = useMemo(() => {
@@ -45,20 +72,43 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
     return [...regular, ...grouped]
   }, [byCategory, categories, total])
 
-  if (!data.length) return <div className="card"><div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div><div className="empty"><div className="empty-icon"><PieChartIcon size={22} strokeWidth={1.6} /></div><div className="empty-title">Nenhuma saída neste mês</div><div className="text-sm">Adicione lançamentos para ver a distribuição.</div></div></div>
-
   const displayedLegend = showAll ? data : data.slice(0, 7)
   const displayedRows = showAll ? data : data.slice(0, 7)
   const toggleAll = () => setShowAll((value) => !value)
   const expenseOfIncome = incomeTotal > 0 ? (total / incomeTotal) * 100 : null
+  const hexGrid = useMemo(() => buildHexGrid(data), [data])
+  const focusedId = hoveredId || activeId
+  const focusedItem = data.find((item) => item.id === focusedId)
+
+  if (!data.length) return <div className="card"><div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div><div className="empty"><div className="empty-icon"><PieChartIcon size={22} strokeWidth={1.6} /></div><div className="empty-title">Nenhuma saída neste mês</div><div className="text-sm">Adicione lançamentos para ver a distribuição.</div></div></div>
 
   return <div className="expense-cards-layout">
     <section className="card expense-distribution-card">
       <div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div>
-      <div className="expense-donut-wrap">
-        <div className="expense-donut-center" aria-label={`Total gasto: ${formatCurrency(total)}`}><strong>{formatCurrency(total)}</strong><span>Total gasto</span><small>{expenseOfIncome === null ? 'Sem receita no mês' : `Já gastou ${formatPercent(expenseOfIncome, 0)}`}</small></div>
-        <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={82} outerRadius={132} paddingAngle={2} stroke="none" onMouseEnter={(item) => setActiveId(item.id)} onMouseLeave={() => setActiveId(null)} onClick={(item) => setActiveId(item.id)}>{data.map((item) => <Cell key={item.id} fill={item.color} fillOpacity={activeId && activeId !== item.id ? 0.3 : 1} stroke={activeId === item.id ? 'var(--surface)' : 'none'} strokeWidth={activeId === item.id ? 3 : 0} />)}</Pie><Tooltip content={<TooltipContent />} /></PieChart></ResponsiveContainer>
+      <div className="expense-hex-wrap">
+        <div className="expense-donut-center" aria-live="polite" aria-label={`${focusedItem ? focusedItem.name : 'Total gasto'}: ${formatCurrency(focusedItem ? focusedItem.value : total)}`}>
+          <strong>{formatCurrency(focusedItem ? focusedItem.value : total)}</strong>
+          <span>{focusedItem ? focusedItem.name : 'Total gasto'}</span>
+          <small>{focusedItem ? `${formatPercent(focusedItem.share, 1)} do total` : expenseOfIncome === null ? 'Sem receita no mês' : `Já gastou ${formatPercent(expenseOfIncome, 0)}`}</small>
+        </div>
+        <div className="expense-hex-grid" role="group" aria-label="Distribuição por classe de despesa">
+          {hexGrid.map((hex) => hex.category ? (
+            <button
+              type="button"
+              key={`${hex.row}-${hex.column}`}
+              className={`expense-hex${focusedId && focusedId !== hex.category.id ? ' is-dimmed' : ''}`}
+              style={{ '--hex-color': hex.category.color, '--hex-offset': hex.row % 2 ? '13.5px' : '0px' }}
+              onMouseEnter={() => setHoveredId(hex.category.id)}
+              onMouseLeave={() => setHoveredId(null)}
+              onFocus={() => setHoveredId(hex.category.id)}
+              onBlur={() => setHoveredId(null)}
+              onClick={() => setActiveId(hex.category.id)}
+              aria-label={`${hex.category.name}: ${formatCurrency(hex.category.value)}`}
+            />
+          ) : <span className="expense-hex is-empty" key={`${hex.row}-${hex.column}`} aria-hidden="true" />)}
+        </div>
       </div>
+      {hoveredId && focusedItem && <div className="expense-hex-tooltip"><ChartInfoTooltip title={focusedItem.name} value={formatCurrency(focusedItem.value)} color={focusedItem.color} detail={formatPercent(focusedItem.share, 1) + ' do total'} /></div>}
       <div className="expense-donut-legend">{displayedLegend.map((item) => <button type="button" key={item.id} className={`expense-legend-row${activeId === item.id ? ' is-active' : ''}`} onMouseEnter={() => setActiveId(item.id)} onMouseLeave={() => setActiveId(null)} onClick={() => setActiveId(item.id)} aria-label={`${item.name}: ${formatCurrency(item.value)}, ${formatPercent(item.share, 1)} do total`}><span className="chart-dot" style={{ background: item.color }} /><span className="expense-legend-name"><AppIcon emoji={item.icon} /> {item.name}</span><strong>{formatCurrency(item.value)}</strong><span>{formatPercent(item.share, 1)}</span></button>)}</div>
       {data.length > 7 && <ShowAllButton expanded={showAll} onClick={toggleAll} />}
     </section>

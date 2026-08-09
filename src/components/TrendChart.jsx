@@ -7,32 +7,24 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { formatCurrency, monthLabel, monthLabelShort } from '../utils/format.js'
+import ChartInfoTooltip from './ChartInfoTooltip.jsx'
+import { formatCurrency, formatPercent, monthLabel, monthLabelShort, percentChange } from '../utils/format.js'
 
-function TooltipContent({ active, payload, label }) {
+function TooltipContent({ active, payload }) {
   if (!active || !payload?.length) return null
   const item = payload[0].payload
-  return (
-    <div className="chart-tooltip">
-      <div className="chart-tooltip-title">{monthLabel(label)}</div>
-      <div className="chart-tooltip-row">
-        <span className="chart-dot" style={{ background: 'var(--primary)' }} />
-        Acumulado: <strong>{formatCurrency(item.cumulative)}</strong>
-      </div>
-      <div className="chart-tooltip-row">
-        <span className="chart-dot" style={{ background: 'var(--text-muted)' }} />
-        {'No \u00eas: '}<strong>{formatCurrency(item.balance)}</strong>
-      </div>
-    </div>
-  )
+  const change = item.previousBalance === null ? null : percentChange(item.balance, item.previousBalance)
+  return <ChartInfoTooltip title={item.tooltipTitle} value={formatCurrency(item.balance)} color={item.balance >= 0 ? 'var(--income)' : 'var(--expense)'} changeLabel={change === null ? null : String(change >= 0 ? '↑' : '↓') + ' ' + formatPercent(Math.abs(change), 0)} changeTone={change === null ? null : change >= 0 ? 'positive' : 'negative'} detail="Saldo do mês" />
 }
 
 export default function TrendChart({ trend, variant = 'card', value = 0, changeAmount = null }) {
   const data = trend
   const isHero = variant === 'hero'
   const hasData = data.some((d) => d.income > 0 || d.expense > 0 || d.reinvested > 0)
-  const chartData = data.map((item) => ({
+  const chartData = data.map((item, index) => ({
     ...item,
+    tooltipTitle: monthLabel(item.key),
+    previousBalance: index === 0 ? null : data[index - 1].balance,
     positiveCumulative: Math.max(item.cumulative, 0),
     negativeCumulative: Math.min(item.cumulative, 0),
   }))
