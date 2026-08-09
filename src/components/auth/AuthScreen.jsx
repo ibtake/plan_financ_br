@@ -329,7 +329,13 @@ export default function AuthScreen() {
 
             <CodeInput value={code} onChange={setCode} disabled={busy} />
 
-            <button type="button" className="btn btn-block" onClick={pasteMfaCode} disabled={busy}>
+            <button
+              type="button"
+              className="btn btn-block"
+              onPointerDown={() => document.activeElement?.blur()}
+              onClick={pasteMfaCode}
+              disabled={busy}
+            >
               Colar código
             </button>
 
