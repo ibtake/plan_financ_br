@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { expandMonth } from '../utils/recurrence.js'
-import { addMonths, currentMonthKey, lastMonths, percentChange } from '../utils/format.js'
+import { addMonths, currentMonthKey, lastMonths, monthKeyFromDate, percentChange } from '../utils/format.js'
 
 /** Resumo de uma lista de ocorrencias */
 export function summarize(occurrences) {
@@ -49,7 +49,13 @@ export function useMonthlyData(transactions, monthKey, monthsBack = 12) {
     const previous = expandMonth(transactions, addMonths(key, -1))
     const current = summarize(occurrences)
     const prev = summarize(previous)
-    const history = lastMonths(key, monthsBack).map((k) => ({ key: k, ...summarize(expandMonth(transactions, k)) }))
+    const firstDataMonth = transactions
+      .map((transaction) => monthKeyFromDate(transaction.date))
+      .filter(Boolean)
+      .sort()[0]
+    const historyKeys = lastMonths(key, Math.min(Number(monthsBack) || 12, 12))
+      .filter((month) => firstDataMonth && month >= firstDataMonth)
+    const history = historyKeys.map((k) => ({ key: k, ...summarize(expandMonth(transactions, k)) }))
 
     let cumulative = 0
     let cumulativePatrimony = 0

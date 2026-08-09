@@ -104,7 +104,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
         aria-label={isEditing ? 'Editar lançamento' : 'Novo lançamento'}
       >
         <form onSubmit={handleSubmit}>
-          <div className="modal-head">
+          <div className="modal-head transaction-form-head">
             <div>
               <div className="card-title">
                 {isEditing ? 'Editar lançamento' : 'Novo lançamento'}
@@ -116,7 +116,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
             </button>
           </div>
 
-          <div className="modal-body stack" style={{ gap: 16 }}>
+          <div className="modal-body stack transaction-form-body" style={{ gap: 16 }}>
             <div className="type-toggle">
               <button
                 type="button"

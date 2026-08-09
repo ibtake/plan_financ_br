@@ -1716,6 +1716,14 @@ body:has(.modal-backdrop) .fab {
   padding: 22px;
 }
 
+.transaction-form-head {
+  padding-bottom: 12px;
+}
+
+.transaction-form-body {
+  padding-top: 12px;
+}
+
 .modal-foot {
   display: flex;
   justify-content: flex-end;
@@ -4033,8 +4041,10 @@ body:has(.modal-backdrop) .fab {
   --primary-soft: #e8f0ff;
   --income: #15965d;
   --income-soft: #e8f7ef;
+  --trend-income-fill: rgb(21 150 93 / 0.28);
   --expense: #f06b35;
   --expense-soft: #fff0e9;
+  --trend-expense-fill: rgb(240 107 53 / 0.26);
   --warning: #e69a37;
   --warning-soft: #fff5df;
   --info: #1764d8;
@@ -4061,8 +4071,10 @@ body:has(.modal-backdrop) .fab {
   --primary-soft: #172e58;
   --income: #45c58b;
   --income-soft: #102c22;
+  --trend-income-fill: rgb(69 197 139 / 0.34);
   --expense: #ff8b56;
   --expense-soft: #3b2118;
+  --trend-expense-fill: rgb(255 139 86 / 0.32);
   --warning: #efb45d;
   --warning-soft: #382a15;
   --info: #6aa2ff;
@@ -4086,9 +4098,24 @@ body:has(.modal-backdrop) .fab {
 }
 
 .notification-popover {
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  backdrop-filter: blur(18px) saturate(125%);
-  -webkit-backdrop-filter: blur(18px) saturate(125%);
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: blur(28px) saturate(145%);
+  -webkit-backdrop-filter: blur(28px) saturate(145%);
+}
+
+.bottom-nav-popover {
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: blur(28px) saturate(145%);
+  -webkit-backdrop-filter: blur(28px) saturate(145%);
+}
+
+.topbar .glass-popover {
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: blur(28px) saturate(145%);
+  -webkit-backdrop-filter: blur(28px) saturate(145%);
 }
 
 .bottom-nav {

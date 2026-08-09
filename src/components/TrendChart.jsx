@@ -75,7 +75,7 @@ export default function TrendChart({ trend, variant = 'card', value = 0, changeA
                 type="monotone"
                 dataKey="positiveCumulative"
                 stroke="none"
-                fill="var(--income-soft)"
+                fill="var(--trend-income-fill)"
                 baseValue={0}
                 isAnimationActive={false}
               />
@@ -83,7 +83,7 @@ export default function TrendChart({ trend, variant = 'card', value = 0, changeA
                 type="monotone"
                 dataKey="negativeCumulative"
                 stroke="none"
-                fill="var(--expense-soft)"
+                fill="var(--trend-expense-fill)"
                 baseValue={0}
                 isAnimationActive={false}
               />
