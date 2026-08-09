@@ -126,6 +126,11 @@ function AuthenticatedApp() {
   // de qualquer painel.
   const [search, setSearch] = useState('')
   const monthly = useMonthlyData(finance.transactions, monthKey)
+  const chartMonthKey = finance.transactions.reduce((latest, transaction) => {
+    const candidate = String(transaction.date || '').slice(0, 7)
+    return candidate > latest ? candidate : latest
+  }, '') || currentMonthKey()
+  const chartMonthly = useMonthlyData(finance.transactions, chartMonthKey)
   const theme = finance.theme === 'dark' || finance.theme === 'light' ? finance.theme : systemTheme
 
   useEffect(() => {
@@ -201,7 +206,7 @@ function AuthenticatedApp() {
       <Suspense fallback={<ChartFallback height={220} />}>
         <TrendChart
           variant="hero"
-          trend={monthly.trend}
+          trend={chartMonthly.trend}
           value={monthly.summary.balance}
           changeAmount={monthly.summary.balance - monthly.previousSummary.balance}
         />
