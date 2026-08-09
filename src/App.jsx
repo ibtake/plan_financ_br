@@ -199,7 +199,12 @@ function AuthenticatedApp() {
   const overview = (
     <div className="stack">
       <Suspense fallback={<ChartFallback height={220} />}>
-        <TrendChart variant="hero" trend={monthly.trend} value={monthly.summary.balance} change={monthly.change.balance} />
+        <TrendChart
+          variant="hero"
+          trend={monthly.trend}
+          value={monthly.summary.balance}
+          changeAmount={monthly.summary.balance - monthly.previousSummary.balance}
+        />
       </Suspense>
       <SummaryCards
         summary={monthly.summary}
@@ -224,10 +229,8 @@ function AuthenticatedApp() {
           <MonthlyChart transactions={finance.transactions} monthKey={monthly.monthKey} categories={finance.categories} />
         </Suspense>
       </div>
-      <div className="grid-2 dashboard-grid">
+      <div className="grid-2 dashboard-grid dashboard-bottom-panels">
         <Insights {...insightProps} />
-      </div>
-      <div className="grid-2 dashboard-grid">
         <FixedExpenses occurrences={monthly.occurrences} categories={finance.categories} onTogglePaid={finance.togglePaid} />
       </div>
     </div>
@@ -267,6 +270,7 @@ function AuthenticatedApp() {
           pending={pending}
           pendingTotal={pendingTotal}
           onOpenPending={(occurrence) => { setNotificationFocus(occurrence); setActiveTab('transactions') }}
+          showMonthNav={!['budget', 'goals'].includes(activeTab)}
         />
 
         <main className="container main-content">

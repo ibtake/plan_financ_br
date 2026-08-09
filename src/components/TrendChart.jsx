@@ -2,14 +2,12 @@ import { TrendingUp } from 'lucide-react'
 import {
   Area,
   AreaChart,
-  CartesianGrid,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
-import { formatCompact, formatCurrency, formatPercent, monthLabel, monthLabelShort } from '../utils/format.js'
+import { formatCurrency, monthLabel, monthLabelShort } from '../utils/format.js'
 
 function TooltipContent({ active, payload, label }) {
   if (!active || !payload?.length) return null
@@ -23,45 +21,48 @@ function TooltipContent({ active, payload, label }) {
       </div>
       <div className="chart-tooltip-row">
         <span className="chart-dot" style={{ background: 'var(--text-muted)' }} />
-        No mês: <strong>{formatCurrency(item.balance)}</strong>
+        {'No \u00eas: '}<strong>{formatCurrency(item.balance)}</strong>
       </div>
     </div>
   )
 }
 
-export default function TrendChart({ trend, variant = 'card', value = 0, change = null }) {
+export default function TrendChart({ trend, variant = 'card', value = 0, changeAmount = null }) {
   const data = trend
   const isHero = variant === 'hero'
   const hasData = data.some((d) => d.income > 0 || d.expense > 0 || d.reinvested > 0)
+  const chartData = data.map((item) => ({
+    ...item,
+    positiveCumulative: Math.max(item.cumulative, 0),
+    negativeCumulative: Math.min(item.cumulative, 0),
+  }))
 
   return (
     <div className={isHero ? 'balance-hero' : 'card'}>
       <div className="card-head">
         <div>
-          <div className={isHero ? 'balance-hero-label' : 'card-title'}>{isHero ? 'Saldo total' : 'Saldo acumulado'}</div>
+          <div className={isHero ? 'balance-hero-label' : 'card-title'}>
+            {isHero ? 'Saldo do \u00eas' : 'Saldo acumulado'}
+          </div>
           {isHero && (
             <>
               <div className="balance-hero-value">{formatCurrency(value)}</div>
-              <div className={`balance-hero-change${change !== null && change < 0 ? ' is-negative' : ''}`}>
-                {change === null ? 'Sem comparaÃ§Ã£o' : `${change >= 0 ? '▲' : '▼'} ${formatPercent(Math.abs(change))} vs. mÃªs anterior`}
+              <div className={`balance-hero-change${changeAmount !== null && changeAmount < 0 ? ' is-negative' : ''}`}>
+                {changeAmount === null
+                  ? 'Sem compara\u00e7\u00e3o'
+                  : `${changeAmount >= 0 ? '\u25b2' : '\u25bc'} ${formatCurrency(Math.abs(changeAmount))} vs. m\u00eas anterior`}
               </div>
             </>
           )}
-          <div className="card-sub">Quanto você somou (ou perdeu) ao longo do período</div>
+          <div className="card-sub">{'Quanto voc\u00ea somou (ou perdeu) ao longo do per\u00edodo'}</div>
         </div>
       </div>
 
       {hasData ? (
         <div className={isHero ? 'chart-wrap balance-hero-chart' : 'chart-wrap'} style={{ height: isHero ? 190 : 240 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
-              <defs>
-                <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+            <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+              <YAxis hide domain={['auto', 'auto']} />
               <XAxis
                 dataKey="key"
                 tickFormatter={monthLabelShort}
@@ -69,23 +70,31 @@ export default function TrendChart({ trend, variant = 'card', value = 0, change 
                 axisLine={{ stroke: 'var(--border)' }}
                 tickLine={false}
               />
-              <YAxis
-                tickFormatter={formatCompact}
-                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-                width={70}
-              />
-              <ReferenceLine y={0} stroke="var(--border-strong)" />
               <Tooltip content={<TooltipContent />} />
+              <Area
+                type="monotone"
+                dataKey="positiveCumulative"
+                stroke="none"
+                fill="var(--income-soft)"
+                baseValue={0}
+                isAnimationActive={false}
+              />
+              <Area
+                type="monotone"
+                dataKey="negativeCumulative"
+                stroke="none"
+                fill="var(--expense-soft)"
+                baseValue={0}
+                isAnimationActive={false}
+              />
               <Area
                 type="monotone"
                 dataKey="cumulative"
                 stroke="var(--primary)"
                 strokeWidth={2.5}
-                fill="url(#trendFill)"
-                dot={{ r: 3, fill: 'var(--primary)', strokeWidth: 0 }}
-                activeDot={{ r: 5 }}
+                fill="none"
+                dot={false}
+                activeDot={false}
               />
             </AreaChart>
           </ResponsiveContainer>

@@ -62,6 +62,7 @@ export default function Topbar({
   pending = [],
   pendingTotal = 0,
   onOpenPending,
+  showMonthNav = true,
 }) {
   const [profileOpen, setProfileOpen] = useState(false)
   const [bellOpen, setBellOpen] = useState(false)
@@ -98,7 +99,7 @@ export default function Topbar({
       </div>
 
       {/* Período */}
-      <div className="month-nav">
+      {showMonthNav && <div className="month-nav">
         <button
           type="button"
           onClick={() => onMonthChange(addMonths(monthKey, -1))}
@@ -126,7 +127,7 @@ export default function Topbar({
             Hoje
           </button>
         )}
-      </div>
+      </div>}
 
       <div className="topbar-spacer" />
 
@@ -170,7 +171,7 @@ export default function Topbar({
             {count > 0 && <span className="topbar-dot">{count > 9 ? '9+' : count}</span>}
           </button>
 
-          <div className={`popover glass-popover${bellOpen ? ' is-open' : ''}`} role="dialog" aria-label="Notificações" aria-hidden={!bellOpen}>
+          <div className={`popover glass-popover notification-popover${bellOpen ? ' is-open' : ''}`} role="dialog" aria-label="Notificações" aria-hidden={!bellOpen}>
               <div className="popover-head">
                 <div className="popover-title">Pendências do mês</div>
                 <div className="popover-sub">
@@ -261,7 +262,7 @@ export default function Topbar({
       </div>
     </header>
 
-    <div className="month-nav-scroll">
+    {showMonthNav && <div className="month-nav-scroll">
       <div className="month-nav">
         <button
           type="button"
@@ -291,7 +292,7 @@ export default function Topbar({
           </button>
         )}
       </div>
-    </div>
+    </div>}
     </>
   )
 }

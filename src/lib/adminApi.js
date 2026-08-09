@@ -16,7 +16,7 @@ export async function callAdminApi(action, payload = {}) {
   try {
     const contextData = await error.context?.json()
     message = contextData?.error || message
-    return { error: message, code: contextData?.code }
+    return { error: message, code: contextData?.code, data: contextData }
   } catch {
     return { error: message }
   }

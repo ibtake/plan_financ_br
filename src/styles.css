@@ -1105,6 +1105,24 @@ body:has(.modal-backdrop) .fab {
   min-width: 0;
 }
 
+@media (min-width: 901px) {
+  .dashboard-bottom-panels > .card {
+    height: 390px;
+    min-height: 390px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .dashboard-bottom-panels > .card > .insight-list,
+  .dashboard-bottom-panels > .card > .tx-list {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+}
+
 /* ---------- KPI ---------- */
 
 .kpi {
@@ -4067,6 +4085,12 @@ body:has(.modal-backdrop) .fab {
   -webkit-backdrop-filter: blur(22px) saturate(145%);
 }
 
+.notification-popover {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+}
+
 .bottom-nav {
   animation: liquid-dock-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -4076,37 +4100,35 @@ body:has(.modal-backdrop) .fab {
 }
 
 .fab {
-  left: 50%;
-  right: auto;
-  bottom: 34px;
-  transform: translateX(-50%);
+  right: 18px;
+  bottom: 76px;
+  transform: none;
   border: 4px solid color-mix(in srgb, var(--surface) 82%, transparent);
   box-shadow: 0 10px 28px color-mix(in srgb, var(--primary) 38%, transparent), inset 0 1px 0 rgb(255 255 255 / 0.28);
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease, opacity 220ms ease;
 }
 
 .fab:hover {
-  transform: translateX(-50%) translateY(-2px);
+  transform: translateY(-2px);
   box-shadow: 0 14px 34px color-mix(in srgb, var(--primary) 44%, transparent), inset 0 1px 0 rgb(255 255 255 / 0.32);
 }
 
 .fab:active {
-  transform: translateX(-50%) scale(0.96);
+  transform: scale(0.96);
 }
 
 .fab.is-hidden,
 body:has(.modal-backdrop) .fab {
-  transform: translateX(-50%) scale(0.82) translateY(8px);
+  transform: scale(0.82) translateY(8px);
 }
 
 .goal-card {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xs);
-  transition: border-color 180ms ease, box-shadow 220ms ease, transform 220ms ease;
+  transition: border-color 180ms ease, box-shadow 220ms ease;
 }
 
 .goal-card:hover {
-  transform: translateY(-1px);
   box-shadow: var(--shadow);
 }
 
@@ -4132,6 +4154,10 @@ body:has(.modal-backdrop) .fab {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
+
+  .notification-popover {
+    background: var(--surface);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4144,12 +4170,12 @@ body:has(.modal-backdrop) .fab {
   .fab,
   .fab:hover,
   .fab:active {
-    transform: translateX(-50%);
+    transform: none;
   }
 
   .fab.is-hidden,
   body:has(.modal-backdrop) .fab {
-    transform: translateX(-50%) scale(0.82) translateY(8px);
+    transform: scale(0.82) translateY(8px);
   }
 }
 

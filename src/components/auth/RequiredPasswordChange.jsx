@@ -20,7 +20,10 @@ export default function RequiredPasswordChange() {
     setBusy(true)
     const result = await callAdminApi('complete-password-change', { password })
     setBusy(false)
-    if (result.error) return setError(result.error)
+    if (result.error) {
+      if (result.data?.password_changed) return auth.signOut('initial_password_changed_audit_failed')
+      return setError(result.error)
+    }
     await auth.signOut('initial_password_changed')
   }
 
