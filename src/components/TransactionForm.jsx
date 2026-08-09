@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, Mic, Play, Repeat2, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowDownLeft, ArrowUpRight, Play, Repeat2, X } from 'lucide-react'
 import {
   PAYMENT_METHODS,
   RECURRENCE_OPTIONS,
@@ -29,9 +29,6 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
   const [errors, setErrors] = useState({})
   const [closing, setClosing] = useState(false)
   const [quickText, setQuickText] = useState('')
-  const [listening, setListening] = useState(false)
-  const quickInputRef = useRef(null)
-  const recognitionRef = useRef(null)
   const isEditing = Boolean(initial?.id)
   const visibleFields = normalizeTransactionFormFields(fieldVisibility)
 
@@ -50,13 +47,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
     }
     setErrors({})
     setQuickText('')
-    setListening(false)
   }, [open, initial, defaultDate])
-
-  useEffect(() => {
-    if (!open) recognitionRef.current?.stop()
-    return () => recognitionRef.current?.stop()
-  }, [open])
 
   const available = useMemo(
     () => categoriesByType(categories, form.type),
@@ -87,28 +78,6 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
     if (!parsed) return
     setForm((current) => ({ ...current, ...parsed, amount: parsed.amount ? amountToInput(parsed.amount) : current.amount }))
     setQuickText('')
-  }
-
-  const toggleListening = () => {
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!Recognition) {
-      setErrors((current) => ({ ...current, quick: 'O reconhecimento de voz não está disponível neste navegador.' }))
-      return
-    }
-    if (listening) {
-      recognitionRef.current?.stop()
-      return
-    }
-    const recognition = new Recognition()
-    recognition.lang = 'pt-BR'
-    recognition.interimResults = false
-    recognition.maxAlternatives = 1
-    recognition.onstart = () => setListening(true)
-    recognition.onresult = (event) => setQuickText(event.results[0][0].transcript)
-    recognition.onerror = () => setErrors((current) => ({ ...current, quick: 'Não foi possível reconhecer o áudio.' }))
-    recognition.onend = () => setListening(false)
-    recognitionRef.current = recognition
-    recognition.start()
   }
 
   const validate = () => {
@@ -162,24 +131,18 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
               <label className="label" htmlFor="tx-quick-entry">Lançamento rápido</label>
               <div className="quick-entry-row">
                 <input
-                  ref={quickInputRef}
                   id="tx-quick-entry"
                   className="input"
                   value={quickText}
                   onChange={(event) => setQuickText(event.target.value)}
                   onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); executeQuickEntry() } }}
                   placeholder={'Diga: "Luz 66,30 dia 10"'}
-                  aria-describedby="tx-quick-hint"
                   autoFocus
                 />
-                <button type="button" className={`icon-btn${listening ? ' active' : ''}`} onClick={toggleListening} aria-label={listening ? 'Parar gravação' : 'Falar lançamento rápido'} title={listening ? 'Parar gravação' : 'Falar'}>
-                  <Mic size={17} />
-                </button>
                 <button type="button" className="btn btn-primary" onClick={executeQuickEntry} disabled={!quickText.trim()}>
                   <Play size={14} /> Executar
                 </button>
               </div>
-              <span id="tx-quick-hint" className="hint">Preenche os campos para você revisar antes de salvar.</span>
               {errors.quick && <span className="field-error">{errors.quick}</span>}
             </div>}
 
