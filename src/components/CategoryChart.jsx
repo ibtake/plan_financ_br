@@ -10,43 +10,79 @@ const HEX_COLUMNS = 13
 const HEX_ROWS = 9
 const HEX_PATH = 'M30 4Q25 4 22 10L5 44Q2 50 5 56L22 90Q25 96 30 96H70Q75 96 78 90L95 56Q98 50 95 44L78 10Q75 4 70 4Z'
 
-function HexShape({ id }) {
-  return <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">
-    <defs><linearGradient id={`hex-gradient-${id}`} x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stopColor="#fff" stopOpacity=".24" />
-      <stop offset=".42" stopColor="currentColor" stopOpacity=".96" />
-      <stop offset="1" stopColor="#000" stopOpacity=".2" />
-    </linearGradient></defs>
-    <path d={HEX_PATH} fill={`url(#hex-gradient-${id})`} />
-    <path d={HEX_PATH} fill="none" stroke="currentColor" strokeOpacity=".48" strokeWidth="1.2" />
-    <ellipse cx="34" cy="27" rx="18" ry="10" fill="#fff" fillOpacity=".16" />
-  </svg>
+// 1. Alteração estética: HexShape agora usa cores planas sólidas (sem gradientes 3D)
+function HexShape() {
+  return (
+    <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+      <path d={HEX_PATH} fill="currentColor" />
+      <path d={HEX_PATH} fill="none" stroke="#ffffff" strokeOpacity=".3" strokeWidth="3" />
+    </svg>
+  )
 }
 
 function buildHexGrid(data) {
   const slots = []
+  
+  // 2. Criação da grade geométrica
   for (let row = 0; row < HEX_ROWS; row += 1) {
     for (let column = 0; column < HEX_COLUMNS; column += 1) {
       const x = (column - (HEX_COLUMNS - 1) / 2) / 5.7
       const y = (row + (column % 2 ? 0.5 : 0) - (HEX_ROWS - 1) / 2) / 3.8
       const distance = Math.hypot(x, y * 1.25)
-      const angle = Math.atan2(y, x)
-      const organic = 1 + (0.06 * Math.sin((angle * 2) + 0.4)) + (0.04 * Math.sin((angle * 3) - 1.2))
-      const localRadius = organic * 1.08
-      slots.push({ row, column, x, y, distance, localRadius, filled: true, active: distance <= organic * 0.78, scale: 0.93 + (0.05 * Math.pow(Math.min(1, distance / localRadius), 0.7)), centerX: (column + 0.5) / HEX_COLUMNS, centerY: (row + (column % 2 ? 0.5 : 0) + 0.5) / HEX_ROWS })
+      
+      // Define a "ilha" retangular/arredondada central
+      const active = distance <= 1.45 
+
+      slots.push({ 
+        row, 
+        column, 
+        x, 
+        y, 
+        distance, 
+        filled: true, 
+        active: active, 
+        scale: 0.96, // Escala fixa sem ondulação (wave)
+        centerX: (column + 0.5) / HEX_COLUMNS, 
+        centerY: (row + (column % 2 ? 0.5 : 0) + 0.5) / HEX_ROWS 
+      })
     }
   }
+
   const activeSlots = slots.filter((slot) => slot.active)
-  const seeds = data.map((item, index) => ({ item, slot: activeSlots[Math.floor(((index + 0.35) / Math.max(1, data.length)) * activeSlots.length) % Math.max(1, activeSlots.length)] }))
+  
+  // Sementes fixas para garantir que as cores formem blocos contínuos nas pontas/centro
+  const seedPositions = [
+    { x: -0.8, y: -0.5 }, { x: 0.8, y: 0.5 }, 
+    { x: 0, y: 0 }, { x: -0.8, y: 0.5 }, 
+    { x: 0.8, y: -0.5 }
+  ];
+
+  const seeds = data.map((item, index) => {
+    const pos = seedPositions[index % seedPositions.length];
+    let closestSlot = activeSlots[0];
+    let minDist = Infinity;
+    
+    activeSlots.forEach(slot => {
+      const d = Math.hypot(slot.x - pos.x, slot.y - pos.y);
+      if (d < minDist) { minDist = d; closestSlot = slot; }
+    });
+    
+    return { item, slot: closestSlot };
+  });
+
   return slots.map((slot) => {
+    // Hexágonos inativos viram fundo (cinza claro via CSS)
     if (!slot.active || !seeds.length) return { ...slot, category: null }
-    const category = seeds.reduce((best, seed, index) => {
+    
+    // 3. Lógica de agrupamento: Distância euclidiana pura (sem ruído) para blocos contínuos
+    const category = seeds.reduce((best, seed) => {
       const dx = slot.x - seed.slot.x
       const dy = slot.y - seed.slot.y
-      const noise = 1 + (0.12 * Math.sin((slot.row * 7.1) + (slot.column * 4.3) + index))
-      const score = (Math.hypot(dx, dy * 1.15) * noise) / Math.pow(Math.max(0.08, seed.item.share), 0.32)
+      // Pesa pela fatia (share) para que categorias maiores ocupem mais espaço
+      const score = Math.hypot(dx, dy * 1.15) / Math.pow(Math.max(0.05, seed.item.share), 0.4)
       return !best || score < best.score ? { item: seed.item, score } : best
     }, null)?.item || null
+
     return { ...slot, category }
   })
 }
@@ -70,7 +106,6 @@ function ShowAllButton({ expanded, onClick }) {
   return <button type="button" className="category-show-all" onClick={onClick}>{expanded ? 'Ver menos categorias' : 'Ver todas as categorias'}<ChevronRight size={16} aria-hidden="true" /></button>
 }
 
-/** Dois cards de apresentação que preservam os mesmos cálculos e dados do gráfico anterior. */
 export default function CategoryChart({ byCategory, categories, total, incomeTotal = 0 }) {
   const [activeId, setActiveId] = useState(null)
   const [hoveredId, setHoveredId] = useState(null)
@@ -78,9 +113,8 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   const [expandedId, setExpandedId] = useState(null)
   const [showAll, setShowAll] = useState(false)
   const hexRefs = useRef(new Map())
-  const spring = useRef(new Map())
   const pointer = useRef(null)
-  const animationFrame = useRef(null)
+  
   const data = useMemo(() => {
     const rawData = Object.entries(byCategory).filter(([, value]) => value > 0).sort((a, b) => b[1] - a[1]).map(([id, value]) => {
       const cat = getCategory(categories, id)
@@ -98,43 +132,11 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   const displayedLegend = showAll ? data : data.slice(0, 7)
   const displayedRows = showAll ? data : data.slice(0, 7)
   const toggleAll = () => setShowAll((value) => !value)
+  
   const hexGrid = useMemo(() => buildHexGrid(data), [data])
   const focusedId = hoveredId || selectedHex?.id || activeId
-  const focusedItem = data.find((item) => item.id === focusedId)
   const selectedItem = data.find((item) => item.id === selectedHex?.id)
-  const startHexSpring = () => {
-    if (animationFrame.current) return
-    const animate = () => {
-      let moving = false
-      hexGrid.forEach((hex) => {
-        const key = `${hex.row}-${hex.column}`
-        const element = hexRefs.current.get(key)
-        if (!element) return
-        const state = spring.current.get(key) || { lift: 0, velocity: 0 }
-        const dx = pointer.current ? hex.centerX - pointer.current.x : 1
-        const dy = pointer.current ? hex.centerY - pointer.current.y : 1
-        const falloff = pointer.current ? Math.exp(-((dx * dx) + (dy * dy)) / (2 * 0.12 * 0.12)) : 0
-        const target = falloff * 7.5
-        state.velocity = (state.velocity + ((target - state.lift) * 0.22)) * 0.8
-        state.lift += state.velocity
-        spring.current.set(key, state)
-        element.style.setProperty('--hex-lift', `${-state.lift}px`)
-        element.style.setProperty('--hex-wave-scale', String(1 + (falloff * 0.045)))
-        if (Math.abs(state.velocity) > 0.02 || Math.abs(state.lift) > 0.02 || pointer.current) moving = true
-      })
-      animationFrame.current = moving ? requestAnimationFrame(animate) : null
-    }
-    animationFrame.current = requestAnimationFrame(animate)
-  }
-  const handleHexPointerMove = (event) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    pointer.current = { x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height }
-    startHexSpring()
-  }
-  const handleHexPointerLeave = () => {
-    pointer.current = null
-    startHexSpring()
-  }
+
   const handleHexClick = (event, category) => {
     const wrap = event.currentTarget.closest('.expense-hex-wrap')
     const hexRect = event.currentTarget.getBoundingClientRect()
@@ -142,8 +144,9 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
     setActiveId(category.id)
     setSelectedHex({ id: category.id, left: hexRect.left - wrapRect.left + (hexRect.width / 2), top: hexRect.top - wrapRect.top + (hexRect.height / 2) })
   }
+  
   const handleHexWrapClick = (event) => {
-    if (event.target.closest('.expense-hex')) return
+    if (event.target.closest('.expense-hex:not(.is-empty)')) return
     setSelectedHex(null)
     setActiveId(null)
   }
@@ -153,23 +156,33 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   return <div className="expense-cards-layout">
     <section className="card expense-distribution-card">
       <div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div>
-      <div className="expense-hex-wrap" onPointerMove={handleHexPointerMove} onPointerLeave={handleHexPointerLeave} onClick={handleHexWrapClick}>
+      <div className="expense-hex-wrap" onClick={handleHexWrapClick}>
         <div className="expense-hex-grid" role="group" aria-label="Distribuição por classe de despesa">
-          {hexGrid.map((hex) => !hex.filled ? <span className="expense-hex-space" key={`${hex.row}-${hex.column}`} aria-hidden="true" /> : hex.category ? (
-            <button
-              type="button"
-              key={`${hex.row}-${hex.column}`}
-              className={`expense-hex${focusedId && focusedId !== hex.category.id ? ' is-dimmed' : ''}`}
-              ref={(element) => { if (element) hexRefs.current.set(`${hex.row}-${hex.column}`, element); else hexRefs.current.delete(`${hex.row}-${hex.column}`) }}
-              style={{ '--hex-color': hex.category.color, '--hex-scale': hex.scale, '--hex-offset-y': hex.column % 2 ? '50%' : '0%' }}
-              onMouseEnter={() => setHoveredId(hex.category.id)}
-              onMouseLeave={() => setHoveredId(null)}
-              onFocus={() => setHoveredId(hex.category.id)}
-              onBlur={() => setHoveredId(null)}
-              onClick={(event) => handleHexClick(event, hex.category)}
-              aria-label={`${hex.category.name}: ${formatCurrency(hex.category.value)}`}
-            ><HexShape id={`${hex.row}-${hex.column}`} /></button>
-          ) : <span className="expense-hex is-empty" key={`${hex.row}-${hex.column}`} style={{ '--hex-scale': hex.scale, '--hex-offset-y': hex.column % 2 ? '50%' : '0%' }} aria-hidden="true"><HexShape id={`${hex.row}-${hex.column}`} /></span>)}
+          {hexGrid.map((hex) => {
+            // Renderiza sempre as células do fundo ou ativas para gerar o padrão visual da imagem
+            return hex.category ? (
+              <button
+                type="button"
+                key={`${hex.row}-${hex.column}`}
+                className={`expense-hex${focusedId && focusedId !== hex.category.id ? ' is-dimmed' : ''}`}
+                ref={(element) => { if (element) hexRefs.current.set(`${hex.row}-${hex.column}`, element); else hexRefs.current.delete(`${hex.row}-${hex.column}`) }}
+                style={{ '--hex-color': hex.category.color, '--hex-scale': hex.scale, '--hex-offset-y': hex.column % 2 ? '50%' : '0%' }}
+                onMouseEnter={() => setHoveredId(hex.category.id)}
+                onMouseLeave={() => setHoveredId(null)}
+                onFocus={() => setHoveredId(hex.category.id)}
+                onBlur={() => setHoveredId(null)}
+                onClick={(event) => handleHexClick(event, hex.category)}
+                aria-label={`${hex.category.name}: ${formatCurrency(hex.category.value)}`}
+              ><HexShape /></button>
+            ) : (
+              <span 
+                className="expense-hex is-empty" 
+                key={`${hex.row}-${hex.column}`} 
+                style={{ '--hex-scale': hex.scale, '--hex-offset-y': hex.column % 2 ? '50%' : '0%' }} 
+                aria-hidden="true"
+              ><HexShape /></span>
+            )
+          })}
         </div>
         {selectedHex && selectedItem && <div className="expense-hex-tooltip" style={{ left: selectedHex.left, top: selectedHex.top }}><ChartInfoTooltip title={selectedItem.name} value={formatCurrency(selectedItem.value)} color={selectedItem.color} detail={`${formatPercent(selectedItem.share, 1)} do total`} /></div>}
       </div>
@@ -177,6 +190,7 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
       {data.length > 7 && <ShowAllButton expanded={showAll} onClick={toggleAll} />}
     </section>
 
+    {/* O restante do código de listagem permanece idêntico pois a estética das linhas já atende */}
     <section className="card expense-analysis-card">
       <div className="card-head"><div><div className="card-title">Por categoria</div><div className="card-sub">Análise detalhada dos gastos</div></div></div>
       <div className="expense-analysis-head" aria-hidden="true"><span>Categoria</span><span>Meta<br />(%)</span><span>Real<br />(%)</span><span>Diferença<br />(R$)</span><span>Diferença<br />(p.p.)</span><span>Status</span></div>
