@@ -1,6 +1,15 @@
 import { parseAmount } from './format.js'
 
 const WORDS = /\b(?:paguei|pagar|recebi|receber|gastei|conta|despesa|receita|dia|em|no|na)\b/gi
+const CATEGORY_ALIASES = {
+  moradia: ['aluguel', 'luz', 'internet', 'condominio', 'apartamento', 'casa'],
+  mercado: ['supermercado', 'compras do mes'],
+  saude: ['medico', 'medica', 'consulta', 'exame', 'exames', 'farmacia'],
+  educacao: ['escolar', 'escola', 'faculdade', 'curso', 'mensalidade'],
+  freelance: ['freela'],
+  investimentos: ['investimento', 'investimentos'],
+  'aluguel-r': ['aluguel recebido'],
+}
 
 function normalize(value) {
   return String(value || '')
@@ -41,7 +50,9 @@ function inferCategory(description, type, categories, transactions) {
   let bestScore = 0
 
   for (const category of options) {
+    const aliases = CATEGORY_ALIASES[category.id] || []
     let score = tokens(category.name).reduce((sum, word) => sum + (words.has(word) ? 5 : 0), 0)
+      + aliases.reduce((sum, alias) => sum + (normalizedDescription.includes(normalize(alias)) ? 6 : 0), 0)
     for (const transaction of transactions) {
       if (transaction.type !== type || transaction.categoryId !== category.id) continue
       const historicalDescription = normalize(transaction.description)
@@ -64,13 +75,17 @@ export function parseQuickTransaction(input, { defaultDate, categories, transact
   const text = String(input || '').trim()
   if (!text) return null
 
-  const amountMatch = text.match(/(?:r\$\s*)?(\d{1,3}(?:\.\d{3})*|\d+)(?:[,.]\s*(\d{1,2})|\s+e\s+(\d{1,2}))?(?:\s*reais?)?/i)
+  // Keep the ungrouped alternative after the grouped one, and require it to
+  // consume all integer digits. Otherwise "1759,95" is captured as "175"
+  // and the remaining "9,95" leaks into the description.
+  const amountMatch = text.match(/(?:r\$\s*)?(\d{1,3}(?:\.\d{3})+|\d+)(?:[,.]\s*(\d{1,2})|\s+e\s+(\d{1,2}))?(?:\s*reais?)?/i)
   const dateMatch = text.match(/\bdia\s*(\d{1,2})\b|\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/i)
   const amountIsDate = amountMatch && dateMatch
     && amountMatch.index >= dateMatch.index
     && amountMatch.index < dateMatch.index + dateMatch[0].length
+  const cents = amountMatch?.[2] || amountMatch?.[3]
   const amountText = amountMatch && !amountIsDate
-    ? `${amountMatch[1]}${amountMatch[2] || amountMatch[3] ? `,${amountMatch[2] || amountMatch[3]}` : ''}`
+    ? `${amountMatch[1].replace(/\./g, '')}${cents ? `,${cents}` : ''}`
     : ''
   const amount = amountText ? parseAmount(amountText) : 0
   const relativeDay = dateMatch?.[1] ? Number(dateMatch[1]) : null
@@ -96,9 +111,11 @@ export function parseQuickTransaction(input, { defaultDate, categories, transact
   } else if (relativeDay) {
     date = dateForDay(relativeDay, defaultDate)
   }
-  const type = /\b(recebi|receita|salario|renda|entrada|vendi)\b/i.test(text)
+  const normalizedText = normalize(text)
+  const type = /\b(recebi|recebido|recebida|recebimento|receita|salario|renda|entrada|vendi|venda|freela|freelance)\b/i.test(normalizedText)
     ? 'income'
-    : /\b(aporte|investi|investimento|reinvesti)\b/i.test(text)
+    : /\b(aporte|aportes|investi|investir|investimento|investimentos|reinvesti|reinvestir|reinvestimento|reinvestimentos|apliquei|aplicar|aplicacao)\b/i.test(normalizedText)
+      || /\btransferencia\b.*\binvestimentos?\b/i.test(normalizedText)
       ? 'reinvested'
       : 'expense'
   const description = text
