@@ -355,7 +355,7 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.mfa.enroll({
       factorType: 'totp',
       issuer: 'DinDin 10!',
-      friendlyName: `DinDin 10! ${new Date().toISOString().slice(0, 10)}`,
+      friendlyName: `DinDin 10! ${new Date().toISOString()}`,
     })
     if (error) return { error: translateAuthError(error) }
     return {
@@ -429,6 +429,7 @@ export function AuthProvider({ children }) {
       if (error) return { error: translateAuthError(error) }
 
       await logAuthEvent(AUTH_EVENTS.MFA_REMOVED, 'critical', {})
+      await supabase.auth.refreshSession()
       await refreshAssurance()
       return { ok: true }
     },
