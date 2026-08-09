@@ -88,6 +88,18 @@ export function translateAuthError(error) {
   if (raw.includes('invalid totp') || raw.includes('invalid code') || raw.includes('invalid mfa')) {
     return 'Codigo de verificacao invalido ou expirado. Tente o codigo atual do app.'
   }
+  if (raw.includes('mfa_factor_name_conflict')) {
+    return 'Ja existe uma configuracao MFA com este nome. Tente ativar novamente.'
+  }
+  if (raw.includes('too_many_enrolled_mfa_factors')) {
+    return 'O limite de fatores MFA foi atingido. Remova um fator antigo e tente novamente.'
+  }
+  if (raw.includes('mfa_totp_enroll_not_enabled')) {
+    return 'A ativacao de MFA por aplicativo esta desabilitada no Supabase.'
+  }
+  if (raw.includes('mfa_ip_address_mismatch')) {
+    return 'A ativacao precisa ser concluida no mesmo dispositivo e rede em que foi iniciada.'
+  }
   if (raw.includes('rate limit') || raw.includes('too many requests')) {
     return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos.'
   }
