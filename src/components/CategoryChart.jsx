@@ -10,28 +10,25 @@ const HEX_COLUMNS = 13
 const HEX_ROWS = 9
 const HEX_PATH = 'M30 4Q25 4 22 10L5 44Q2 50 5 56L22 90Q25 96 30 96H70Q75 96 78 90L95 56Q98 50 95 44L78 10Q75 4 70 4Z'
 
-// 1. Alteração estética: HexShape agora usa cores planas sólidas (sem gradientes 3D)
 function HexShape() {
   return (
     <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">
       <path d={HEX_PATH} fill="currentColor" />
-      <path d={HEX_PATH} fill="none" stroke="#ffffff" strokeOpacity=".3" strokeWidth="3" />
+      <path d={HEX_PATH} fill="none" stroke="#ffffff" strokeOpacity=".4" strokeWidth="2.5" />
     </svg>
   )
 }
 
 function buildHexGrid(data) {
   const slots = []
-  
-  // 2. Criação da grade geométrica
+
   for (let row = 0; row < HEX_ROWS; row += 1) {
     for (let column = 0; column < HEX_COLUMNS; column += 1) {
       const x = (column - (HEX_COLUMNS - 1) / 2) / 5.7
       const y = (row + (column % 2 ? 0.5 : 0) - (HEX_ROWS - 1) / 2) / 3.8
       const distance = Math.hypot(x, y * 1.25)
       
-      // Define a "ilha" retangular/arredondada central
-      const active = distance <= 1.45 
+      const active = distance <= 1.35
 
       slots.push({ 
         row, 
@@ -39,52 +36,37 @@ function buildHexGrid(data) {
         x, 
         y, 
         distance, 
-        filled: true, 
-        active: active, 
-        scale: 0.96, // Escala fixa sem ondulação (wave)
-        centerX: (column + 0.5) / HEX_COLUMNS, 
-        centerY: (row + (column % 2 ? 0.5 : 0) + 0.5) / HEX_ROWS 
+        active, 
+        scale: 0.95,
+        category: null 
       })
     }
   }
 
   const activeSlots = slots.filter((slot) => slot.active)
-  
-  // Sementes fixas para garantir que as cores formem blocos contínuos nas pontas/centro
-  const seedPositions = [
-    { x: -0.8, y: -0.5 }, { x: 0.8, y: 0.5 }, 
-    { x: 0, y: 0 }, { x: -0.8, y: 0.5 }, 
-    { x: 0.8, y: -0.5 }
-  ];
+  if (!activeSlots.length || !data.length) return slots
 
-  const seeds = data.map((item, index) => {
-    const pos = seedPositions[index % seedPositions.length];
-    let closestSlot = activeSlots[0];
-    let minDist = Infinity;
-    
-    activeSlots.forEach(slot => {
-      const d = Math.hypot(slot.x - pos.x, slot.y - pos.y);
-      if (d < minDist) { minDist = d; closestSlot = slot; }
-    });
-    
-    return { item, slot: closestSlot };
-  });
+  // Agrupamento contínuo usando varredura angular
+  activeSlots.sort((a, b) => Math.atan2(a.y, a.x) - Math.atan2(b.y, b.x))
 
-  return slots.map((slot) => {
-    // Hexágonos inativos viram fundo (cinza claro via CSS)
-    if (!slot.active || !seeds.length) return { ...slot, category: null }
-    
-    // 3. Lógica de agrupamento: Distância euclidiana pura (sem ruído) para blocos contínuos
-    const category = seeds.reduce((best, seed) => {
-      const dx = slot.x - seed.slot.x
-      const dy = slot.y - seed.slot.y
-      // Pesa pela fatia (share) para que categorias maiores ocupem mais espaço
-      const score = Math.hypot(dx, dy * 1.15) / Math.pow(Math.max(0.05, seed.item.share), 0.4)
-      return !best || score < best.score ? { item: seed.item, score } : best
-    }, null)?.item || null
+  let slotIndex = 0
+  const totalSlots = activeSlots.length
 
-    return { ...slot, category }
+  data.forEach((item) => {
+    const count = Math.max(1, Math.round((item.share / 100) * totalSlots))
+    
+    for (let i = 0; i < count && slotIndex < totalSlots; i++) {
+      activeSlots[slotIndex].category = item
+      slotIndex++
+    }
   })
+
+  while (slotIndex < totalSlots) {
+    activeSlots[slotIndex].category = data[0]
+    slotIndex++
+  }
+
+  return slots
 }
 
 function getStatus(item) {
@@ -93,13 +75,6 @@ function getStatus(item) {
   if (ratio > 1.01) return { tone: 'danger', label: 'Acima da meta', Icon: AlertTriangle }
   if (ratio >= 0.9) return { tone: 'warning', label: 'Atenção', Icon: AlertTriangle }
   return { tone: 'success', label: 'Dentro da meta', Icon: CheckCircle2 }
-}
-
-function TooltipContent({ active, payload }) {
-  if (!active || !payload?.length) return null
-  const item = payload[0].payload
-  const status = getStatus(item)
-  return <div className="chart-tooltip"><div className="chart-tooltip-title"><AppIcon emoji={item.icon} /> {item.name}</div><div className="chart-tooltip-row"><span className="chart-dot" style={{ background: item.color }} /><strong>{formatCurrency(item.value)}</strong><span>({formatPercent(item.share, 1)} do total)</span></div><div className="chart-tooltip-row text-muted">Meta {formatPercent(item.target, 1)} · {status.label}</div></div>
 }
 
 function ShowAllButton({ expanded, onClick }) {
@@ -113,7 +88,6 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   const [expandedId, setExpandedId] = useState(null)
   const [showAll, setShowAll] = useState(false)
   const hexRefs = useRef(new Map())
-  const pointer = useRef(null)
   
   const data = useMemo(() => {
     const rawData = Object.entries(byCategory).filter(([, value]) => value > 0).sort((a, b) => b[1] - a[1]).map(([id, value]) => {
@@ -159,7 +133,6 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
       <div className="expense-hex-wrap" onClick={handleHexWrapClick}>
         <div className="expense-hex-grid" role="group" aria-label="Distribuição por classe de despesa">
           {hexGrid.map((hex) => {
-            // Renderiza sempre as células do fundo ou ativas para gerar o padrão visual da imagem
             return hex.category ? (
               <button
                 type="button"
@@ -190,7 +163,6 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
       {data.length > 7 && <ShowAllButton expanded={showAll} onClick={toggleAll} />}
     </section>
 
-    {/* O restante do código de listagem permanece idêntico pois a estética das linhas já atende */}
     <section className="card expense-analysis-card">
       <div className="card-head"><div><div className="card-title">Por categoria</div><div className="card-sub">Análise detalhada dos gastos</div></div></div>
       <div className="expense-analysis-head" aria-hidden="true"><span>Categoria</span><span>Meta<br />(%)</span><span>Real<br />(%)</span><span>Diferença<br />(R$)</span><span>Diferença<br />(p.p.)</span><span>Status</span></div>
