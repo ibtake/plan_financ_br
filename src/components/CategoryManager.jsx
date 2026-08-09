@@ -254,7 +254,6 @@ function CategoryRow({ category, usage, onEdit, onDelete }) {
   const target = Number(category.targetPercentage) || 0
   // Categorias padrão do sistema não são excluíveis (o backend recusa). Sem
   // isso o botão falhava em silêncio, que era a queixa do REQ 4.
-  const removable = category.custom !== false
 
   return (
     <div className="tx" style={{ padding: '10px 4px' }}>
@@ -269,7 +268,6 @@ function CategoryRow({ category, usage, onEdit, onDelete }) {
         <div className="tx-meta">
           <span className={`chip ${meta.chip}`}>{meta.label}</span>
           {target > 0 && <span className="chip">meta {target.toFixed(1)}%</span>}
-          {!removable && <span className="chip">padrão</span>}
           <span>
             {usage.count} {usage.count === 1 ? 'lançamento' : 'lançamentos'}
           </span>
@@ -288,12 +286,7 @@ function CategoryRow({ category, usage, onEdit, onDelete }) {
         <button
           className="icon-btn danger"
           onClick={() => onDelete(category)}
-          disabled={!removable}
-          title={
-            removable
-              ? 'Excluir'
-              : 'Categoria padrão do sistema: não pode ser excluída, apenas editada'
-          }
+          title="Excluir"
         >
           <Trash2 size={15} strokeWidth={1.9} />
         </button>
@@ -345,16 +338,10 @@ export default function CategoryManager({
   }
 
   const handleDelete = (category) => {
-    if (category.custom === false) {
-      window.alert(
-        `"${category.name}" é uma categoria padrão do sistema e não pode ser excluída. ` +
-          'Você pode renomeá-la, trocar o ícone ou a cor pelo botão de editar.',
-      )
-      return
-    }
+    if (!category) return
     const used = usage[category.id]?.count || 0
     const message = used
-      ? `A categoria "${category.name}" é usada em ${used} lançamento(s). Eles serão movidos para "Outros". Continuar?`
+      ? `A categoria "${category.name}" é usada em ${used} lançamento(s). Eles serão movidos para outra categoria do mesmo tipo. Continuar?`
       : `Excluir a categoria "${category.name}"?`
     if (window.confirm(message)) onDelete(category.id)
   }
