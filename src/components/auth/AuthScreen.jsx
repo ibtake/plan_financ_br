@@ -174,6 +174,7 @@ export default function AuthScreen() {
 
   const pasteMfaCode = async () => {
     resetMessages()
+    document.activeElement?.blur()
     if (!navigator.clipboard?.readText) {
       setError('A colagem automática não está disponível neste navegador. Use Ctrl+V ou cole o código nos campos.')
       return
