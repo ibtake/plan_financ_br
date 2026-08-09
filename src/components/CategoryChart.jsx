@@ -33,7 +33,7 @@ function buildHexGrid(data) {
       const angle = Math.atan2(y, x)
       const organic = 1 + (0.06 * Math.sin((angle * 2) + 0.4)) + (0.04 * Math.sin((angle * 3) - 1.2))
       const localRadius = organic * 1.08
-      slots.push({ row, column, x, y, distance, localRadius, filled: distance <= localRadius, active: distance <= organic * 0.78, scale: 0.78 + (0.16 * Math.pow(Math.min(1, distance / localRadius), 0.7)), centerX: (column + 0.5) / HEX_COLUMNS, centerY: (row + (column % 2 ? 0.5 : 0) + 0.5) / HEX_ROWS })
+      slots.push({ row, column, x, y, distance, localRadius, filled: true, active: distance <= organic * 0.78, scale: 0.93 + (0.05 * Math.pow(Math.min(1, distance / localRadius), 0.7)), centerX: (column + 0.5) / HEX_COLUMNS, centerY: (row + (column % 2 ? 0.5 : 0) + 0.5) / HEX_ROWS })
     }
   }
   const activeSlots = slots.filter((slot) => slot.active)
@@ -142,13 +142,18 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
     setActiveId(category.id)
     setSelectedHex({ id: category.id, left: hexRect.left - wrapRect.left + (hexRect.width / 2), top: hexRect.top - wrapRect.top + (hexRect.height / 2) })
   }
+  const handleHexWrapClick = (event) => {
+    if (event.target.closest('.expense-hex')) return
+    setSelectedHex(null)
+    setActiveId(null)
+  }
 
   if (!data.length) return <div className="card"><div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div><div className="empty"><div className="empty-icon"><PieChartIcon size={22} strokeWidth={1.6} /></div><div className="empty-title">Nenhuma saída neste mês</div><div className="text-sm">Adicione lançamentos para ver a distribuição.</div></div></div>
 
   return <div className="expense-cards-layout">
     <section className="card expense-distribution-card">
       <div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div>
-      <div className="expense-hex-wrap" onPointerMove={handleHexPointerMove} onPointerLeave={handleHexPointerLeave}>
+      <div className="expense-hex-wrap" onPointerMove={handleHexPointerMove} onPointerLeave={handleHexPointerLeave} onClick={handleHexWrapClick}>
         <div className="expense-hex-grid" role="group" aria-label="Distribuição por classe de despesa">
           {hexGrid.map((hex) => !hex.filled ? <span className="expense-hex-space" key={`${hex.row}-${hex.column}`} aria-hidden="true" /> : hex.category ? (
             <button
