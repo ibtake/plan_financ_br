@@ -160,13 +160,21 @@ Deno.serve(async (request) => {
     if (error) {
       return response(request, 500, { error: 'Não foi possível concluir a troca de senha.' })
     }
-    await admin.from('security_events').insert({
+    const { error: auditError } = await admin.from('security_events').insert({
       user_id: user.id,
       event_type: 'password_changed',
       severity: 'warning',
       details: { context: 'initial_password_change' },
       user_agent: 'admin-users',
     })
+    if (auditError) {
+      console.error('initial_password_change_audit_failed', { userId: user.id, error: auditError.message })
+      return response(request, 503, {
+        error: 'A senha foi alterada, mas não foi possível registrar o evento de segurança.',
+        code: 'password_audit_failed',
+        password_changed: true,
+      })
+    }
     return response(request, 200, { ok: true })
   }
 
