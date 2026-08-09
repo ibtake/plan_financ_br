@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, useTransition } from 'react'
 import { Plus } from 'lucide-react'
 import Sidebar from './components/Sidebar.jsx'
 import BottomNav from './components/BottomNav.jsx'
@@ -114,6 +114,7 @@ function AuthenticatedApp() {
   const auth = useAuth()
   const finance = useSupabaseFinance()
   const [monthKey, setMonthKey] = useState(currentMonthKey())
+  const [isMonthPending, startMonthTransition] = useTransition()
   const [activeTab, setActiveTab] = useState('overview')
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -263,7 +264,8 @@ function AuthenticatedApp() {
       <div className="app-main">
         <Topbar
           monthKey={monthKey}
-          onMonthChange={setMonthKey}
+          onMonthChange={(update) => startMonthTransition(() => setMonthKey(update))}
+          isMonthPending={isMonthPending}
           theme={theme}
           onToggleTheme={toggleTheme}
           privacyVisible={privacyVisible}

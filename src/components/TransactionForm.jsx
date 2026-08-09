@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, Repeat2, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Play, Repeat2, X } from 'lucide-react'
 import {
   PAYMENT_METHODS,
   RECURRENCE_OPTIONS,
@@ -139,8 +139,8 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                   placeholder={'Diga: "Luz 66,30 dia 10"'}
                   autoFocus
                 />
-                <button type="button" className="btn btn-primary" onClick={executeQuickEntry} disabled={!quickText.trim()}>
-                  Go!
+                <button type="button" className="btn btn-primary btn-icon" onClick={executeQuickEntry} disabled={!quickText.trim()} title="Executar lançamento rápido" aria-label="Executar lançamento rápido">
+                  <Play size={16} strokeWidth={2.2} aria-hidden="true" />
                 </button>
               </div>
               {errors.quick && <span className="field-error">{errors.quick}</span>}

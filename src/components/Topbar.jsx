@@ -51,6 +51,7 @@ function initials(email) {
 export default function Topbar({
   monthKey,
   onMonthChange,
+  isMonthPending = false,
   theme,
   onToggleTheme,
   privacyVisible,
@@ -102,16 +103,16 @@ export default function Topbar({
       {showMonthNav && <div className="month-nav">
         <button
           type="button"
-          onClick={() => onMonthChange(addMonths(monthKey, -1))}
+          onClick={() => onMonthChange((month) => addMonths(month, -1))}
           title="Mês anterior"
           aria-label="Mês anterior"
         >
           <ChevronLeft size={16} strokeWidth={2} />
         </button>
-        <div className="month-nav-label">{monthLabel(monthKey)}</div>
+        <div className={`month-nav-label${isMonthPending ? ' is-updating' : ''}`}>{monthLabel(monthKey)}</div>
         <button
           type="button"
-          onClick={() => onMonthChange(addMonths(monthKey, 1))}
+          onClick={() => onMonthChange((month) => addMonths(month, 1))}
           title="Próximo mês"
           aria-label="Próximo mês"
         >
@@ -266,16 +267,16 @@ export default function Topbar({
       <div className="month-nav">
         <button
           type="button"
-          onClick={() => onMonthChange(addMonths(monthKey, -1))}
+          onClick={() => onMonthChange((month) => addMonths(month, -1))}
           title="Mês anterior"
           aria-label="Mês anterior"
         >
           <ChevronLeft size={16} strokeWidth={2} />
         </button>
-        <div className="month-nav-label">{monthLabel(monthKey)}</div>
+        <div className={`month-nav-label${isMonthPending ? ' is-updating' : ''}`}>{monthLabel(monthKey)}</div>
         <button
           type="button"
-          onClick={() => onMonthChange(addMonths(monthKey, 1))}
+          onClick={() => onMonthChange((month) => addMonths(month, 1))}
           title="Próximo mês"
           aria-label="Próximo mês"
         >
