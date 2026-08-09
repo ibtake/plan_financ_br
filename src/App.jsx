@@ -198,6 +198,9 @@ function AuthenticatedApp() {
 
   const overview = (
     <div className="stack">
+      <Suspense fallback={<ChartFallback height={220} />}>
+        <TrendChart variant="hero" trend={monthly.trend} value={monthly.summary.balance} change={monthly.change.balance} />
+      </Suspense>
       <SummaryCards
         summary={monthly.summary}
         change={monthly.change}
@@ -222,9 +225,6 @@ function AuthenticatedApp() {
         </Suspense>
       </div>
       <div className="grid-2 dashboard-grid">
-        <Suspense fallback={<ChartFallback height={240} />}>
-          <TrendChart trend={monthly.trend} />
-        </Suspense>
         <Insights {...insightProps} />
       </div>
       <div className="grid-2 dashboard-grid">

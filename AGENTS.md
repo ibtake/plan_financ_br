@@ -107,26 +107,31 @@ nenhum segredo ou artefato local foi incluido, a compatibilidade foi revisada e
 o procedimento de publicacao/rollback foi informado. Nao declare que o banco ou
 a producao foram atualizados se apenas os arquivos locais foram modificados.
 
+## graphify
 
-## Code exploration policy
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
 
-Call the jcodemunch_guide tool and strictly follow its instructions.
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
 
-## jCodeMunch usage
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
 
-Use jCodeMunch as the primary mechanism for understanding and exploring this codebase.
 
-Before reading source files directly:
+## Codebase navigation
 
-1. Search the jCodeMunch index.
-2. Search for relevant symbols.
-3. Retrieve only the required functions, classes, methods, or definitions.
-4. Prefer symbol-level source retrieval instead of reading complete files.
-5. Use dependency/call/reference analysis before modifying shared code.
-6. Read complete source files only when jCodeMunch cannot provide enough context.
+Always use Graphify before broad codebase exploration.
 
-Avoid recursively reading directories or opening many source files merely to understand the architecture.
+For questions involving architecture, dependencies, database relationships,
+business logic, components, functions, or cross-file behavior:
 
-After significant source-code changes, ensure the jCodeMunch index is refreshed when necessary.
-
-The goal is to minimize unnecessary context usage while maintaining enough information to make safe code changes.
+1. Query Graphify first.
+2. Use the graph results to identify the smallest relevant set of files.
+3. Read only those files or specific code regions.
+4. Avoid broad grep/search operations when Graphify can answer the question.
+5. Do not read graphify-out/graph.json in full.
+6. Prefer targeted `graphify query` and `graphify explain` commands.
+7. Fall back to direct file search only when Graphify lacks the required information.
