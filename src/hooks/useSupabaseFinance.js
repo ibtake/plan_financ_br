@@ -299,24 +299,29 @@ export function useSupabaseFinance() {
 
   const deleteCategory = useCallback((id) => {
     const category = categories.find((cat) => cat.id === id)
-    if (!category?.custom) return
+    const fallback = categories.find((cat) => cat.id === fallbackCategoryId(category?.type))
+      || categories.find((cat) => cat.type === category?.type && cat.id !== id)
+    if (!category || !fallback) {
+      reportError({ message: 'Mantenha pelo menos uma categoria deste tipo para realocar os lançamentos.' })
+      return
+    }
     // Reatribui os lancamentos ligados a uma categoria "Outros" do mesmo grupo
     // ANTES de excluir. Isso evita erro de chave estrangeira e lancamentos orfaos.
-    const fallback = fallbackCategoryId(category.type)
+    const fallbackId = fallback.id
     setCategories((prev) => prev.filter((cat) => cat.id !== id))
     setBudgets((prev) => { const next = { ...prev }; delete next[id]; return next })
-    setTransactions((prev) => prev.map((tx) => tx.categoryId === id ? { ...tx, categoryId: fallback } : tx))
+    setTransactions((prev) => prev.map((tx) => tx.categoryId === id ? { ...tx, categoryId: fallbackId } : tx))
     void (async () => {
       // Ordem importa: primeiro solta as referencias, depois remove a categoria.
       // persist() recarrega do servidor em caso de erro, mantendo a UI coerente.
-      const okTx = await persist(() => supabase.from('transactions').update({ category_id: fallback }).eq('category_id', id).eq('user_id', user.id), { table: 'transactions', action: 'update_category' })
+      const okTx = await persist(() => supabase.from('transactions').update({ category_id: fallbackId }).eq('category_id', id).eq('user_id', user.id), { table: 'transactions', action: 'update_category' })
       const okBudget = await persist(() => supabase.from('budgets').delete().eq('category_id', id).eq('user_id', user.id), { table: 'budgets', action: 'delete' })
       // So exclui a categoria depois que as dependencias sairam com sucesso.
       if (okTx && okBudget) {
         await persist(() => supabase.from('categories').delete().eq('id', id).eq('user_id', user.id), { table: 'categories', action: 'delete' })
       }
     })()
-  }, [categories, persist, user])
+  }, [categories, persist, reportError, user])
 
   const setBudget = useCallback((categoryId, limit) => {
     const amount = Number(limit) || 0
