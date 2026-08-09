@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { formatCompact, formatCurrency, monthLabel, monthLabelShort } from '../utils/format.js'
+import { formatCompact, formatCurrency, formatPercent, monthLabel, monthLabelShort } from '../utils/format.js'
 
 function TooltipContent({ active, payload, label }) {
   if (!active || !payload?.length) return null
@@ -29,21 +29,30 @@ function TooltipContent({ active, payload, label }) {
   )
 }
 
-export default function TrendChart({ trend }) {
+export default function TrendChart({ trend, variant = 'card', value = 0, change = null }) {
   const data = trend
+  const isHero = variant === 'hero'
   const hasData = data.some((d) => d.income > 0 || d.expense > 0 || d.reinvested > 0)
 
   return (
-    <div className="card">
+    <div className={isHero ? 'balance-hero' : 'card'}>
       <div className="card-head">
         <div>
-          <div className="card-title">Saldo acumulado</div>
+          <div className={isHero ? 'balance-hero-label' : 'card-title'}>{isHero ? 'Saldo total' : 'Saldo acumulado'}</div>
+          {isHero && (
+            <>
+              <div className="balance-hero-value">{formatCurrency(value)}</div>
+              <div className={`balance-hero-change${change !== null && change < 0 ? ' is-negative' : ''}`}>
+                {change === null ? 'Sem comparaÃ§Ã£o' : `${change >= 0 ? '▲' : '▼'} ${formatPercent(Math.abs(change))} vs. mÃªs anterior`}
+              </div>
+            </>
+          )}
           <div className="card-sub">Quanto você somou (ou perdeu) ao longo do período</div>
         </div>
       </div>
 
       {hasData ? (
-        <div className="chart-wrap" style={{ height: 240 }}>
+        <div className={isHero ? 'chart-wrap balance-hero-chart' : 'chart-wrap'} style={{ height: isHero ? 190 : 240 }}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
               <defs>
