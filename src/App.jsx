@@ -380,6 +380,7 @@ function AuthenticatedApp() {
         onSubmit={saveTransaction}
         initial={editing}
         categories={finance.categories}
+        transactions={finance.transactions}
         defaultDate={isoDateInMonth(monthKey, new Date().getDate())}
         fieldVisibility={finance.transactionFormFields}
       />

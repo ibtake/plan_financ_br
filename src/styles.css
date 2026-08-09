@@ -4214,3 +4214,15 @@ body:has(.modal-backdrop) .fab {
 .sync-overlay-card { width:min(320px,100%); display:grid; justify-items:center; gap:12px; padding:28px 24px; border:1px solid var(--border); border-radius:16px; background:var(--surface); box-shadow:0 24px 80px rgb(0 0 0 / .3); text-align:center; }
 .sync-overlay-card .spinner { width:32px; height:32px; }
 .sync-overlay-card span { color:var(--text-muted); font-size:13px; line-height:1.45; }
+
+.quick-entry-field { padding:14px; border:1px solid color-mix(in srgb, var(--accent) 52%, var(--border)); border-radius:14px; background:color-mix(in srgb, var(--accent) 5%, var(--surface)); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent); }
+.quick-entry-row { display:flex; align-items:center; gap:8px; }
+.quick-entry-row .input { flex:1; min-width:0; }
+.quick-entry-row .input::placeholder { color:var(--text-muted); opacity:.78; }
+.quick-entry-row .btn { white-space:nowrap; }
+.quick-entry-row .icon-btn.active { color:var(--danger); background:color-mix(in srgb, var(--danger) 12%, transparent); }
+@media (max-width: 560px) {
+  .quick-entry-row { flex-wrap:wrap; }
+  .quick-entry-row .input { flex-basis:calc(100% - 48px); }
+  .quick-entry-row .btn { flex:1; }
+}
