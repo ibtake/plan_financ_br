@@ -2555,7 +2555,7 @@ body:has(.modal-backdrop) .fab {
 .expense-hex path { vector-effect: non-scaling-stroke; }
 .expense-hex:focus-visible { z-index: 1; outline: 2px solid var(--primary); outline-offset: 2px; }
 .expense-hex.is-dimmed { opacity: .28; }
-.expense-hex.is-empty { color: var(--surface-2); opacity: .72; pointer-events: none; }
+.expense-hex.is-empty { color: var(--surface-2); opacity: .35; pointer-events: none; }
 .expense-hex-tooltip { position: absolute; z-index: 4; transform: translate(-50%, -100%); pointer-events: none; }
 .expense-donut-legend { display: flex; flex-direction: column; gap: 2px; }
 .expense-legend-row { display: grid; width: 100%; min-height: 27px; padding: 3px 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-soft); cursor: pointer; grid-template-columns: 9px minmax(0, 1fr) auto 36px; align-items: center; column-gap: 7px; font-size: 11px; text-align: left; font-variant-numeric: tabular-nums; }
