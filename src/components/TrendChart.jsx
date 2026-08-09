@@ -42,7 +42,7 @@ export default function TrendChart({ trend, variant = 'card', value = 0, changeA
       <div className="card-head">
         <div>
           <div className={isHero ? 'balance-hero-label' : 'card-title'}>
-            {isHero ? 'Saldo do \u00eas' : 'Saldo acumulado'}
+            {isHero ? 'Saldo do m\u00eas' : 'Saldo acumulado'}
           </div>
           {isHero && (
             <>
@@ -72,7 +72,7 @@ export default function TrendChart({ trend, variant = 'card', value = 0, changeA
               />
               <Tooltip content={<TooltipContent />} />
               <Area
-                type="monotone"
+                type="linear"
                 dataKey="positiveCumulative"
                 stroke="none"
                 fill="var(--trend-income-fill)"
@@ -80,7 +80,7 @@ export default function TrendChart({ trend, variant = 'card', value = 0, changeA
                 isAnimationActive={false}
               />
               <Area
-                type="monotone"
+                type="linear"
                 dataKey="negativeCumulative"
                 stroke="none"
                 fill="var(--trend-expense-fill)"
