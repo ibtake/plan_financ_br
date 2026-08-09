@@ -37,7 +37,7 @@ function buildHexGrid(data) {
         y, 
         distance, 
         active, 
-        scale: 0.95,
+        scale: 0.975,
         category: null 
       })
     }
