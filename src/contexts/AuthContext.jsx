@@ -14,7 +14,7 @@
 //   - Ha logout automatico por inatividade.
 // =====================================================================
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { supabase, isSupabaseConfigured, configurationProblem, translateAuthError } from '../lib/supabase.js'
 import { AUTH_EVENTS, logAuthEvent } from './authAudit.js'
 import {
@@ -75,7 +75,7 @@ export function AuthProvider({ children }) {
   // 'none' = sem MFA | 'required' = precisa do codigo | 'verified' = liberado
   const [mfaStage, setMfaStage] = useState('none')
   const [assuranceLevel, setAssuranceLevel] = useState(null)
-  const missingConfig = useMemo(() => configurationProblem(), [])
+  const missingConfig = configurationProblem()
   const idleTimer = useRef(null)
   const lastActivityAt = useRef(0)
   const refreshInFlight = useRef(null)

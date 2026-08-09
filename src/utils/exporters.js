@@ -94,6 +94,7 @@ const MAX_FILE_BYTES = 8 * 1024 * 1024
 
 /** Teto por colecao, alinhado ao uso real da aplicacao */
 const MAX_ITEMS = { transactions: 20000, categories: 500, goals: 500, budgets: 500 }
+const MAX_NESTING_DEPTH = 50
 
 /**
  * CORRECAO 5: Sanitizacao recursiva contra Prototype Pollution
@@ -108,14 +109,15 @@ const MAX_ITEMS = { transactions: 20000, categories: 500, goals: 500, budgets: 5
  * de objetos globais. A sanitizacao acontece ANTES de qualquer uso
  * dos dados, impedindo que cheguem ao estado da aplicacao ou ao banco.
  */
-function sanitizeObject(obj) {
+function sanitizeObject(obj, depth = 0) {
   if (obj === null || typeof obj !== 'object') {
     return obj
   }
+  if (depth > MAX_NESTING_DEPTH) throw new Error('Backup aninhado demais.')
 
   // Arrays: sanitiza cada elemento recursivamente
   if (Array.isArray(obj)) {
-    return obj.map((item) => sanitizeObject(item))
+    return obj.map((item) => sanitizeObject(item, depth + 1))
   }
 
   // Objetos: cria um novo objeto limpo removendo chaves perigosas
@@ -129,7 +131,7 @@ function sanitizeObject(obj) {
     }
 
     // Recursivamente sanitiza valores aninhados
-    sanitized[key] = sanitizeObject(obj[key])
+    sanitized[key] = sanitizeObject(obj[key], depth + 1)
   }
 
   return sanitized

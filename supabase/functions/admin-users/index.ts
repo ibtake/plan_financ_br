@@ -45,7 +45,12 @@ function corsHeaders(request: Request) {
 function response(request: Request, status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(request), 'Content-Type': 'application/json; charset=utf-8' },
+    headers: {
+      ...corsHeaders(request),
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store, private',
+      Pragma: 'no-cache',
+    },
   })
 }
 
@@ -155,6 +160,13 @@ Deno.serve(async (request) => {
     if (error) {
       return response(request, 500, { error: 'Não foi possível concluir a troca de senha.' })
     }
+    await admin.from('security_events').insert({
+      user_id: user.id,
+      event_type: 'password_changed',
+      severity: 'warning',
+      details: { context: 'initial_password_change' },
+      user_agent: 'admin-users',
+    })
     return response(request, 200, { ok: true })
   }
 

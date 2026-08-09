@@ -325,44 +325,58 @@ export function useSupabaseFinance() {
     else void persist(() => supabase.from('budgets').upsert({ user_id: user.id, category_id: categoryId, limit_amount: amount }), { table: 'budgets', action: 'upsert' })
   }, [persist, user])
 
+  const callGoalRpc = useCallback(async (operation, action) => {
+    try {
+      const result = await guarded(operation, { table: 'goals', action })
+      if (result?.error) {
+        reportError(result.error)
+        return false
+      }
+      return true
+    } catch (error) {
+      reportError(error)
+      return false
+    }
+  }, [reportError])
+
   const addGoal = useCallback(async (input) => {
-    const { error: rpcError } = await supabase.rpc('create_standard_goal', {
+    const ok = await callGoalRpc(() => supabase.rpc('create_standard_goal', {
       p_name: String(input.name || '').trim(),
       p_target: Math.abs(Number(input.target) || 0),
       p_initial_contribution: Math.abs(Number(input.current) || 0),
       p_deadline: input.deadline || null,
       p_icon: input.icon || '🎯',
       p_color: input.color || '#6366f1',
-    })
-    if (rpcError) { reportError(rpcError); return false }
+    }), 'create_standard')
+    if (!ok) return false
     await load()
     return true
-  }, [load, reportError])
+  }, [callGoalRpc, load])
 
   const addStandardGoalContribution = useCallback(async (goalId, input) => {
-    const { error: rpcError } = await supabase.rpc('add_standard_goal_contribution', {
+    const ok = await callGoalRpc(() => supabase.rpc('add_standard_goal_contribution', {
       p_goal_id: goalId,
       p_amount: Math.abs(Number(input.amount) || 0),
       p_occurred_on: input.occurredOn,
-    })
-    if (rpcError) { reportError(rpcError); return false }
+    }), 'add_standard_contribution')
+    if (!ok) return false
     await load()
     return true
-  }, [load, reportError])
+  }, [callGoalRpc, load])
 
   const updateStandardGoalContribution = useCallback(async (contributionId, input) => {
-    const { error: rpcError } = await supabase.rpc('update_standard_goal_contribution', {
+    const ok = await callGoalRpc(() => supabase.rpc('update_standard_goal_contribution', {
       p_contribution_id: contributionId,
       p_amount: Math.abs(Number(input.amount) || 0),
       p_occurred_on: input.occurredOn,
-    })
-    if (rpcError) { reportError(rpcError); return false }
+    }), 'update_standard_contribution')
+    if (!ok) return false
     await load()
     return true
-  }, [load, reportError])
+  }, [callGoalRpc, load])
 
   const addReverseGoal = useCallback(async (input) => {
-    const { error: rpcError } = await supabase.rpc('create_reverse_goal', {
+    const ok = await callGoalRpc(() => supabase.rpc('create_reverse_goal', {
       p_name: String(input.name || '').trim(),
       p_original_amount: Math.abs(Number(input.originalAmount) || 0),
       p_initial_contribution: Math.abs(Number(input.initialContribution) || 0),
@@ -370,65 +384,56 @@ export function useSupabaseFinance() {
       p_selic_factor: Number(input.selicFactor) || 1,
       p_icon: input.icon || '🎯',
       p_color: input.color || '#6366f1',
-    })
-    if (rpcError) {
-      reportError(rpcError)
-      return false
-    }
+    }), 'create_reverse')
+    if (!ok) return false
     await load()
     return true
-  }, [load, reportError])
+  }, [callGoalRpc, load])
 
   const addReverseGoalContribution = useCallback(async (goalId, input) => {
-    const { error: rpcError } = await supabase.rpc('add_reverse_goal_contribution', {
+    const ok = await callGoalRpc(() => supabase.rpc('add_reverse_goal_contribution', {
       p_goal_id: goalId,
       p_amount: Math.abs(Number(input.amount) || 0),
       p_occurred_on: input.occurredOn,
       p_note: String(input.note || '').trim() || null,
-    })
-    if (rpcError) {
-      reportError(rpcError)
-      return false
-    }
+    }), 'add_reverse_contribution')
+    if (!ok) return false
     await load()
     return true
-  }, [load, reportError])
+  }, [callGoalRpc, load])
 
   const updateReverseGoalContribution = useCallback(async (contributionId, input) => {
-    const { error: rpcError } = await supabase.rpc('update_reverse_goal_contribution', {
+    const ok = await callGoalRpc(() => supabase.rpc('update_reverse_goal_contribution', {
       p_contribution_id: contributionId,
       p_amount: Math.abs(Number(input.amount) || 0),
       p_occurred_on: input.occurredOn,
-    })
-    if (rpcError) { reportError(rpcError); return false }
+    }), 'update_reverse_contribution')
+    if (!ok) return false
     await load()
     return true
-  }, [load, reportError])
+  }, [callGoalRpc, load])
 
   const setReverseGoalRetention = useCallback(async (months) => {
     const value = months === null || months === '' ? null : Number(months)
-    const { error: rpcError } = await supabase.rpc('set_reverse_goal_retention', { p_months: value })
-    if (rpcError) {
-      reportError(rpcError)
-      return false
-    }
+    const ok = await callGoalRpc(() => supabase.rpc('set_reverse_goal_retention', { p_months: value }), 'set_reverse_retention')
+    if (!ok) return false
     await load()
     return true
-  }, [load, reportError])
+  }, [callGoalRpc, load])
 
   const updateGoal = useCallback(async (id, patch) => {
-    const { error: rpcError } = await supabase.rpc('update_standard_goal_metadata', {
+    const ok = await callGoalRpc(() => supabase.rpc('update_standard_goal_metadata', {
       p_goal_id: id,
       p_name: String(patch.name || '').trim(),
       p_target: Math.abs(Number(patch.target) || 0),
       p_deadline: patch.deadline || null,
       p_icon: patch.icon || '🎯',
       p_color: patch.color || '#6366f1',
-    })
-    if (rpcError) { reportError(rpcError); return false }
+    }), 'update_standard_metadata')
+    if (!ok) return false
     await load()
     return true
-  }, [load, reportError])
+  }, [callGoalRpc, load])
 
   const updateReverseGoal = useCallback(async (id, input) => {
     const patch = {
@@ -491,9 +496,9 @@ export function useSupabaseFinance() {
   }), [transactions, categories, budgets, goals, standardGoalContributions, reverseGoalContributions, reverseGoalEvents, reverseGoalHistory, reverseGoalRetentionMonths])
 
   const importData = useCallback(async (data) => {
-    if (false && Array.isArray(data.goals) && data.goals.some((goal) => goal.goalType === 'reverse' || goal.goal_type === 'reverse')) {
-      reportError({ message: 'A restauração de backup com Meta Reversa requer a versão de banco compatível e foi bloqueada para evitar perda de histórico.' })
-      return
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      reportError({ message: 'Backup inválido.' })
+      return false
     }
     const txs = Array.isArray(data.transactions) ? data.transactions.map(normalizeTransaction) : transactions
     const cats = Array.isArray(data.categories) && data.categories.length ? data.categories : categories
@@ -524,20 +529,41 @@ export function useSupabaseFinance() {
       standardGoalContributions: nextStandardGoalContributions, reverseGoalContributions: data.reverseGoalContributions || [], reverseGoalHistory: data.reverseGoalHistory || [], reverseGoalEvents: data.reverseGoalEvents || [], reverseGoalRetentionMonths: data.reverseGoalRetentionMonths ?? null,
     }
 
-    const { error: rpcError } = await supabase.rpc('replace_my_data', { p_data: payload })
-    if (rpcError) {
-      reportError(rpcError)
-      return
+    try {
+      const { error: rpcError } = await guarded(
+        () => supabase.rpc('replace_my_data', { p_data: payload }),
+        { table: 'user_data', action: 'import' },
+      )
+      if (rpcError) {
+        reportError(rpcError)
+        return false
+      }
+    } catch (error) {
+      reportError(error)
+      return false
     }
     await logEvent(EVENTS.DATA_IMPORTED, 'warning', { transactions: txs.length, goals: nextGoals.length })
     await load()
+    return true
   }, [budgets, categories, goals, load, reportError, transactions, user])
 
   const clearAll = useCallback(async () => {
-    const { error: clearError } = await supabase.rpc('delete_my_data')
-    if (clearError) reportError(clearError)
-    await supabase.from('categories').upsert(DEFAULT_CATEGORIES.map((cat) => toCategory({ ...cat, custom: false }, user.id)))
-    await load()
+    if (!supabase || !user) return false
+    try {
+      const { error } = await guarded(
+        () => supabase.rpc('reset_my_data_with_defaults'),
+        { table: 'user_data', action: 'reset_with_defaults' },
+      )
+      if (error) {
+        reportError(error)
+        return false
+      }
+      await load()
+      return true
+    } catch (error) {
+      reportError(error)
+      return false
+    }
   }, [load, reportError, user])
 
   const setTransactionFormFields = useCallback((fields) => {

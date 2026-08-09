@@ -1,4 +1,3 @@
-import { useMemo } from 'react'
 import { TrendingUp } from 'lucide-react'
 import {
   Area,
@@ -31,8 +30,8 @@ function TooltipContent({ active, payload, label }) {
 }
 
 export default function TrendChart({ trend }) {
-  const data = useMemo(() => trend.map((t) => ({ ...t })), [trend])
-  const hasData = data.some((d) => d.income > 0 || d.expense > 0)
+  const data = trend
+  const hasData = data.some((d) => d.income > 0 || d.expense > 0 || d.reinvested > 0)
 
   return (
     <div className="card">

@@ -7,6 +7,9 @@ import { formatCurrency, formatPercent } from '../utils/format.js'
  * Para despesas, subir é negativo (invert=true).
  */
 function Delta({ value, invert = false }) {
+  if (value === null) {
+    return <span className="delta flat">novo</span>
+  }
   const rounded = Math.round(value)
   if (!Number.isFinite(rounded) || rounded === 0) {
     return (

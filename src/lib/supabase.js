@@ -50,7 +50,8 @@ if (!isSupabaseConfigured && import.meta.env.DEV) {
 export const supabase = isSupabaseConfigured
   ? createClient(url, anonKey, {
       auth: {
-        // Mantem o usuario logado entre recarregamentos
+        // Risco aceito: a sessao persistida no navegador aumenta o impacto de XSS.
+        // Mitigacoes: CSP, sem HTML arbitrario, logout por inatividade e revogacao no servidor.
         persistSession: true,
         // Renova o token de acesso automaticamente antes de expirar
         autoRefreshToken: true,

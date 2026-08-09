@@ -139,11 +139,4 @@ export const ICON_CATALOG = RAW.map(([emoji, label, group, usage]) => ({
   usage,
 }))
 
-/** Busca rapida por caractere */
-export const ICON_BY_EMOJI = new Map(ICON_CATALOG.map((item) => [item.emoji, item]))
-
-export function iconsInGroup(groupId) {
-  return ICON_CATALOG.filter((item) => item.group === groupId)
-}
-
 export const TOTAL_ICONS = ICON_CATALOG.length

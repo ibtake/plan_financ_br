@@ -46,7 +46,9 @@ export function IconProvider({ children }) {
   }, [overrides])
 
   const setOverride = useCallback((emoji, dataUrl) => {
+    if (!isSafeIconDataUrl(dataUrl)) return false
     setOverrides((prev) => ({ ...prev, [emoji]: dataUrl }))
+    return true
   }, [])
 
   const clearOverride = useCallback((emoji) => {
