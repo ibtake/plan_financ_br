@@ -208,8 +208,8 @@ function AuthenticatedApp() {
         <TrendChart
           variant="hero"
           trend={chartMonthly.trend}
-          value={monthly.summary.balance}
-          changeAmount={monthly.summary.balance - monthly.previousSummary.balance}
+          accumulatedValue={chartMonthly.trend.at(-1)?.cumulative ?? monthly.summary.balance}
+          monthlyValue={monthly.summary.balance}
         />
       </Suspense>
       <SummaryCards

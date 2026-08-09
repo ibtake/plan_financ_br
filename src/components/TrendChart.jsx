@@ -13,18 +13,18 @@ import { formatCurrency, formatPercent, monthLabel, monthLabelShort, percentChan
 function TooltipContent({ active, payload }) {
   if (!active || !payload?.length) return null
   const item = payload[0].payload
-  const change = item.previousBalance === null ? null : percentChange(item.balance, item.previousBalance)
-  return <ChartInfoTooltip title={item.tooltipTitle} value={formatCurrency(item.balance)} color={item.balance >= 0 ? 'var(--income)' : 'var(--expense)'} changeLabel={change === null ? null : String(change >= 0 ? '↑' : '↓') + ' ' + formatPercent(Math.abs(change), 0)} changeTone={change === null ? null : change >= 0 ? 'positive' : 'negative'} detail="Saldo do mês" />
+  const change = item.previousCumulative === null ? null : percentChange(item.cumulative, item.previousCumulative)
+  return <ChartInfoTooltip title={item.tooltipTitle} value={formatCurrency(item.cumulative)} color={item.cumulative >= 0 ? 'var(--income)' : 'var(--expense)'} changeLabel={change === null ? null : String(change >= 0 ? '↑' : '↓') + ' ' + formatPercent(Math.abs(change), 0)} changeTone={change === null ? null : change >= 0 ? 'positive' : 'negative'} detail={`Saldo do mês: ${formatCurrency(item.balance)}`} />
 }
 
-export default function TrendChart({ trend, variant = 'card', value = 0, changeAmount = null }) {
+export default function TrendChart({ trend, variant = 'card', accumulatedValue = 0, monthlyValue = 0 }) {
   const data = trend
   const isHero = variant === 'hero'
   const hasData = data.some((d) => d.income > 0 || d.expense > 0 || d.reinvested > 0)
   const chartData = data.map((item, index) => ({
     ...item,
     tooltipTitle: monthLabel(item.key),
-    previousBalance: index === 0 ? null : data[index - 1].balance,
+    previousCumulative: index === 0 ? null : data[index - 1].cumulative,
     positiveCumulative: Math.max(item.cumulative, 0),
     negativeCumulative: Math.min(item.cumulative, 0),
   }))
@@ -34,15 +34,13 @@ export default function TrendChart({ trend, variant = 'card', value = 0, changeA
       <div className="card-head">
         <div>
           <div className={isHero ? 'balance-hero-label' : 'card-title'}>
-            {isHero ? 'Saldo do m\u00eas' : 'Saldo acumulado'}
+            {isHero ? 'Posi\u00e7\u00e3o atual' : 'Saldo acumulado'}
           </div>
           {isHero && (
             <>
-              <div className="balance-hero-value">{formatCurrency(value)}</div>
-              <div className={`balance-hero-change${changeAmount !== null && changeAmount < 0 ? ' is-negative' : ''}`}>
-                {changeAmount === null
-                  ? 'Sem compara\u00e7\u00e3o'
-                  : `${changeAmount >= 0 ? '\u25b2' : '\u25bc'} ${formatCurrency(Math.abs(changeAmount))} vs. m\u00eas anterior`}
+              <div className="balance-hero-value">{formatCurrency(accumulatedValue)}</div>
+              <div className={`balance-hero-change${monthlyValue < 0 ? ' is-negative' : ''}`}>
+                {formatCurrency(monthlyValue)} neste mês
               </div>
             </>
           )}
