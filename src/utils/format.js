@@ -16,21 +16,26 @@ const PRIVATE_CURRENCY = 'R$ •••••'
 const PRIVATE_NUMBER = '•••••'
 const PRIVATE_PERCENT = '•••%'
 
+function formatBrl(value, formatter) {
+  const n = Number(value) || 0
+  const formatted = formatter.format(Math.abs(n))
+  return n < 0 ? formatted.replace(/^R\$\s*/, 'R$ -') : formatted
+}
+
 function valuesAreHidden() {
   return typeof document !== 'undefined' && document.documentElement.dataset.privacy === 'hidden'
 }
 
 export function formatCurrency(value) {
   if (valuesAreHidden()) return PRIVATE_CURRENCY
-  const n = Number(value) || 0
-  return brl.format(n)
+  return formatBrl(value, brl)
 }
 
 export function formatCompact(value) {
   if (valuesAreHidden()) return PRIVATE_CURRENCY
   const n = Number(value) || 0
-  if (Math.abs(n) < 1000) return brl.format(n)
-  return brlCompact.format(n)
+  if (Math.abs(n) < 1000) return formatBrl(n, brl)
+  return formatBrl(n, brlCompact)
 }
 
 export function formatPercent(value, digits = 0) {

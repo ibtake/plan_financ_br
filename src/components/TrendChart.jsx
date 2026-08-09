@@ -16,7 +16,7 @@ function TooltipContent({ active, payload }) {
   if (!active || !payload?.length) return null
   const item = payload[0].payload
   const change = item.previousCumulative === null ? null : percentChange(item.cumulative, item.previousCumulative)
-  return <ChartInfoTooltip title={item.tooltipTitle} value={formatCurrency(item.cumulative)} color={item.cumulative >= 0 ? 'var(--income)' : 'var(--expense)'} changeLabel={change === null ? null : String(change >= 0 ? '↑' : '↓') + ' ' + formatPercent(Math.abs(change), 0)} changeTone={change === null ? null : change >= 0 ? 'positive' : 'negative'} detail={`Saldo do mês: ${formatCurrency(item.balance)}`} />
+  return <ChartInfoTooltip title={item.tooltipTitle} value={formatCurrency(item.cumulative)} color={item.cumulative >= 0 ? 'var(--position-positive)' : 'var(--position-negative)'} changeLabel={change === null ? null : String(change >= 0 ? '↑' : '↓') + ' ' + formatPercent(Math.abs(change), 0)} changeTone={change === null ? null : change >= 0 ? 'positive' : 'negative'} detail={`Saldo do mês: ${formatCurrency(item.balance)}`} />
 }
 
 export default function TrendChart({ trend, variant = 'card', accumulatedValue = 0, monthlyValue = 0 }) {
