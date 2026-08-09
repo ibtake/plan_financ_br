@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { TrendingUp } from 'lucide-react'
 import {
   Area,
   AreaChart,
   ResponsiveContainer,
+  ReferenceLine,
   Tooltip,
   XAxis,
   YAxis,
@@ -18,6 +20,7 @@ function TooltipContent({ active, payload }) {
 }
 
 export default function TrendChart({ trend, variant = 'card', accumulatedValue = 0, monthlyValue = 0 }) {
+  const [tooltipPosition, setTooltipPosition] = useState(null)
   const data = trend
   const isHero = variant === 'hero'
   const hasData = data.some((d) => d.income > 0 || d.expense > 0 || d.reinvested > 0)
@@ -38,7 +41,7 @@ export default function TrendChart({ trend, variant = 'card', accumulatedValue =
           </div>
           {isHero && (
             <>
-              <div className="balance-hero-value">{formatCurrency(accumulatedValue)}</div>
+              <div className={`balance-hero-value${accumulatedValue < 0 ? ' is-negative' : accumulatedValue > 0 ? ' is-positive' : ''}`}>{formatCurrency(accumulatedValue)}</div>
               <div className={`balance-hero-change${monthlyValue < 0 ? ' is-negative' : ''}`}>
                 {formatCurrency(monthlyValue)} neste mês
               </div>
@@ -51,7 +54,7 @@ export default function TrendChart({ trend, variant = 'card', accumulatedValue =
       {hasData ? (
         <div className={isHero ? 'chart-wrap balance-hero-chart' : 'chart-wrap'} style={{ height: isHero ? 190 : 240 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+            <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }} onClick={(state) => state?.chartX != null && state?.chartY != null && setTooltipPosition({ x: state.chartX, y: state.chartY })} onMouseLeave={() => setTooltipPosition(null)}>
               <YAxis hide domain={['auto', 'auto']} />
               <XAxis
                 dataKey="key"
@@ -60,17 +63,18 @@ export default function TrendChart({ trend, variant = 'card', accumulatedValue =
                 axisLine={{ stroke: 'var(--border)' }}
                 tickLine={false}
               />
-              <Tooltip content={<TooltipContent />} />
+              <Tooltip content={<TooltipContent />} position={tooltipPosition || undefined} offset={0} />
               <Area
-                type="linear"
+                type="monotone"
                 dataKey="positiveCumulative"
                 stroke="none"
                 fill="var(--trend-income-fill)"
                 baseValue={0}
                 isAnimationActive={false}
               />
+              <ReferenceLine y={0} stroke="var(--text-muted)" strokeWidth={1.5} ifOverflow="extendDomain" />
               <Area
-                type="linear"
+                type="monotone"
                 dataKey="negativeCumulative"
                 stroke="none"
                 fill="var(--trend-expense-fill)"

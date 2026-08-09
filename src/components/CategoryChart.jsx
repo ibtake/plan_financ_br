@@ -8,6 +8,11 @@ import { formatCurrency, formatPercent } from '../utils/format.js'
 const SMALL_CATEGORY_SHARE = 5
 const HEX_COLUMNS = 13
 const HEX_ROWS = 9
+const HEX_PATH = 'M30 4Q25 4 22 10L5 44Q2 50 5 56L22 90Q25 96 30 96H70Q75 96 78 90L95 56Q98 50 95 44L78 10Q75 4 70 4Z'
+
+function HexShape() {
+  return <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false"><path d={HEX_PATH} /></svg>
+}
 
 function buildHexGrid(data) {
   const slots = []
@@ -15,20 +20,22 @@ function buildHexGrid(data) {
     for (let column = 0; column < HEX_COLUMNS; column += 1) {
       const x = (column - (HEX_COLUMNS - 1) / 2) / 5.7
       const y = (row - (HEX_ROWS - 1) / 2) / 3.8
-      slots.push({ row, column, filled: (x * x) + (y * y) <= 1.08 })
+      const radius = Math.hypot(x, y)
+      const angle = (Math.atan2(y, x) + Math.PI) / (Math.PI * 2)
+      slots.push({ row, column, filled: (x * x) + (y * y) <= 1.08, spiralScore: (radius * 4) + angle })
     }
   }
-  const filledSlots = slots.filter((slot) => slot.filled)
-  let cursor = 0
+  const filledSlots = slots.filter((slot) => slot.filled).sort((a, b) => a.spiralScore - b.spiralScore)
+  const slotOrder = new Map(filledSlots.map((slot, index) => [`${slot.row}-${slot.column}`, index]))
+  const ascendingData = [...data].sort((a, b) => a.value - b.value)
   return slots.map((slot) => {
     if (!slot.filled) return { ...slot, category: null }
-    const position = ((cursor + 0.5) / filledSlots.length) * 100
+    const position = ((slotOrder.get(`${slot.row}-${slot.column}`) + 0.5) / filledSlots.length) * 100
     let accumulated = 0
-    const category = data.find((item) => {
+    const category = ascendingData.find((item) => {
       accumulated += item.share
       return position <= accumulated
-    }) || data[data.length - 1]
-    cursor += 1
+    }) || ascendingData[ascendingData.length - 1]
     return { ...slot, category }
   })
 }
@@ -56,6 +63,7 @@ function ShowAllButton({ expanded, onClick }) {
 export default function CategoryChart({ byCategory, categories, total, incomeTotal = 0 }) {
   const [activeId, setActiveId] = useState(null)
   const [hoveredId, setHoveredId] = useState(null)
+  const [selectedHex, setSelectedHex] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
   const [showAll, setShowAll] = useState(false)
   const data = useMemo(() => {
@@ -75,10 +83,17 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   const displayedLegend = showAll ? data : data.slice(0, 7)
   const displayedRows = showAll ? data : data.slice(0, 7)
   const toggleAll = () => setShowAll((value) => !value)
-  const expenseOfIncome = incomeTotal > 0 ? (total / incomeTotal) * 100 : null
   const hexGrid = useMemo(() => buildHexGrid(data), [data])
-  const focusedId = hoveredId || activeId
+  const focusedId = hoveredId || selectedHex?.id || activeId
   const focusedItem = data.find((item) => item.id === focusedId)
+  const selectedItem = data.find((item) => item.id === selectedHex?.id)
+  const handleHexClick = (event, category) => {
+    const wrap = event.currentTarget.closest('.expense-hex-wrap')
+    const hexRect = event.currentTarget.getBoundingClientRect()
+    const wrapRect = wrap.getBoundingClientRect()
+    setActiveId(category.id)
+    setSelectedHex({ id: category.id, left: hexRect.left - wrapRect.left + (hexRect.width / 2), top: hexRect.top - wrapRect.top + (hexRect.height / 2) })
+  }
 
   if (!data.length) return <div className="card"><div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div><div className="empty"><div className="empty-icon"><PieChartIcon size={22} strokeWidth={1.6} /></div><div className="empty-title">Nenhuma saída neste mês</div><div className="text-sm">Adicione lançamentos para ver a distribuição.</div></div></div>
 
@@ -86,30 +101,25 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
     <section className="card expense-distribution-card">
       <div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div>
       <div className="expense-hex-wrap">
-        <div className="expense-donut-center" aria-live="polite" aria-label={`${focusedItem ? focusedItem.name : 'Total gasto'}: ${formatCurrency(focusedItem ? focusedItem.value : total)}`}>
-          <strong>{formatCurrency(focusedItem ? focusedItem.value : total)}</strong>
-          <span>{focusedItem ? focusedItem.name : 'Total gasto'}</span>
-          <small>{focusedItem ? `${formatPercent(focusedItem.share, 1)} do total` : expenseOfIncome === null ? 'Sem receita no mês' : `Já gastou ${formatPercent(expenseOfIncome, 0)}`}</small>
-        </div>
         <div className="expense-hex-grid" role="group" aria-label="Distribuição por classe de despesa">
           {hexGrid.map((hex) => hex.category ? (
             <button
               type="button"
               key={`${hex.row}-${hex.column}`}
               className={`expense-hex${focusedId && focusedId !== hex.category.id ? ' is-dimmed' : ''}`}
-              style={{ '--hex-color': hex.category.color, '--hex-offset': hex.row % 2 ? '13.5px' : '0px' }}
+              style={{ '--hex-color': hex.category.color }}
               onMouseEnter={() => setHoveredId(hex.category.id)}
               onMouseLeave={() => setHoveredId(null)}
               onFocus={() => setHoveredId(hex.category.id)}
               onBlur={() => setHoveredId(null)}
-              onClick={() => setActiveId(hex.category.id)}
+              onClick={(event) => handleHexClick(event, hex.category)}
               aria-label={`${hex.category.name}: ${formatCurrency(hex.category.value)}`}
-            />
-          ) : <span className="expense-hex is-empty" key={`${hex.row}-${hex.column}`} aria-hidden="true" />)}
+            ><HexShape /></button>
+          ) : <span className="expense-hex is-empty" key={`${hex.row}-${hex.column}`} aria-hidden="true"><HexShape /></span>)}
         </div>
+        {selectedHex && selectedItem && <div className="expense-hex-tooltip" style={{ left: selectedHex.left, top: selectedHex.top }}><ChartInfoTooltip title={selectedItem.name} value={formatCurrency(selectedItem.value)} color={selectedItem.color} detail={`${formatPercent(selectedItem.share, 1)} do total`} /></div>}
       </div>
-      {hoveredId && focusedItem && <div className="expense-hex-tooltip"><ChartInfoTooltip title={focusedItem.name} value={formatCurrency(focusedItem.value)} color={focusedItem.color} detail={formatPercent(focusedItem.share, 1) + ' do total'} /></div>}
-      <div className="expense-donut-legend">{displayedLegend.map((item) => <button type="button" key={item.id} className={`expense-legend-row${activeId === item.id ? ' is-active' : ''}`} onMouseEnter={() => setActiveId(item.id)} onMouseLeave={() => setActiveId(null)} onClick={() => setActiveId(item.id)} aria-label={`${item.name}: ${formatCurrency(item.value)}, ${formatPercent(item.share, 1)} do total`}><span className="chart-dot" style={{ background: item.color }} /><span className="expense-legend-name"><AppIcon emoji={item.icon} /> {item.name}</span><strong>{formatCurrency(item.value)}</strong><span>{formatPercent(item.share, 1)}</span></button>)}</div>
+      <div className="expense-donut-legend">{displayedLegend.map((item) => <button type="button" key={item.id} className={`expense-legend-row${activeId === item.id ? ' is-active' : ''}`} onMouseEnter={() => setActiveId(item.id)} onMouseLeave={() => setActiveId(null)} onClick={() => { setActiveId(item.id); setSelectedHex(null) }} aria-label={`${item.name}: ${formatCurrency(item.value)}, ${formatPercent(item.share, 1)} do total`}><span className="chart-dot" style={{ background: item.color }} /><span className="expense-legend-name"><AppIcon emoji={item.icon} /> {item.name}</span><strong>{formatCurrency(item.value)}</strong><span>{formatPercent(item.share, 1)}</span></button>)}</div>
       {data.length > 7 && <ShowAllButton expanded={showAll} onClick={toggleAll} />}
     </section>
 
