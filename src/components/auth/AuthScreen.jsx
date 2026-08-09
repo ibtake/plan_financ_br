@@ -172,28 +172,6 @@ export default function AuthScreen() {
     void verifyMfaCode(code)
   }, [mode, code, busy])
 
-  const pasteMfaCode = async () => {
-    resetMessages()
-    document.activeElement?.blur()
-    if (!navigator.clipboard?.readText) {
-      setError('A colagem automática não está disponível neste navegador. Use Ctrl+V ou cole o código nos campos.')
-      return
-    }
-
-    try {
-      const clipboardText = await navigator.clipboard.readText()
-      const pastedCode = clipboardText.replace(/\D/g, '').slice(0, 6)
-      if (!pastedCode) {
-        setError('Não encontramos um código numérico na área de transferência.')
-        return
-      }
-      submittedMfaCode.current = null
-      setCode(pastedCode)
-    } catch {
-      setError('Não foi possível acessar a área de transferência. Verifique a permissão do navegador ou cole o código manualmente.')
-    }
-  }
-
   const cancelMfa = async () => {
     await auth.signOut('mfa_cancelled')
     switchMode('login')
@@ -328,16 +306,6 @@ export default function AuthScreen() {
             </div>
 
             <CodeInput value={code} onChange={setCode} disabled={busy} />
-
-            <button
-              type="button"
-              className="btn btn-block"
-              onPointerDown={() => document.activeElement?.blur()}
-              onClick={pasteMfaCode}
-              disabled={busy}
-            >
-              Colar código
-            </button>
 
             <button
               className="btn btn-primary btn-block"

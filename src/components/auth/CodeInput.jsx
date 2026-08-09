@@ -9,6 +9,9 @@ export default function CodeInput({ value, onChange, disabled, autoFocus = true 
 
   useEffect(() => {
     if (autoFocus) refs.current[0]?.focus()
+    if (!autoFocus) return undefined
+    const timer = window.setTimeout(() => refs.current[0]?.focus(), 320)
+    return () => window.clearTimeout(timer)
   }, [autoFocus])
 
   const setDigit = (index, digit) => {
