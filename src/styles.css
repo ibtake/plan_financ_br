@@ -4215,14 +4215,14 @@ body:has(.modal-backdrop) .fab {
 .sync-overlay-card .spinner { width:32px; height:32px; }
 .sync-overlay-card span { color:var(--text-muted); font-size:13px; line-height:1.45; }
 
-.quick-entry-field { padding:14px; border:1px solid color-mix(in srgb, var(--accent) 52%, var(--border)); border-radius:14px; background:color-mix(in srgb, var(--accent) 5%, var(--surface)); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent); }
-.quick-entry-row { display:flex; align-items:center; gap:6px; }
+.quick-entry-field { margin-inline:-14px; padding:14px; border:1px solid color-mix(in srgb, var(--accent) 52%, var(--border)); border-radius:14px; background:color-mix(in srgb, var(--accent) 5%, var(--surface)); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent); }
+.quick-entry-row { display:flex; align-items:center; gap:12px; }
 .quick-entry-row .input { flex:1; min-width:0; }
 .quick-entry-row .input::placeholder { color:var(--text-muted); opacity:.78; }
 .quick-entry-row .btn { white-space:nowrap; }
 @media (max-width: 560px) {
-  .quick-entry-row { gap:4px; }
-  .quick-entry-row .btn { padding-inline:10px; }
+  .quick-entry-row { gap:10px; }
+  .quick-entry-row .btn { padding-inline:12px; }
 }
 
 .transaction-form-head { align-items:center; padding-top:16px; padding-bottom:8px; }

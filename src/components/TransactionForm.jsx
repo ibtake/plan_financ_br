@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, Play, Repeat2, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Repeat2, X } from 'lucide-react'
 import {
   PAYMENT_METHODS,
   RECURRENCE_OPTIONS,
@@ -140,7 +140,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                   autoFocus
                 />
                 <button type="button" className="btn btn-primary" onClick={executeQuickEntry} disabled={!quickText.trim()}>
-                  <Play size={14} /> Executar
+                  Go!
                 </button>
               </div>
               {errors.quick && <span className="field-error">{errors.quick}</span>}
