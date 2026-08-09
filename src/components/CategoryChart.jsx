@@ -137,7 +137,7 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
               <button
                 type="button"
                 key={`${hex.row}-${hex.column}`}
-                className={`expense-hex${focusedId && focusedId !== hex.category.id ? ' is-dimmed' : ''}`}
+                className={`expense-hex${focusedId && focusedId !== hex.category.id ? ' is-dimmed' : ''}${hoveredId === hex.category.id || selectedHex?.id === hex.category.id ? ' is-sprung' : ''}`}
                 ref={(element) => { if (element) hexRefs.current.set(`${hex.row}-${hex.column}`, element); else hexRefs.current.delete(`${hex.row}-${hex.column}`) }}
                 style={{ '--hex-color': hex.category.color, '--hex-scale': hex.scale, '--hex-offset-y': hex.column % 2 ? '50%' : '0%' }}
                 onMouseEnter={() => setHoveredId(hex.category.id)}

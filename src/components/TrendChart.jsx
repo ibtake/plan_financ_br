@@ -58,12 +58,13 @@ export default function TrendChart({ trend, variant = 'card', accumulatedValue =
               <YAxis hide domain={['auto', 'auto']} />
               <XAxis
                 dataKey="key"
-                tickFormatter={monthLabelShort}
+                tickFormatter={(key) => monthLabelShort(key).split('/')[0]}
+                interval={0}
                 tick={{ fill: 'var(--text-muted)', fontSize: 12 }}
                 axisLine={{ stroke: 'var(--border)' }}
                 tickLine={false}
               />
-              <Tooltip content={<TooltipContent />} position={tooltipPosition || undefined} offset={0} />
+              <Tooltip active={Boolean(tooltipPosition)} content={<TooltipContent />} position={tooltipPosition || undefined} offset={0} cursor={false} />
               <Area
                 type="monotone"
                 dataKey="positiveCumulative"

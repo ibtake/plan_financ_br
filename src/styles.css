@@ -2550,7 +2550,10 @@ body:has(.modal-backdrop) .fab {
 .expense-donut-wrap,
 .expense-hex-wrap { position: relative; height: 320px; min-width: 0; }
 .expense-hex-grid { position: absolute; top: 50%; left: 50%; display: grid; width: min(100%, 380px); height: auto; aspect-ratio: 1.45; grid-template-columns: repeat(13, minmax(0, 1fr)); grid-template-rows: repeat(9, minmax(0, 1fr)); gap: 0; transform: translate(-50%, -50%); }
-.expense-hex { width: 100%; height: 100%; padding: 0; border: 0; background: transparent; color: var(--hex-color, var(--surface-2)); cursor: pointer; transform: translateY(calc(var(--hex-offset-y, 0%) + var(--hex-lift, 0px))) scale(calc(var(--hex-scale, 1) * var(--hex-wave-scale, 1))); transform-origin: center; filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 18%)); }
+.expense-hex { width: 100%; height: 100%; padding: 0; border: 0; background: transparent; color: var(--hex-color, var(--surface-2)); cursor: pointer; transform: translateY(calc(var(--hex-offset-y, 0%) + var(--hex-lift, 0px))) scale(calc(var(--hex-scale, 1) * var(--hex-wave-scale, 1))); transform-origin: center; filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 18%)); transition: transform 520ms cubic-bezier(.34, 1.56, .64, 1), filter 260ms ease; }
+.expense-hex:hover,
+.expense-hex:active,
+.expense-hex.is-sprung { --hex-wave-scale: 1.055; --hex-lift: -3px; filter: drop-shadow(0 5px 4px rgb(0 0 0 / 22%)); }
 .expense-hex svg { display: block; width: 100%; height: 100%; }
 .expense-hex path { vector-effect: non-scaling-stroke; }
 .expense-hex:focus-visible { z-index: 1; outline: 2px solid var(--primary); outline-offset: 2px; }

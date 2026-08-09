@@ -16,7 +16,7 @@ const EMPTY = {
   categoryId: '',
   date: todayISO(),
   method: 'pix',
-  paid: true,
+  paid: false,
   recurrence: 'none',
   recurrenceEnd: '',
   installments: 1,
