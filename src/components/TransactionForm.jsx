@@ -53,7 +53,10 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
     setListening(false)
   }, [open, initial, defaultDate])
 
-  useEffect(() => () => recognitionRef.current?.stop(), [])
+  useEffect(() => {
+    if (!open) recognitionRef.current?.stop()
+    return () => recognitionRef.current?.stop()
+  }, [open])
 
   const available = useMemo(
     () => categoriesByType(categories, form.type),
