@@ -16,7 +16,7 @@ async function load() {
     const request = new Request(API)
     request.method = 'POST'
     const headers = { 'Content-Type': 'application/json' }
-    if (token) headers.Authorization = 'Bearer ' + token
+    if (token) headers['X-Widget-Token'] = token
     request.headers = headers
     request.body = JSON.stringify(token ? {} : { code: INSTALL_CODE })
     try {
