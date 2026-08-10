@@ -54,7 +54,15 @@ export default function TrendChart({ trend, variant = 'card', accumulatedValue =
       {hasData ? (
         <div className={isHero ? 'chart-wrap balance-hero-chart' : 'chart-wrap'} style={{ height: isHero ? 190 : 240 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }} onClick={(state) => state?.chartX != null && state?.chartY != null && setTooltipPosition({ x: state.chartX, y: state.chartY })} onMouseLeave={() => setTooltipPosition(null)}>
+            <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }} onClick={(state) => {
+              if (state?.chartX == null || state?.chartY == null) return
+              const x = state.chartWidth ? Math.max(80, Math.min(state.chartX, state.chartWidth - 80)) : state.chartX
+              setTooltipPosition({
+                x,
+                y: state.chartY,
+                placement: state.chartY < 82 ? 'below' : 'above',
+              })
+            }} onMouseLeave={() => setTooltipPosition(null)}>
               <YAxis hide domain={['auto', 'auto']} />
               <XAxis
                 dataKey="key"
@@ -64,7 +72,7 @@ export default function TrendChart({ trend, variant = 'card', accumulatedValue =
                 axisLine={{ stroke: 'var(--border)' }}
                 tickLine={false}
               />
-              <Tooltip active={Boolean(tooltipPosition)} content={<TooltipContent />} position={tooltipPosition || undefined} offset={0} cursor={false} />
+              <Tooltip active={Boolean(tooltipPosition)} content={<TooltipContent />} position={tooltipPosition || undefined} wrapperClassName={tooltipPosition?.placement || ''} offset={0} cursor={false} />
               <Area
                 type="monotone"
                 dataKey="positiveCumulative"
