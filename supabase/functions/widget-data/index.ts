@@ -17,6 +17,12 @@ function randomToken() {
   return btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')
 }
 
+function saoPauloDate() {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
 function addMonths(date: string, months: number) {
   const value = new Date(`${date}T00:00:00Z`)
   value.setUTCMonth(value.getUTCMonth() + months)
@@ -64,7 +70,7 @@ Deno.serve(async (request) => {
   let body: Record<string, any>
   try { body = await request.json() } catch { return response(400, { error: 'Requisição inválida.' }) }
   // O widget só pode consultar o dia corrente. A data não vem do cliente.
-  const date = new Date().toISOString().slice(0, 10)
+  const date = saoPauloDate()
   const admin = createClient(url, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } })
   const authorization = request.headers.get('authorization') || ''
   let userId = ''
