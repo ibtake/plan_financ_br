@@ -8,7 +8,7 @@ function scriptFor(code) {
 const APP_URL = ${JSON.stringify(appUrl)}
 const ICON_URL = APP_URL + '/dindin-10-logo.png'
 const INSTALL_CODE = ${JSON.stringify(code)}
-const TOKEN_KEY = 'dindin-widget-token-v2'
+const TOKEN_KEY = 'dindin-widget-token-v3'
 const ICON_PATH = FileManager.local().joinPath(FileManager.local().documentsDirectory(), 'dindin-10-widget.png')
 
 async function load() {
@@ -42,6 +42,10 @@ async function load() {
     return
   }
   let response = await requestData(token)
+  if (token && response.status === 401) {
+    Keychain.remove(TOKEN_KEY)
+    response = await requestData(null)
+  }
   const result = response.data
   if (result.token) Keychain.set(TOKEN_KEY, result.token)
   if (!Array.isArray(result.bills)) {
