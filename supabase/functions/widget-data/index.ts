@@ -7,6 +7,10 @@ function response(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: jsonHeaders })
 }
 
+function authLog(fields: Record<string, unknown>) {
+  console.log(JSON.stringify({ event: 'widget_auth', ...fields }))
+}
+
 async function hash(value: string) {
   const bytes = await crypto.subtle.digest('SHA-256', encoder.encode(value))
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('')
@@ -77,13 +81,18 @@ Deno.serve(async (request) => {
   let tokenHash = ''
 
   if (authorization.startsWith('Bearer ')) {
-    tokenHash = await hash(authorization.slice(7))
-    const { data } = await admin.from('widget_tokens').select('user_id').eq('token_hash', tokenHash).is('revoked_at', null).maybeSingle()
+    const presentedToken = authorization.slice(7).trim()
+    tokenHash = await hash(presentedToken)
+    const { data, error: tokenLookupError } = await admin.from('widget_tokens').select('user_id').eq('token_hash', tokenHash).is('revoked_at', null).maybeSingle()
+    authLog({ mode: 'token', tokenPresent: Boolean(presentedToken), tokenLength: presentedToken.length, tokenFound: Boolean(data), lookupError: tokenLookupError?.code || null })
     userId = data?.user_id || ''
   } else if (body.code) {
+    authLog({ mode: 'install_code', codePresent: true })
     const codeHash = await hash(String(body.code))
     const { data: install } = await admin.from('widget_install_codes').select('id,user_id,expires_at,used_at').eq('code_hash', codeHash).maybeSingle()
-    if (install && !install.used_at && new Date(install.expires_at).getTime() > Date.now()) {
+    const installValid = Boolean(install && !install.used_at && new Date(install.expires_at).getTime() > Date.now())
+    authLog({ mode: 'install_code_result', found: Boolean(install), used: Boolean(install?.used_at), valid: installValid })
+    if (installValid) {
       const token = randomToken()
       tokenHash = await hash(token)
       userId = install.user_id
@@ -91,7 +100,10 @@ Deno.serve(async (request) => {
       const { error } = await admin.from('widget_tokens').insert({ user_id: userId, token_hash: tokenHash })
       if (error) return response(503, { error: 'Não foi possível ativar o widget.' })
       body.__newToken = token
+      authLog({ mode: 'install_code_activated', activated: true })
     }
+  } else {
+    authLog({ mode: 'none', tokenPresent: false, codePresent: false })
   }
   if (!userId) return response(401, { error: 'Widget não autorizado.' })
 
