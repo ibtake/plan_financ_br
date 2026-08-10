@@ -2386,6 +2386,17 @@ body:has(.modal-backdrop) .fab {
   animation: chart-tooltip-in .18s cubic-bezier(.22, 1, .36, 1) both;
 }
 
+.recharts-tooltip-wrapper.tooltip-below .chart-info-tooltip {
+  transform: translate(-50%, 0);
+  transform-origin: top center;
+}
+
+.recharts-tooltip-wrapper.tooltip-below .chart-info-tooltip::after {
+  top: -6px;
+  bottom: auto;
+  transform: translateX(-50%) rotate(225deg);
+}
+
 .expense-hex-tooltip .chart-info-tooltip {
   transform-origin: bottom center;
   animation: chart-tooltip-pop .18s cubic-bezier(.22, 1, .36, 1) both;
