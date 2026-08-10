@@ -75,7 +75,7 @@ async function load() {
   }
   const heading = header.addStack()
   heading.layoutVertically()
-  const eyebrow = heading.addText('DIN DIN 10')
+  const eyebrow = heading.addText('DinDin10')
   eyebrow.textColor = new Color('#93c5fd'); eyebrow.font = Font.semiboldSystemFont(9)
   const title = heading.addText(result.bills.length ? 'Contas de hoje' : 'Tudo em dia')
   title.textColor = Color.white(); title.font = Font.boldSystemFont(16)
@@ -129,7 +129,9 @@ async function load() {
   const total = footer.addText(Number(result.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
   total.textColor = new Color('#93c5fd'); total.font = Font.boldSystemFont(15)
   widget.url = APP_URL
-  widget.refreshAfterDate = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  const nextMidnight = new Date()
+  nextMidnight.setHours(24, 0, 0, 0)
+  widget.refreshAfterDate = nextMidnight
   Script.setWidget(widget)
   Script.complete()
 }
