@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Database, Download, FlaskConical, Moon, Palette, SlidersHorizontal, Smartphone, Sun, Upload } from 'lucide-react'
 import { importJSON } from '../utils/exporters.js'
 import { normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
-import { createWidgetSetup, revokeWidget } from '../lib/widgetApi.js'
+import { createWidgetSetup, getWidgetStatus, revokeWidget } from '../lib/widgetApi.js'
 import AdminUserManagement from './AdminUserManagement.jsx'
 
 export default function SettingsPanel({
@@ -27,12 +27,23 @@ export default function SettingsPanel({
   const [savingRetention, setSavingRetention] = useState(false)
   const [settingUpWidget, setSettingUpWidget] = useState(false)
   const [revokingWidget, setRevokingWidget] = useState(false)
+  const [widgetTokens, setWidgetTokens] = useState([])
+  const [loadingWidgetStatus, setLoadingWidgetStatus] = useState(true)
 
   // A configuracao vem junto dos dados auxiliares. Enquanto ela nao chegou,
   // o select fica bloqueado para nao gravar acidentalmente "Nunca excluir".
   useEffect(() => {
     if (reverseGoalRetentionLoaded) setRetentionMonths(reverseGoalRetentionMonths ?? '')
   }, [reverseGoalRetentionLoaded, reverseGoalRetentionMonths])
+
+  useEffect(() => {
+    let active = true
+    getWidgetStatus()
+      .then((tokens) => { if (active) setWidgetTokens(tokens) })
+      .catch(() => {})
+      .finally(() => { if (active) setLoadingWidgetStatus(false) })
+    return () => { active = false }
+  }, [])
   const visibleTransactionFields = normalizeTransactionFormFields(transactionFormFields)
   const transactionFields = [
     ['method', 'Forma de pagamento'],
@@ -101,6 +112,7 @@ export default function SettingsPanel({
     setRevokingWidget(true)
     try {
       await revokeWidget()
+      setWidgetTokens((tokens) => tokens.map((token) => ({ ...token, revoked_at: new Date().toISOString() })))
       setMessage({ tone: 'success', text: 'Acesso do widget revogado. O Scriptable deixará de receber dados.' })
     } catch (error) {
       setMessage({ tone: 'danger', text: error.message })
@@ -202,13 +214,28 @@ export default function SettingsPanel({
             <div className="card-sub">Veja as contas que vencem hoje no Scriptable</div>
           </div>
         </div>
-        <button className="btn btn-primary" onClick={setupWidget} disabled={settingUpWidget}>
-          <Smartphone size={16} strokeWidth={2} />
-          {settingUpWidget ? 'Preparando...' : 'Configurar no Scriptable'}
-        </button>
-        <button className="btn" onClick={disableWidget} disabled={revokingWidget} style={{ marginLeft: 8 }}>
-          {revokingWidget ? 'Revogando...' : 'Revogar acesso'}
-        </button>
+        <div className="settings-actions">
+          <button className="btn btn-primary" onClick={setupWidget} disabled={settingUpWidget}>
+            <Smartphone size={16} strokeWidth={2} />
+            {settingUpWidget ? 'Preparando...' : 'Configurar no Scriptable'}
+          </button>
+          <button className="btn btn-danger" onClick={disableWidget} disabled={revokingWidget}>
+            {revokingWidget ? 'Revogando...' : 'Revogar todos os acessos'}
+          </button>
+        </div>
+        <p className="hint" style={{ marginTop: 12 }}>
+          {loadingWidgetStatus ? 'Consultando integrações...' : `${widgetTokens.filter((token) => !token.revoked_at).length} integração(ões) ativa(s).`}
+          {' '}Os valores dos tokens não são exibidos nem recuperáveis; apenas o status pode ser consultado. O botão vermelho revoga todos os widgets desta conta.
+        </p>
+        {!loadingWidgetStatus && widgetTokens.length > 0 && (
+          <div className="text-sm text-muted" style={{ marginTop: 8 }}>
+            {widgetTokens.map((token, index) => (
+              <div key={token.id}>
+                Widget {index + 1} · {String(token.id).slice(0, 8)} · {token.revoked_at ? 'revogado' : 'ativo'}
+              </div>
+            ))}
+          </div>
+        )}
         <p className="hint" style={{ marginTop: 12 }}>
           O botão prepara um código temporário, copia o script e abre o Scriptable. Lá, cole, salve e execute o script uma vez; depois adicione o widget à tela do iPhone.
         </p>

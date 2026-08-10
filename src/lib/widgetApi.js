@@ -17,9 +17,17 @@ async function load() {
   request.method = 'POST'
   request.headers = { 'Content-Type': 'application/json' }
   request.body = JSON.stringify(token ? {} : { code: INSTALL_CODE })
-  const result = await request.loadJSON()
+  let result
+  try {
+    result = await request.loadJSON()
+  } catch (error) {
+    throw new Error('Falha HTTP ' + (request.response?.statusCode || '?') + ': ' + error.message)
+  }
   if (result.token) Keychain.set(TOKEN_KEY, result.token)
-  if (!Array.isArray(result.bills)) throw new Error(result.error || 'Não foi possível atualizar o widget.')
+  if (!Array.isArray(result.bills)) {
+    const detail = result?.error || result?.message || JSON.stringify(result)
+    throw new Error('API ' + (request.response?.statusCode || '?') + ': ' + detail)
+  }
   const widget = new ListWidget()
   widget.backgroundColor = new Color('#101827')
   const header = widget.addStack()
@@ -66,4 +74,10 @@ export async function createWidgetSetup() {
 export async function revokeWidget() {
   const { error } = await supabase.functions.invoke('widget-setup', { body: { action: 'revoke' } })
   if (error) throw new Error('Não foi possível revogar o widget.')
+}
+
+export async function getWidgetStatus() {
+  const { data, error } = await supabase.functions.invoke('widget-setup', { body: { action: 'status' } })
+  if (error) throw new Error('Não foi possível consultar os widgets.')
+  return data?.tokens || []
 }

@@ -24,6 +24,14 @@ Deno.serve(async (request) => {
   const admin = createClient(url, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } })
   let body: Record<string, unknown> = {}
   try { body = await request.json() } catch { /* corpo vazio */ }
+  if (body.action === 'status') {
+    const { data: tokens, error: statusError } = await admin
+      .from('widget_tokens')
+      .select('id,created_at,last_used_at,revoked_at')
+      .eq('user_id', data.user.id)
+      .order('created_at', { ascending: false })
+    return statusError ? response(503, { error: 'Não foi possível consultar os widgets.' }) : response(200, { tokens: tokens || [] })
+  }
   if (body.action === 'revoke') {
     const { error: revokeError } = await admin.from('widget_tokens').update({ revoked_at: new Date().toISOString() }).eq('user_id', data.user.id).is('revoked_at', null)
     return revokeError ? response(503, { error: 'Não foi possível revogar o widget.' }) : response(200, { ok: true })
