@@ -120,14 +120,6 @@ async function load() {
     const more = widget.addText('+' + (result.bills.length - maxBills) + ' outra(s)')
     more.textColor = new Color('#93a4bb'); more.font = Font.systemFont(10)
   }
-  widget.addSpacer()
-  const footer = widget.addStack()
-  footer.centerAlignContent()
-  const footerLabel = footer.addText('TOTAL DO DIA')
-  footerLabel.textColor = new Color('#93a4bb'); footerLabel.font = Font.boldSystemFont(9)
-  footer.addSpacer()
-  const total = footer.addText(Number(result.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
-  total.textColor = new Color('#93c5fd'); total.font = Font.boldSystemFont(15)
   widget.url = APP_URL
   const nextMidnight = new Date()
   nextMidnight.setHours(24, 0, 0, 0)
