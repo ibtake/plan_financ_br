@@ -15,8 +15,9 @@ async function load() {
   async function requestData(token) {
     const request = new Request(API)
     request.method = 'POST'
-    request.headers = { 'Content-Type': 'application/json' }
-    if (token) request.headers.Authorization = 'Bearer ' + token
+    const headers = { 'Content-Type': 'application/json' }
+    if (token) headers.Authorization = 'Bearer ' + token
+    request.headers = headers
     request.body = JSON.stringify(token ? {} : { code: INSTALL_CODE })
     try {
       return { data: await request.loadJSON(), status: request.response?.statusCode || 0 }
