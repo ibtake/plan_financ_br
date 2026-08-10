@@ -17,6 +17,6 @@ jobs:
       - name: Run Security Scan via Partner Router
         env:
           STRIX_LLM: ${{ secrets.STRIX_LLM }}                                  # ex: openai/gpt-5.4 ou o nome do modelo no parceiro
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}                              # chave do parceiro (enviada como Bearer token)
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}                              # chave do parceiro para teste (enviada como Bearer token)
           LLM_API_BASE: ${{ secrets.LLM_API_BASE }}                            # URL base do parceiro
         run: strix -n -t ./ --scan-mode quick
