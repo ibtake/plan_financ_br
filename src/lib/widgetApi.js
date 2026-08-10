@@ -12,22 +12,30 @@ const TOKEN_KEY = 'dindin-widget-token'
 const ICON_PATH = FileManager.local().joinPath(FileManager.local().documentsDirectory(), 'dindin-10-widget.png')
 
 async function load() {
-  const token = Keychain.contains(TOKEN_KEY) ? Keychain.get(TOKEN_KEY) : null
-  const request = new Request(API)
-  request.method = 'POST'
-  request.headers = { 'Content-Type': 'application/json' }
-  if (token) request.headers.Authorization = 'Bearer ' + token
-  request.body = JSON.stringify(token ? {} : { code: INSTALL_CODE })
-  let result
-  try {
-    result = await request.loadJSON()
-  } catch (error) {
-    throw new Error('Falha HTTP ' + (request.response?.statusCode || '?') + ': ' + error.message)
+  async function requestData(token) {
+    const request = new Request(API)
+    request.method = 'POST'
+    request.headers = { 'Content-Type': 'application/json' }
+    if (token) request.headers.Authorization = 'Bearer ' + token
+    request.body = JSON.stringify(token ? {} : { code: INSTALL_CODE })
+    try {
+      return { data: await request.loadJSON(), status: request.response?.statusCode || 0 }
+    } catch (error) {
+      throw new Error('Falha HTTP ' + (request.response?.statusCode || '?') + ': ' + error.message)
+    }
   }
+  let token = Keychain.contains(TOKEN_KEY) ? Keychain.get(TOKEN_KEY) : null
+  let response = await requestData(token)
+  if (token && response.status === 401) {
+    Keychain.remove(TOKEN_KEY)
+    token = null
+    response = await requestData(null)
+  }
+  const result = response.data
   if (result.token) Keychain.set(TOKEN_KEY, result.token)
   if (!Array.isArray(result.bills)) {
     const detail = result?.error || result?.message || JSON.stringify(result)
-    throw new Error('API ' + (request.response?.statusCode || '?') + ': ' + detail)
+    throw new Error('API ' + response.status + ': ' + detail)
   }
   const widget = new ListWidget()
   widget.backgroundColor = new Color('#101827')
