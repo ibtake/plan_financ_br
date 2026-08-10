@@ -13,3 +13,9 @@ verify_jwt = false
 [functions.reverse-goal-cleanup]
 # A chamada vem apenas do Supabase Cron e e autenticada pelo header secreto.
 verify_jwt = false
+
+[functions.widget-setup]
+verify_jwt = true
+
+[functions.widget-data]
+verify_jwt = false

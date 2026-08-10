@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Database, Download, FlaskConical, Moon, Palette, SlidersHorizontal, Sun, Upload } from 'lucide-react'
+import { AlertTriangle, Database, Download, FlaskConical, Moon, Palette, SlidersHorizontal, Smartphone, Sun, Upload } from 'lucide-react'
 import { importJSON } from '../utils/exporters.js'
 import { normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
+import { createWidgetSetup, revokeWidget } from '../lib/widgetApi.js'
 import AdminUserManagement from './AdminUserManagement.jsx'
 
 export default function SettingsPanel({
@@ -24,6 +25,8 @@ export default function SettingsPanel({
   const [message, setMessage] = useState(null)
   const [retentionMonths, setRetentionMonths] = useState(reverseGoalRetentionMonths ?? '')
   const [savingRetention, setSavingRetention] = useState(false)
+  const [settingUpWidget, setSettingUpWidget] = useState(false)
+  const [revokingWidget, setRevokingWidget] = useState(false)
 
   // A configuracao vem junto dos dados auxiliares. Enquanto ela nao chegou,
   // o select fica bloqueado para nao gravar acidentalmente "Nunca excluir".
@@ -77,6 +80,33 @@ export default function SettingsPanel({
     if (!window.confirm('Apagar lançamentos, orçamentos, metas e restaurar as categorias padrão? Esta ação não pode ser desfeita.')) return
     await onClearAll()
     setMessage({ tone: 'success', text: 'Dados da conta removidos.' })
+  }
+
+  const setupWidget = async () => {
+    setSettingUpWidget(true)
+    try {
+      const script = await createWidgetSetup()
+      await navigator.clipboard.writeText(script)
+      window.location.href = 'scriptable:///add'
+      setMessage({ tone: 'success', text: 'Script copiado. No Scriptable, cole o conteúdo, salve e execute uma vez.' })
+    } catch (error) {
+      setMessage({ tone: 'danger', text: error.message })
+    } finally {
+      setSettingUpWidget(false)
+    }
+  }
+
+  const disableWidget = async () => {
+    if (!window.confirm('Revogar o acesso de todos os widgets Scriptable desta conta?')) return
+    setRevokingWidget(true)
+    try {
+      await revokeWidget()
+      setMessage({ tone: 'success', text: 'Acesso do widget revogado. O Scriptable deixará de receber dados.' })
+    } catch (error) {
+      setMessage({ tone: 'danger', text: error.message })
+    } finally {
+      setRevokingWidget(false)
+    }
   }
 
   return (
@@ -159,6 +189,28 @@ export default function SettingsPanel({
         </div>
         <p className="hint" style={{ marginTop: 12 }}>
           Descrição, valor, data, categoria e tipo são obrigatórios e continuam sempre visíveis. As preferências ficam salvas apenas na sua conta.
+        </p>
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <div className="card-title">
+              <Smartphone size={18} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }} />
+              Widget do iPhone
+            </div>
+            <div className="card-sub">Veja as contas que vencem hoje no Scriptable</div>
+          </div>
+        </div>
+        <button className="btn btn-primary" onClick={setupWidget} disabled={settingUpWidget}>
+          <Smartphone size={16} strokeWidth={2} />
+          {settingUpWidget ? 'Preparando...' : 'Configurar no Scriptable'}
+        </button>
+        <button className="btn" onClick={disableWidget} disabled={revokingWidget} style={{ marginLeft: 8 }}>
+          {revokingWidget ? 'Revogando...' : 'Revogar acesso'}
+        </button>
+        <p className="hint" style={{ marginTop: 12 }}>
+          O botão prepara um código temporário, copia o script e abre o Scriptable. Lá, cole, salve e execute o script uma vez; depois adicione o widget à tela do iPhone.
         </p>
       </section>
 
