@@ -8,7 +8,7 @@ function scriptFor(code) {
 const APP_URL = ${JSON.stringify(appUrl)}
 const ICON_URL = APP_URL + '/dindin-10-logo.png'
 const INSTALL_CODE = ${JSON.stringify(code)}
-const TOKEN_KEY = 'dindin-widget-token'
+const TOKEN_KEY = 'dindin-widget-token-v2'
 const ICON_PATH = FileManager.local().joinPath(FileManager.local().documentsDirectory(), 'dindin-10-widget.png')
 
 async function load() {
@@ -25,12 +25,22 @@ async function load() {
     }
   }
   let token = Keychain.contains(TOKEN_KEY) ? Keychain.get(TOKEN_KEY) : null
-  let response = await requestData(token)
-  if (token && response.status === 401) {
-    Keychain.remove(TOKEN_KEY)
-    token = null
-    response = await requestData(null)
+  if (!config.runsInWidget && !token) {
+    const widget = new ListWidget()
+    widget.backgroundColor = new Color('#101827')
+    const message = widget.addText('Widget pronto para instalar')
+    message.textColor = Color.white()
+    message.font = Font.boldSystemFont(16)
+    widget.addSpacer(6)
+    const detail = widget.addText('Adicione este script à tela inicial para concluir a ativação.')
+    detail.textColor = new Color('#cbd5e1')
+    detail.font = Font.systemFont(12)
+    detail.minimumScaleFactor = 0.8
+    Script.setWidget(widget)
+    Script.complete()
+    return
   }
+  let response = await requestData(token)
   const result = response.data
   if (result.token) Keychain.set(TOKEN_KEY, result.token)
   if (!Array.isArray(result.bills)) {
