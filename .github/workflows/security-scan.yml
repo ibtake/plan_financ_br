@@ -3,6 +3,9 @@ name: Security Scan
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   strix-scan:
     runs-on: ubuntu-latest
