@@ -4355,6 +4355,7 @@ body:has(.modal-backdrop) .fab {
 .pgbl-table-transposed thead th { position: sticky; top: 0; z-index: 3; }
 .pgbl-table-transposed thead th:first-child { left: 0; z-index: 5; width: 150px; min-width: 150px; background: var(--surface-2); box-shadow: 2px 0 0 var(--border); }
 .pgbl-table-transposed tbody th { position: sticky; left: 0; z-index: 2; width: 150px; min-width: 150px; background: var(--surface); box-shadow: 2px 0 0 var(--border); }
+.pgbl-table-transposed tbody td:last-child { background: var(--primary-soft); color: var(--primary); font-weight: 700; }
 .pgbl-table-transposed tfoot th:first-child { position: sticky; left: 0; z-index: 4; background: var(--primary-soft); box-shadow: 2px 0 0 var(--border); }
 .pgbl-table th, .pgbl-table td { padding: 8px 10px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
 .pgbl-table th:first-child, .pgbl-table tbody th { text-align: left; }

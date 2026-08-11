@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BookOpen, Calculator, CircleAlert, CircleCheck, Settings2, Table2 } from 'lucide-react'
 import { usePGBL } from '../hooks/usePGBL.js'
+import { amountToInput, formatAmountInput, parseAmount } from '../utils/format.js'
 
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 const DEFAULT_PARAMS = { limitePgblPercentual: 0.12, descontoSimplificadoPercentual: 0.2, tetoDescontoSimplificado: 17640, deducaoPorDependenteAno: 2275.08, tetoEducacaoPorPessoaAno: 3561.5, fonte: 'Receita Federal — referência 2025/2026', tabela: [[29145.6, 0, 0], [33919.8, 2185.92, 0.075], [45012.6, 4729.92, 0.15], [55976.16, 8105.88, 0.225], [Infinity, 10904.76, 0.275]] }
@@ -44,6 +45,13 @@ function Field({ label, value, onChange, type = 'number', step = '0.01' }) {
   return <label className="field"><span className="label">{label}</span><input className="input" type={type} min="0" step={type === 'number' ? step : undefined} value={value} onChange={(event) => onChange(type === 'number' ? numberValue(event.target.value) : event.target.value)} /></label>
 }
 
+function PGBLAmountInput({ value, label, onChange }) {
+  const [draft, setDraft] = useState(value === '' || value == null ? '' : amountToInput(value))
+  const [editing, setEditing] = useState(false)
+  useEffect(() => { if (!editing) setDraft(value === '' || value == null ? '' : amountToInput(value)) }, [value, editing])
+  return <input className="input pgbl-cell" type="text" inputMode="numeric" value={draft} onFocus={() => setEditing(true)} onChange={(event) => { const masked = formatAmountInput(event.target.value); setDraft(masked); onChange(parseAmount(masked)) }} onBlur={() => { setEditing(false); setDraft(value === '' || value == null ? '' : amountToInput(value)) }} aria-label={label} />
+}
+
 export default function PGBLPanel() {
   const year = new Date().getFullYear()
   const { plans, loading, error: pgblError, savePlan, deletePlan } = usePGBL()
@@ -74,7 +82,7 @@ export default function PGBLPanel() {
   }
 
   return <div className="pgbl-tool">
-    {view === 'mensal' && <TransposedPGBLTable data={data} result={result} onChange={updateMonth} onYearChange={(value) => update({ year: Number(value) || year })} />}
+    {view === 'mensal' && <StableTransposedPGBLTable data={data} result={result} onChange={updateMonth} onYearChange={(value) => update({ year: Number(value) || year })} />}
     {view === 'config' && <ConfigYearSelector years={years} selectedYear={selectedYear} onChange={changeYear} onDelete={removeYear} />}
     {pgblError && <div className="notice danger">{pgblError}</div>}
     <div className="pgbl-tabs" role="tablist" aria-label="Aporte Certo">
@@ -99,6 +107,11 @@ function ConfigYearSelector({ years, selectedYear, onChange, onDelete }) {
 function LocalizedPGBLTable({ data, result, onChange, onYearChange }) {
   const fields = ['base', 'retido', 'inss', 'pgbl', 'saude']
   return <div className="pgbl-localized-layout"><section className="card pgbl-table-card"><div className="card-head"><div><h2 className="card-title">Lançamentos mensais</h2><p className="card-sub">Valores em reais no padrão brasileiro.</p></div><Field label="Ano" value={data.year} onChange={onYearChange} step="1" /></div><div className="pgbl-table-wrap"><table className="pgbl-table"><thead><tr><th>Mês</th><th>Base IR</th><th>IR retido</th><th>INSS</th><th>Aporte PGBL</th><th>Saúde</th><th>PGBL acumulado</th><th>Saúde acumulada</th></tr></thead><tbody>{data.months.map((month, index) => <tr key={month.mes}><th>{month.mes.slice(0, 3)}</th>{fields.map((field) => <td key={field}><input className="input pgbl-cell" type="text" inputMode="decimal" value={formatBRInput(month[field])} onChange={(event) => onChange(index, field, parseBRInput(event.target.value))} aria-label={`${field} de ${month.mes}`} /></td>)}<td>{money(data.months.slice(0, index + 1).reduce((sum, item) => sum + toNumeric(item.pgbl), 0))}</td><td>{money(data.months.slice(0, index + 1).reduce((sum, item) => sum + toNumeric(item.saude), 0))}</td></tr>)}</tbody><tfoot><tr><th>Total ano</th><th>{money(result.base)}</th><th>{money(result.retido)}</th><th>{money(result.inss)}</th><th>{money(result.pgbl)}</th><th>{money(result.saude)}</th><th>{money(result.pgbl)}</th><th>{money(result.saude)}</th></tr></tfoot></table></div></section><StatusCard result={result} /></div>
+}
+
+function StableTransposedPGBLTable({ data, result, onChange, onYearChange }) {
+  const fields = [['base', 'Base IR'], ['retido', 'IR retido'], ['inss', 'INSS'], ['pgbl', 'Aporte PGBL'], ['saude', 'Saúde'], ['educacao', 'Educação']]
+  return <div className="pgbl-localized-layout"><StatusCard result={result} /><section className="card pgbl-table-card"><div className="card-head"><div><h2 className="card-title">Lançamentos mensais</h2><p className="card-sub">Valores em reais no padrão brasileiro.</p></div><Field label="Ano" value={data.year} onChange={onYearChange} step="1" /></div><div className="pgbl-table-wrap"><table className="pgbl-table pgbl-table-transposed"><thead><tr><th>Item</th>{data.months.map((month) => <th key={month.mes}>{month.mes.slice(0, 3)}</th>)}<th>Total geral</th></tr></thead><tbody>{fields.map(([field, label]) => <tr key={field}><th>{label}</th>{data.months.map((month, index) => <td key={month.mes}><PGBLAmountInput value={month[field]} onChange={(value) => onChange(index, field, value)} label={`${label} de ${month.mes}`} /></td>)}<td>{money(data.months.reduce((sum, month) => sum + toNumeric(month[field]), 0))}</td></tr>)}</tbody></table></div></section></div>
 }
 
 function TransposedPGBLTable({ data, result, onChange, onYearChange }) {
