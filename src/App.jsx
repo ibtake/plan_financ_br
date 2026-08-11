@@ -22,6 +22,7 @@ import { useAuth } from './contexts/AuthContext.jsx'
 import { useMonthlyData } from './hooks/useFinance.js'
 import { useLocalStorage } from './hooks/useLocalStorage.js'
 import { useSupabaseFinance } from './hooks/useSupabaseFinance.js'
+import { usePGBL } from './hooks/usePGBL.js'
 import { currentMonthKey, isoDateInMonth, monthLabel } from './utils/format.js'
 import { exportCSV, exportJSON } from './utils/exporters.js'
 import { buildSampleData } from './utils/sampleData.js'
@@ -119,6 +120,7 @@ export default function App() {
 function AuthenticatedApp() {
   const auth = useAuth()
   const finance = useSupabaseFinance()
+  const pgbl = usePGBL()
   const [monthKey, setMonthKey] = useState(currentMonthKey())
   const [isMonthPending, startMonthTransition] = useTransition()
   const [activeTab, setActiveTab] = useState('overview')
@@ -207,6 +209,12 @@ function AuthenticatedApp() {
     occurrences: monthly.occurrences,
     goals: finance.goals,
   }
+  const exportAllData = () => ({ ...finance.exportData(), pgblPlans: Object.values(pgbl.plans) })
+  const importAllData = async (data) => {
+    const ok = await finance.importData(data, data?.pgblPlans)
+    if (ok) await pgbl.reload()
+    return ok
+  }
 
   const overview = (
     <div className="stack">
@@ -283,7 +291,7 @@ function AuthenticatedApp() {
           pending={pending}
           pendingTotal={pendingTotal}
           onOpenPending={(occurrence) => { setNotificationFocus(occurrence); setActiveTab('transactions') }}
-          showMonthNav={!['budget', 'goals'].includes(activeTab)}
+          showMonthNav={!['budget', 'goals', 'pgbl'].includes(activeTab)}
         />
 
         <main className="container main-content">
@@ -300,7 +308,7 @@ function AuthenticatedApp() {
                 {activeTab === 'overview' ? `${page.sub} • ${monthLabel(monthKey)}` : page.sub}
               </p>
             </div>
-            {!['budget', 'goals'].includes(activeTab) && (
+            {!['budget', 'goals', 'pgbl'].includes(activeTab) && (
               <button type="button" className="btn btn-primary add-main" onClick={openNew}>
                 <Plus size={16} strokeWidth={2.2} />
                 Novo lançamento
@@ -361,8 +369,8 @@ function AuthenticatedApp() {
               categoryCount={finance.categories.length}
               goalCount={finance.goals.length}
               onToggleTheme={toggleTheme}
-              onExportJSON={() => exportJSON(finance.exportData())}
-              onImport={finance.importData}
+              onExportJSON={() => exportJSON(exportAllData())}
+              onImport={importAllData}
               onLoadSample={() => finance.importData(buildSampleData())}
               onClearAll={finance.clearAll}
               reverseGoalRetentionMonths={finance.reverseGoalRetentionMonths}
@@ -380,7 +388,7 @@ function AuthenticatedApp() {
         active={activeTab}
         onChange={setActiveTab}
         badges={{ transactions: pendingCount }}
-        onOpenNew={openNew}
+        onOpenNew={activeTab === 'pgbl' ? undefined : openNew}
       />
 
       <TransactionForm

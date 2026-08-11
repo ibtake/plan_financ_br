@@ -8,15 +8,17 @@ function scriptFor(code) {
 const APP_URL = ${JSON.stringify(appUrl)}
 const ICON_URL = APP_URL + '/dindin-10-logo.png'
 const INSTALL_CODE = ${JSON.stringify(code)}
-const TOKEN_KEY = 'dindin-widget-token-v3'
+const TOKEN_KEY = 'dindin-widget-token-v4'
+const REFRESH_TOKEN_KEY = 'dindin-widget-refresh-token-v1'
 const ICON_PATH = FileManager.local().joinPath(FileManager.local().documentsDirectory(), 'dindin-10-widget.png')
 
 async function load() {
-  async function requestData(token) {
+  async function requestData(token, refreshToken) {
     const request = new Request(API)
     request.method = 'POST'
     const headers = { 'Content-Type': 'application/json' }
     if (token) headers['X-Widget-Token'] = token
+    if (refreshToken) headers['X-Widget-Refresh-Token'] = refreshToken
     request.headers = headers
     request.body = JSON.stringify(token ? {} : { code: INSTALL_CODE })
     try {
@@ -26,6 +28,7 @@ async function load() {
     }
   }
   let token = Keychain.contains(TOKEN_KEY) ? Keychain.get(TOKEN_KEY) : null
+  let refreshToken = Keychain.contains(REFRESH_TOKEN_KEY) ? Keychain.get(REFRESH_TOKEN_KEY) : null
   if (!config.runsInWidget && !token) {
     const widget = new ListWidget()
     widget.backgroundColor = new Color('#101827')
@@ -41,13 +44,18 @@ async function load() {
     Script.complete()
     return
   }
-  let response = await requestData(token)
+  let response = await requestData(token, refreshToken)
+  if (token && response.status === 401 && refreshToken) {
+    response = await requestData(null, refreshToken)
+  }
   if (token && response.status === 401) {
     Keychain.remove(TOKEN_KEY)
-    response = await requestData(null)
+    Keychain.remove(REFRESH_TOKEN_KEY)
+    response = await requestData(null, null)
   }
   const result = response.data
   if (result.token) Keychain.set(TOKEN_KEY, result.token)
+  if (result.refreshToken) Keychain.set(REFRESH_TOKEN_KEY, result.refreshToken)
   if (!Array.isArray(result.bills)) {
     const detail = result?.error || result?.message || JSON.stringify(result)
     throw new Error('API ' + response.status + ': ' + detail)

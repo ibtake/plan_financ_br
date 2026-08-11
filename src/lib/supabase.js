@@ -78,7 +78,7 @@ export function translateAuthError(error) {
   const raw = String(error.message || error).toLowerCase()
 
   if (raw.includes('invalid login credentials')) return 'E-mail ou senha incorretos.'
-  if (raw.includes('email not confirmed')) return 'Confirme seu e-mail antes de entrar.'
+  if (raw.includes('email not confirmed')) return 'E-mail ou senha incorretos.'
   if (raw.includes('user already registered') || raw.includes('already been registered')) {
     return 'Nao foi possivel concluir o cadastro com estes dados.'
   }

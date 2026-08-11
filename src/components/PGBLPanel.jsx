@@ -5,12 +5,23 @@ import { usePGBL } from '../hooks/usePGBL.js'
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 const DEFAULT_PARAMS = { limitePgblPercentual: 0.12, descontoSimplificadoPercentual: 0.2, tetoDescontoSimplificado: 17640, deducaoPorDependenteAno: 2275.08, tetoEducacaoPorPessoaAno: 3561.5, fonte: 'Receita Federal — referência 2025/2026', tabela: [[29145.6, 0, 0], [33919.8, 2185.92, 0.075], [45012.6, 4729.92, 0.15], [55976.16, 8105.88, 0.225], [Infinity, 10904.76, 0.275]] }
 const blankMonths = () => MONTHS.map((mes) => ({ mes, base: '', retido: '', inss: '', pgbl: '', saude: '' }))
-const money = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const parseBRInput = (value) => {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+  const normalized = raw.includes(',')
+    ? raw.replace(/\./g, '').replace(',', '.')
+    : raw.replace(/\.(?=\d{3}(?:\D|$))/g, '')
+  const parsed = Number(normalized.replace(/[^\d.-]/g, ''))
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : ''
+}
+const formatBRInput = (value) => { const parsed = parseBRInput(value); return parsed === '' ? '' : Number(parsed).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+const toNumeric = (value) => Number(parseBRInput(value) || 0)
+const money = (value) => toNumeric(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const numberValue = (value) => value === '' ? '' : Math.max(0, Number(value) || 0)
 const normalizeParams = (params = DEFAULT_PARAMS) => ({ ...DEFAULT_PARAMS, ...params, tabela: (params.tabela || DEFAULT_PARAMS.tabela).map((row, index, rows) => [index === rows.length - 1 || row[0] == null ? Infinity : Number(row[0]), Number(row[1]) || 0, Number(row[2]) || 0]) })
 
 export function calculatePGBL(months, premise, params) {
-  const total = (field) => months.reduce((sum, month) => sum + (Number(month[field]) || 0), 0)
+  const total = (field) => months.reduce((sum, month) => sum + toNumeric(month[field]), 0)
   const base = total('base'), retido = total('retido'), inss = total('inss'), pgbl = total('pgbl'), saude = total('saude')
   const limite = premise.contribuiInss ? base * params.limitePgblPercentual : 0
   const pgblDedutivel = Math.min(pgbl, limite)
@@ -60,6 +71,7 @@ export default function PGBLPanel() {
   }
 
   return <div className="pgbl-tool">
+    {view === 'mensal' && <TransposedPGBLTable data={data} result={result} onChange={updateMonth} onYearChange={(value) => update({ year: Number(value) || year })} />}
     {view === 'config' && <ConfigYearSelector years={years} selectedYear={selectedYear} onChange={changeYear} onDelete={removeYear} />}
     {pgblError && <div className="notice danger">{pgblError}</div>}
     <div className="pgbl-tabs" role="tablist" aria-label="Aporte Certo">
@@ -79,6 +91,16 @@ export default function PGBLPanel() {
 function ConfigYearSelector({ years, selectedYear, onChange, onDelete }) {
   const options = Object.keys(years).map(Number).sort((a, b) => b - a)
   return <section className="card pgbl-year-selector"><div><span className="label">Ano fiscal</span><strong>Configurações do Aporte Certo</strong><p className="card-sub">Selecione o ano para editar seus parâmetros ou excluir seus dados.</p></div><div className="pgbl-year-selector-actions"><select className="input" value={selectedYear} onChange={(event) => onChange(event.target.value)} aria-label="Ano fiscal"><option value={selectedYear}>{selectedYear}</option>{options.filter((year) => year !== selectedYear).map((year) => <option key={year} value={year}>{year}</option>)}</select><button type="button" className="btn btn-sm btn-danger" onClick={onDelete}>Excluir ano</button></div></section>
+}
+
+function LocalizedPGBLTable({ data, result, onChange, onYearChange }) {
+  const fields = ['base', 'retido', 'inss', 'pgbl', 'saude']
+  return <div className="pgbl-localized-layout"><section className="card pgbl-table-card"><div className="card-head"><div><h2 className="card-title">Lançamentos mensais</h2><p className="card-sub">Valores em reais no padrão brasileiro.</p></div><Field label="Ano" value={data.year} onChange={onYearChange} step="1" /></div><div className="pgbl-table-wrap"><table className="pgbl-table"><thead><tr><th>Mês</th><th>Base IR</th><th>IR retido</th><th>INSS</th><th>Aporte PGBL</th><th>Saúde</th><th>PGBL acumulado</th><th>Saúde acumulada</th></tr></thead><tbody>{data.months.map((month, index) => <tr key={month.mes}><th>{month.mes.slice(0, 3)}</th>{fields.map((field) => <td key={field}><input className="input pgbl-cell" type="text" inputMode="decimal" value={formatBRInput(month[field])} onChange={(event) => onChange(index, field, parseBRInput(event.target.value))} aria-label={`${field} de ${month.mes}`} /></td>)}<td>{money(data.months.slice(0, index + 1).reduce((sum, item) => sum + toNumeric(item.pgbl), 0))}</td><td>{money(data.months.slice(0, index + 1).reduce((sum, item) => sum + toNumeric(item.saude), 0))}</td></tr>)}</tbody><tfoot><tr><th>Total ano</th><th>{money(result.base)}</th><th>{money(result.retido)}</th><th>{money(result.inss)}</th><th>{money(result.pgbl)}</th><th>{money(result.saude)}</th><th>{money(result.pgbl)}</th><th>{money(result.saude)}</th></tr></tfoot></table></div></section><StatusCard result={result} /></div>
+}
+
+function TransposedPGBLTable({ data, result, onChange, onYearChange }) {
+  const fields = [['base', 'Base IR'], ['retido', 'IR retido'], ['inss', 'INSS'], ['pgbl', 'Aporte PGBL'], ['saude', 'Saúde']]
+  return <div className="pgbl-localized-layout"><StatusCard result={result} /><section className="card pgbl-table-card"><div className="card-head"><div><h2 className="card-title">Lançamentos mensais</h2><p className="card-sub">Valores em reais no padrão brasileiro.</p></div><Field label="Ano" value={data.year} onChange={onYearChange} step="1" /></div><div className="pgbl-table-wrap"><table className="pgbl-table pgbl-table-transposed"><thead><tr><th>Item</th>{data.months.map((month) => <th key={month.mes}>{month.mes.slice(0, 3)}</th>)}<th>Total geral</th></tr></thead><tbody>{fields.map(([field, label]) => <tr key={field}><th>{label}</th>{data.months.map((month, index) => <td key={month.mes}><input className="input pgbl-cell" type="text" inputMode="decimal" value={formatBRInput(month[field])} onChange={(event) => onChange(index, field, parseBRInput(event.target.value))} aria-label={`${label} de ${month.mes}`} /></td>)}<td>{money(data.months.reduce((sum, month) => sum + toNumeric(month[field]), 0))}</td></tr>)}</tbody><tfoot><tr><th>Total geral</th>{data.months.map((month, index) => <th key={month.mes}>{money(fields.reduce((sum, [field]) => sum + toNumeric(month[field]), 0))}</th>)}<th>{money(result.base + result.retido + result.inss + result.pgbl + result.saude)}</th></tr></tfoot></table></div></section></div>
 }
 
 function Metric({ label, value }) { return <div className="card pgbl-metric"><span className="label">{label}</span><strong>{value}</strong></div> }

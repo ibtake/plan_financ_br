@@ -4335,6 +4335,10 @@ body:has(.modal-backdrop) .fab {
 
 /* Aporte Certo */
 .pgbl-tool { display: grid; gap: 18px; animation: finance-content-reveal 260ms ease-out both; }
+.pgbl-tool > .stack > .card:first-child .form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pgbl-tool select.input { height: 39px; min-height: 39px; padding-top: 0; padding-bottom: 0; line-height: 1.2; }
+.pgbl-tool > .pgbl-layout { display: none; }
+.pgbl-localized-layout { display: flex; flex-direction: column; gap: 18px; }
 .pgbl-tabs { display: flex; gap: 4px; overflow-x: auto; padding: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; }
 .pgbl-tab { display: inline-flex; align-items: center; gap: 7px; padding: 9px 13px; border: 0; border-radius: 8px; background: transparent; color: var(--text-soft); white-space: nowrap; font-weight: 600; transition: var(--transition); }
 .pgbl-tab:hover, .pgbl-tab.active { background: var(--surface); color: var(--primary); box-shadow: var(--shadow-xs); }
@@ -4342,8 +4346,13 @@ body:has(.modal-backdrop) .fab {
 .pgbl-table-card { min-width: 0; }
 .pgbl-table-card .card-head { align-items: end; }
 .pgbl-table-card .field { width: 110px; }
-.pgbl-table-wrap { overflow-x: auto; }
+.pgbl-table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: 8px 10px 22px rgb(15 23 42 / .09), 0 10px 18px rgb(15 23 42 / .08); }
 .pgbl-table { width: 100%; min-width: 980px; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.pgbl-table-transposed { min-width: 1180px; }
+.pgbl-table-transposed thead th { position: sticky; top: 0; z-index: 3; }
+.pgbl-table-transposed thead th:first-child { left: 0; z-index: 5; min-width: 150px; background: var(--surface-2); box-shadow: 2px 0 0 var(--border); }
+.pgbl-table-transposed tbody th { position: sticky; left: 0; z-index: 2; min-width: 150px; background: var(--surface); box-shadow: 2px 0 0 var(--border); }
+.pgbl-table-transposed tfoot th:first-child { position: sticky; left: 0; z-index: 4; background: var(--primary-soft); box-shadow: 2px 0 0 var(--border); }
 .pgbl-table th, .pgbl-table td { padding: 8px 10px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
 .pgbl-table th:first-child, .pgbl-table tbody th { text-align: left; }
 .pgbl-table th:last-child, .pgbl-table td:last-child { border-right: 0; }
@@ -4359,16 +4368,18 @@ body:has(.modal-backdrop) .fab {
 .pgbl-cell:hover, .pgbl-cell:focus { background: var(--surface); border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent); }
 .pgbl-year { padding: 6px 10px; border-radius: 99px; background: var(--primary-soft); color: var(--primary); font-weight: 700; }
 .pgbl-year-selector { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
+.pgbl-tool > .pgbl-year-selector { order: 3; }
 .pgbl-year-selector > div:first-child { display: grid; gap: 3px; }
 .pgbl-year-selector strong { font-size: 15px; }
 .pgbl-year-selector .card-sub { margin: 0; }
 .pgbl-year-selector-actions { display: flex; align-items: end; gap: 8px; flex: none; }
-.pgbl-year-selector-actions .input { min-width: 120px; }
+.pgbl-year-selector-actions .input, .pgbl-year-selector-actions .btn { min-width: 120px; height: 39px; min-height: 39px; box-sizing: border-box; }
 .btn-danger { background: var(--expense-soft); color: var(--expense); border-color: color-mix(in srgb, var(--expense) 25%, var(--border)); }
 .btn-danger:hover { background: var(--expense); color: #fff; }
 .pgbl-metric { display: grid; gap: 5px; min-height: 92px; }
 .pgbl-metric strong { font-size: 18px; letter-spacing: -0.03em; }
 .pgbl-status { display: grid; gap: 8px; }
+.pgbl-localized-layout .pgbl-status { order: -1; }
 .pgbl-status h2 { font-size: 18px; }
 .pgbl-status p { margin: 0; color: var(--text-muted); font-size: 12px; }
 .pgbl-status.success { background: var(--income-soft); border-color: color-mix(in srgb, var(--income) 35%, var(--border)); }
@@ -4388,6 +4399,8 @@ body:has(.modal-backdrop) .fab {
 @media (max-width: 1000px) { .pgbl-layout { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .pgbl-tabs { margin-inline: -4px; } .pgbl-table-card .card-head { align-items: start; } .pgbl-table-card .field { width: 92px; } .pgbl-estimate strong { font-size: 25px; } }
 @media (max-width: 640px) { .pgbl-year-selector { align-items: stretch; flex-direction: column; } .pgbl-year-selector-actions { align-items: stretch; } .pgbl-year-selector-actions .input { flex: 1; } }
+@media (max-width: 900px) { .pgbl-tool > .stack > .card:first-child .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .pgbl-tool > .stack > .card:first-child .form-grid { grid-template-columns: 1fr; } }
 
 .quick-entry-field { margin-inline:-14px; padding:14px; border:1px solid color-mix(in srgb, var(--accent) 52%, var(--border)); border-radius:14px; background:color-mix(in srgb, var(--accent) 5%, var(--surface)); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent); }
 .quick-entry-row { display:flex; align-items:center; gap:12px; }
