@@ -75,5 +75,5 @@ export function usePGBL() {
     return true
   }, [plans, user])
 
-  return { plans, loading, error, savePlan, deletePlan }
+  return { plans, loading, error, savePlan, deletePlan, reload: load }
 }

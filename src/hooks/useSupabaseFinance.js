@@ -501,7 +501,7 @@ export function useSupabaseFinance() {
     reverseGoalRetentionMonths,
   }), [transactions, categories, budgets, goals, standardGoalContributions, reverseGoalContributions, reverseGoalEvents, reverseGoalHistory, reverseGoalRetentionMonths])
 
-  const importData = useCallback(async (data) => {
+  const importData = useCallback(async (data, pgblPlans = data?.pgblPlans) => {
     if (!data || typeof data !== 'object' || Array.isArray(data)) {
       reportError({ message: 'Backup inválido.' })
       return false
@@ -533,6 +533,7 @@ export function useSupabaseFinance() {
       })),
       goals: nextGoals.map((goal) => ({ ...toGoal(goal, user.id), goal_type: goal.goalType || goal.goal_type || 'standard', reverse_original_amount: goal.reverseOriginalAmount ?? goal.reverse_original_amount, reverse_remaining_amount: goal.reverseRemainingAmount ?? goal.reverse_remaining_amount, reverse_corrected_amount: goal.reverseCorrectedAmount ?? goal.reverse_corrected_amount, reverse_start_date: goal.reverseStartDate ?? goal.reverse_start_date, reverse_selic_factor: goal.reverseSelicFactor ?? goal.reverse_selic_factor, reverse_completed_at: goal.reverseCompletedAt ?? goal.reverse_completed_at, reverse_total_contributed: goal.reverseTotalContributed ?? goal.reverse_total_contributed, reverse_correction_amount: goal.reverseCorrectionAmount ?? goal.reverse_correction_amount, reverse_progress_percent: goal.reverseProgressPercent ?? goal.reverse_progress_percent, reverse_monthly_contribution_average: goal.reverseMonthlyContributionAverage ?? goal.reverse_monthly_contribution_average, reverse_forecast_completion_date: goal.reverseForecastCompletionDate ?? goal.reverse_forecast_completion_date })),
       standardGoalContributions: nextStandardGoalContributions, reverseGoalContributions: data.reverseGoalContributions || [], reverseGoalHistory: data.reverseGoalHistory || [], reverseGoalEvents: data.reverseGoalEvents || [], reverseGoalRetentionMonths: data.reverseGoalRetentionMonths ?? null,
+      pgblPlans: Array.isArray(pgblPlans) ? pgblPlans : [],
     }
 
     try {

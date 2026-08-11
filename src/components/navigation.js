@@ -24,7 +24,7 @@ export const NAV_ITEMS = [
   { id: 'transactions', label: 'Lançamentos', short: 'Lanç.', icon: Receipt, primary: true, group: 'main' },
   { id: 'goals', label: 'Metas', short: 'Metas', icon: Trophy, primary: true, group: 'main' },
   { id: 'pgbl', label: 'Aporte Certo', short: 'Aporte', icon: PiggyBank, primary: true, group: 'main' },
-  { id: 'budget', label: 'Orçamento', short: 'Orçam.', icon: Target, primary: true, group: 'main' },
+  { id: 'budget', label: 'Orçamento', short: 'Orçam.', icon: Target, group: 'main' },
   { id: 'categories', label: 'Categorias', short: 'Categ.', icon: Tags, group: 'manage' },
   { id: 'icons', label: 'Ícones', short: 'Ícones', icon: Palette, group: 'manage' },
   { id: 'security', label: 'Segurança', short: 'Segur.', icon: ShieldCheck, group: 'manage' },
