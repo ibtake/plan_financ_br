@@ -27,6 +27,11 @@ Aplicação web para organizar receitas, despesas, orçamentos e metas financeir
 
 Requer Node.js 18 ou superior e um projeto Supabase configurado.
 
+> **Ação obrigatória no Supabase:** para o fluxo de recuperação de senha da
+> release atual, cadastre `https://SEU-DOMINIO/reset-password` em
+> **Authentication → URL Configuration → Redirect URLs**. Inclua também a
+> URL de preview/homologação caso o fluxo seja testado nesses ambientes.
+
 ```bash
 npm ci
 copy .env.example .env

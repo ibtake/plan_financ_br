@@ -14,6 +14,7 @@ import CategoryManager from './components/CategoryManager.jsx'
 import IconManager from './components/IconManager.jsx'
 import SettingsPanel from './components/SettingsPanel.jsx'
 import SecurityPanel from './components/SecurityPanel.jsx'
+import PGBLPanel from './components/PGBLPanel.jsx'
 import AuthScreen from './components/auth/AuthScreen.jsx'
 import ResetPasswordScreen from './components/auth/ResetPasswordScreen.jsx'
 import RequiredPasswordChange from './components/auth/RequiredPasswordChange.jsx'
@@ -92,6 +93,7 @@ const PAGE_META = {
   transactions: { title: 'Lançamentos', sub: 'Todas as entradas e saídas do período' },
   budget: { title: 'Orçamento', sub: 'Limites por categoria e acompanhamento' },
   goals: { title: 'Metas', sub: 'Objetivos financeiros e progresso' },
+  pgbl: { title: 'Aporte Certo', sub: 'Planeje seu PGBL e o Imposto de Renda' },
   categories: { title: 'Categorias', sub: 'Organize seus lançamentos' },
   icons: { title: 'Ícones', sub: 'Personalize os ícones do aplicativo' },
   security: { title: 'Segurança', sub: 'Sessões, autenticação e atividade da conta' },
@@ -346,6 +348,7 @@ function AuthenticatedApp() {
               isDeleting={finance.isDeletingGoal}
             />
           )}
+          {activeTab === 'pgbl' && <PGBLPanel />}
           {activeTab === 'categories' && (
             <CategoryManager categories={finance.categories} transactions={finance.transactions} onAdd={finance.addCategory} onUpdate={finance.updateCategory} onDelete={finance.deleteCategory} />
           )}
