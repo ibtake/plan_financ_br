@@ -264,17 +264,18 @@ export function useSupabaseFinance() {
   const togglePaid = useCallback((occurrence) => {
     const rootId = occurrence.sourceId || String(occurrence.id).split('#')[0]
     const index = occurrence.occurrenceIndex || 0
-    const root = transactions.find((tx) => tx.id === rootId)
-    if (!root) return
-    const updated = { ...root }
-    if (index === 0) updated.paid = !updated.paid
-    else {
-      updated.paidOccurrences = { ...(root.paidOccurrences || {}) }
-      if (updated.paidOccurrences[index]) delete updated.paidOccurrences[index]
-      else updated.paidOccurrences[index] = true
-    }
-    updateTransaction(rootId, updated)
-  }, [transactions, updateTransaction])
+    void persist(async () => {
+      const result = await supabase.rpc('toggle_paid_occurrence', {
+        p_transaction_id: rootId,
+        p_occurrence_index: index,
+      })
+      if (!result.error && result.data) {
+        const updated = fromTxRow(result.data)
+        setTransactions((prev) => prev.map((tx) => tx.id === rootId ? updated : tx))
+      }
+      return result
+    }, { table: 'transactions', action: 'toggle_paid' })
+  }, [persist])
 
   const addCategory = useCallback((input) => {
     const base = String(input.name || 'cat').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
