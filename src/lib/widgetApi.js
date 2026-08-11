@@ -120,6 +120,7 @@ async function load() {
     const more = widget.addText('+' + (result.bills.length - maxBills) + ' outra(s)')
     more.textColor = new Color('#93a4bb'); more.font = Font.systemFont(10)
   }
+  widget.addSpacer()
   widget.url = APP_URL
   const nextMidnight = new Date()
   nextMidnight.setHours(24, 0, 0, 0)
