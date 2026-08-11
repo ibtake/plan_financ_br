@@ -2376,14 +2376,15 @@ body:has(.modal-backdrop) .fab {
 .recharts-tooltip-wrapper {
   overflow: visible;
   transform-origin: bottom center;
-  transition: opacity .18s ease, visibility .18s ease;
+  transition: opacity .22s cubic-bezier(.22, 1, .36, 1), visibility .22s ease;
+  will-change: opacity, visibility;
 }
 
 .recharts-tooltip-wrapper .chart-tooltip,
 .recharts-tooltip-wrapper .chart-info-tooltip {
   transform: translate(-50%, -100%);
   transform-origin: bottom center;
-  animation: chart-tooltip-in .18s cubic-bezier(.22, 1, .36, 1) both;
+  animation: chart-tooltip-in .22s cubic-bezier(.16, 1.25, .3, 1) both;
 }
 
 .recharts-tooltip-wrapper.tooltip-below .chart-info-tooltip {
@@ -2404,12 +2405,14 @@ body:has(.modal-backdrop) .fab {
 }
 
 @keyframes chart-tooltip-in {
-  from { opacity: 0; transform: translate(-50%, -92%) scale(.82); }
+  from { opacity: 0; transform: translate(-50%, -88%) scale(.72); }
+  72% { opacity: 1; transform: translate(-50%, -101%) scale(1.015); }
   to { opacity: 1; transform: translate(-50%, -100%) scale(1); }
 }
 
 @keyframes chart-tooltip-below {
-  from { opacity: 0; transform: translate(-50%, 8%) scale(.82); }
+  from { opacity: 0; transform: translate(-50%, -8%) scale(.72); }
+  72% { opacity: 1; transform: translate(-50%, 1%) scale(1.015); }
   to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
