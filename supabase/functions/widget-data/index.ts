@@ -76,15 +76,15 @@ Deno.serve(async (request) => {
   // O widget só pode consultar o dia corrente. A data não vem do cliente.
   const date = saoPauloDate()
   const admin = createClient(url, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } })
-  const authorization = request.headers.get('authorization') || ''
+  const widgetToken = request.headers.get('x-widget-token')?.trim() || ''
   let userId = ''
   let tokenHash = ''
 
-  if (authorization.startsWith('Bearer ')) {
-    const presentedToken = authorization.slice(7).trim()
+  if (widgetToken) {
+    const presentedToken = widgetToken
     tokenHash = await hash(presentedToken)
     const { data, error: tokenLookupError } = await admin.from('widget_tokens').select('user_id').eq('token_hash', tokenHash).is('revoked_at', null).maybeSingle()
-    authLog({ mode: 'token', tokenPresent: Boolean(presentedToken), tokenLength: presentedToken.length, tokenFound: Boolean(data), lookupError: tokenLookupError?.code || null })
+    authLog({ mode: 'token', tokenPresent: Boolean(presentedToken), tokenLength: presentedToken.length, tokenFingerprint: tokenHash.slice(0, 12), tokenFound: Boolean(data), lookupError: tokenLookupError?.code || null })
     userId = data?.user_id || ''
   } else if (body.code) {
     authLog({ mode: 'install_code', codePresent: true })
@@ -95,10 +95,12 @@ Deno.serve(async (request) => {
     if (installValid) {
       const token = randomToken()
       tokenHash = await hash(token)
-      userId = install.user_id
-      await admin.from('widget_install_codes').update({ used_at: new Date().toISOString() }).eq('id', install.id)
-      const { error } = await admin.from('widget_tokens').insert({ user_id: userId, token_hash: tokenHash })
-      if (error) return response(503, { error: 'Não foi possível ativar o widget.' })
+      const { data: activation, error: activationError } = await admin.rpc('activate_widget_install_code', { p_code_hash: codeHash, p_token_hash: tokenHash })
+      const activated = Array.isArray(activation) ? activation[0] : activation
+      authLog({ mode: 'install_code_insert', tokenFingerprint: tokenHash.slice(0, 12), inserted: Boolean(activated), insertError: activationError?.code || null })
+      if (activationError) return response(503, { error: 'Não foi possível ativar o widget.' })
+      if (!activated) return response(401, { error: 'Widget não autorizado.' })
+      userId = activated.user_id
       body.__newToken = token
       authLog({ mode: 'install_code_activated', activated: true })
     }

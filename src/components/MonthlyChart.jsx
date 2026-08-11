@@ -41,6 +41,7 @@ function rankSegments(totals, colors) {
 }
 
 export default function MonthlyChart({ transactions, monthKey, categories }) {
+  const [tooltipPosition, setTooltipPosition] = useState(null)
   const isMobile = useIsMobile()
   const monthsToShow = isMobile ? 3 : 6
   const chart = useMemo(() => {

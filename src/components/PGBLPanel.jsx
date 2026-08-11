@@ -1,0 +1,85 @@
+import { useMemo, useState } from 'react'
+import { BookOpen, Calculator, CircleAlert, CircleCheck, Settings2, Table2 } from 'lucide-react'
+import { usePGBL } from '../hooks/usePGBL.js'
+
+const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+const DEFAULT_PARAMS = { limitePgblPercentual: 0.12, descontoSimplificadoPercentual: 0.2, tetoDescontoSimplificado: 17640, deducaoPorDependenteAno: 2275.08, tetoEducacaoPorPessoaAno: 3561.5, fonte: 'Receita Federal — referência 2025/2026', tabela: [[29145.6, 0, 0], [33919.8, 2185.92, 0.075], [45012.6, 4729.92, 0.15], [55976.16, 8105.88, 0.225], [Infinity, 10904.76, 0.275]] }
+const blankMonths = () => MONTHS.map((mes) => ({ mes, base: '', retido: '', inss: '', pgbl: '', saude: '' }))
+const money = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const numberValue = (value) => value === '' ? '' : Math.max(0, Number(value) || 0)
+const normalizeParams = (params = DEFAULT_PARAMS) => ({ ...DEFAULT_PARAMS, ...params, tabela: (params.tabela || DEFAULT_PARAMS.tabela).map((row, index, rows) => [index === rows.length - 1 || row[0] == null ? Infinity : Number(row[0]), Number(row[1]) || 0, Number(row[2]) || 0]) })
+
+export function calculatePGBL(months, premise, params) {
+  const total = (field) => months.reduce((sum, month) => sum + (Number(month[field]) || 0), 0)
+  const base = total('base'), retido = total('retido'), inss = total('inss'), pgbl = total('pgbl'), saude = total('saude')
+  const limite = premise.contribuiInss ? base * params.limitePgblPercentual : 0
+  const pgblDedutivel = Math.min(pgbl, limite)
+  const completo = inss + pgblDedutivel + saude + premise.dependentes * params.deducaoPorDependenteAno + Math.min(premise.educacao, params.tetoEducacaoPorPessoaAno * (premise.dependentes + 1))
+  const simplificado = Math.min(base * params.descontoSimplificadoPercentual, params.tetoDescontoSimplificado)
+  const deductions = Math.max(completo, simplificado)
+  const baseFinal = Math.max(base - deductions, 0)
+  const faixa = params.tabela.find((item) => baseFinal <= item[0]) || params.tabela.at(-1)
+  const ir = Math.max(baseFinal * faixa[2] - faixa[1], 0)
+  const delta = Math.max(limite - pgbl, 0)
+  const excedente = Math.max(pgbl - limite, 0)
+  const status = !premise.contribuiInss ? 'PGBL não dedutível para você' : excedente > 0 ? 'PARE — você já passou do teto' : delta === 0 ? 'NO TETO — aporte ideal' : `APORTAR MAIS ${money(delta)} até o fim do ano`
+  return { base, retido, inss, pgbl, saude, limite, pgblDedutivel, completo, simplificado, baseFinal, faixa, ir, restituicao: retido - ir, delta, excedente, status, modelo: completo >= simplificado ? 'COMPLETA' : 'SIMPLIFICADA' }
+}
+
+function Field({ label, value, onChange, type = 'number', step = '0.01' }) {
+  return <label className="field"><span className="label">{label}</span><input className="input" type={type} min="0" step={type === 'number' ? step : undefined} value={value} onChange={(event) => onChange(type === 'number' ? numberValue(event.target.value) : event.target.value)} /></label>
+}
+
+export default function PGBLPanel() {
+  const year = new Date().getFullYear()
+  const { plans, loading, error: pgblError, savePlan, deletePlan } = usePGBL()
+  const [selectedYear, setSelectedYear] = useState(year)
+  const [view, setView] = useState('resumo')
+  const years = plans
+  const latestYear = Math.max(...Object.keys(years).map(Number))
+  const data = { ...(years[selectedYear] || { months: blankMonths(), premise: { contribuiInss: true, dependentes: 0, educacao: 0 }, params: normalizeParams(years[latestYear]?.params) }), year: selectedYear }
+  const result = useMemo(() => calculatePGBL(data.months, data.premise, data.params), [data])
+  const update = (next) => {
+    if (next.year) return changeYear(next.year)
+    savePlan({ ...data, ...next, params: normalizeParams({ ...data.params, ...(next.params || {}) }) })
+  }
+  const changeYear = (value) => {
+    const nextYear = Number(value) || year
+    if (!years[nextYear]) savePlan({ year: nextYear, months: blankMonths(), premise: { ...data.premise }, params: normalizeParams(data.params) })
+    setSelectedYear(nextYear)
+  }
+  const updateMonth = (index, field, value) => update({ months: data.months.map((month, monthIndex) => monthIndex === index ? { ...month, [field]: value } : month) })
+  const statusClass = result.excedente ? 'danger' : result.delta ? 'warning' : 'success'
+
+  if (loading) return <div className="card pgbl-loading" role="status"><div className="spinner" />Carregando dados do Aporte Certo…</div>
+
+  const removeYear = async () => {
+    if (!window.confirm(`Excluir todos os dados do ano ${selectedYear}? Essa ação não pode ser desfeita.`)) return
+    const removed = await deletePlan(selectedYear)
+    if (removed) setSelectedYear(Number(Object.keys(years).find((item) => Number(item) !== selectedYear) || year))
+  }
+
+  return <div className="pgbl-tool">
+    {view === 'config' && <ConfigYearSelector years={years} selectedYear={selectedYear} onChange={changeYear} onDelete={removeYear} />}
+    {pgblError && <div className="notice danger">{pgblError}</div>}
+    <div className="pgbl-tabs" role="tablist" aria-label="Aporte Certo">
+      {[['resumo', Calculator, 'Resumo anual'], ['mensal', Table2, 'Lançamentos'], ['config', Settings2, 'Parâmetros'], ['sobre', BookOpen, 'Como funciona']].map(([id, Icon, label]) => <button key={id} type="button" role="tab" aria-selected={view === id} className={`pgbl-tab${view === id ? ' active' : ''}`} onClick={() => setView(id)}><Icon size={16} />{label}</button>)}
+    </div>
+
+    {view === 'mensal' && <div className="pgbl-layout"><section className="card pgbl-table-card"><div className="card-head"><div><h2 className="card-title">Lançamentos mensais</h2><p className="card-sub">Preencha os valores do seu ano-calendário.</p></div><Field label="Ano" value={data.year} onChange={(value) => update({ year: Number(value) || year })} step="1" /></div><div className="pgbl-table-wrap"><table className="pgbl-table"><thead><tr><th>Mês</th><th>Base IR</th><th>IR retido</th><th>INSS</th><th>Aporte PGBL</th><th>Saúde</th><th>PGBL acumulado</th><th>Saúde acumulada</th></tr></thead><tbody>{data.months.map((month, index) => <tr key={month.mes}><th>{month.mes.slice(0, 3)}</th>{['base', 'retido', 'inss', 'pgbl', 'saude'].map((field) => <td key={field}><input className="input pgbl-cell" type="number" min="0" step="0.01" value={month[field]} onChange={(event) => updateMonth(index, field, numberValue(event.target.value))} aria-label={`${field} de ${month.mes}`} /></td>)}<td>{money(data.months.slice(0, index + 1).reduce((sum, item) => sum + Number(item.pgbl || 0), 0))}</td><td>{money(data.months.slice(0, index + 1).reduce((sum, item) => sum + Number(item.saude || 0), 0))}</td></tr>)}</tbody><tfoot><tr><th>Total ano</th><th>{money(result.base)}</th><th>{money(result.retido)}</th><th>{money(result.inss)}</th><th>{money(result.pgbl)}</th><th>{money(result.saude)}</th><th>{money(result.pgbl)}</th><th>{money(result.saude)}</th></tr></tfoot></table></div></section><StatusCard result={result} /></div>}
+
+    {view === 'resumo' && <div className="stack"><section className="card"><div className="card-head"><div><h2 className="card-title">Premissas do planejamento</h2><p className="card-sub">Ajuste os dados que influenciam sua dedução.</p></div><span className="pgbl-year">{data.year}</span></div><div className="form-grid"><Field label="Ano-calendário" value={data.year} onChange={(value) => update({ year: Number(value) || year })} step="1" /><label className="field"><span className="label">Contribui para INSS/regime próprio?</span><select className="input" value={data.premise.contribuiInss ? 'sim' : 'nao'} onChange={(event) => update({ premise: { ...data.premise, contribuiInss: event.target.value === 'sim' } })}><option value="sim">Sim</option><option value="nao">Não</option></select></label><Field label="Dependentes" value={data.premise.dependentes} onChange={(value) => update({ premise: { ...data.premise, dependentes: Math.floor(Number(value) || 0) } })} step="1" /><Field label="Educação no ano" value={data.premise.educacao} onChange={(value) => update({ premise: { ...data.premise, educacao: value } })} /></div></section><div className="grid-4"><Metric label="Base tributável" value={money(result.base)} /><Metric label="Limite PGBL (12%)" value={money(result.limite)} /><Metric label="PGBL já aportado" value={money(result.pgbl)} /><Metric label="Saúde lançada" value={money(result.saude)} /></div><section className={`card pgbl-status ${statusClass}`}><div className="pgbl-status-icon">{statusClass === 'success' ? <CircleCheck /> : <CircleAlert />}</div><div><span className="label">Análise do aporte</span><h2>{result.status}</h2><p>{result.excedente ? `Excedente não dedutível: ${money(result.excedente)}.` : result.delta ? 'Você ainda pode alcançar o limite dedutível de 12%.' : 'Você atingiu o ponto ótimo de dedução para este ano.'}</p></div></section><div className="grid-3"><Metric label="Deduções completas" value={money(result.completo)} /><Metric label="Desconto simplificado" value={money(result.simplificado)} /><Metric label="Modelo mais vantajoso" value={result.modelo} /></div><section className="card"><div className="row-between"><div><h2 className="card-title">Estimativa de imposto</h2><p className="card-sub">Uma referência para comparar com o IR retido.</p></div><strong className={result.restituicao >= 0 ? 'text-success' : 'text-danger'}>{result.restituicao >= 0 ? 'Restituição estimada' : 'Imposto a pagar'}</strong></div><div className="pgbl-estimate"><strong>{money(Math.abs(result.restituicao))}</strong><span>IR devido estimado: {money(result.ir)} · já retido: {money(result.retido)}</span></div></section></div>}
+
+    {view === 'config' && <section className="card"><div className="card-head"><div><h2 className="card-title">Parâmetros fiscais</h2><p className="card-sub">Versionados localmente para o ano selecionado.</p></div></div><div className="form-grid"><Field label="Limite PGBL (%)" value={data.params.limitePgblPercentual * 100} onChange={(value) => update({ params: { ...data.params, limitePgblPercentual: Number(value) / 100 } })} /><Field label="Desconto simplificado (%)" value={data.params.descontoSimplificadoPercentual * 100} onChange={(value) => update({ params: { ...data.params, descontoSimplificadoPercentual: Number(value) / 100 } })} /><Field label="Teto simplificado" value={data.params.tetoDescontoSimplificado} onChange={(value) => update({ params: { ...data.params, tetoDescontoSimplificado: value } })} /><Field label="Dependente por ano" value={data.params.deducaoPorDependenteAno} onChange={(value) => update({ params: { ...data.params, deducaoPorDependenteAno: value } })} /><Field label="Educação por pessoa" value={data.params.tetoEducacaoPorPessoaAno} onChange={(value) => update({ params: { ...data.params, tetoEducacaoPorPessoaAno: value } })} /><Field label="Fonte" type="text" value={data.params.fonte} onChange={(value) => update({ params: { ...data.params, fonte: value } })} /></div><p className="pgbl-source">{data.params.fonte}</p></section>}
+
+    {view === 'sobre' && <section className="card pgbl-copy"><h2 className="card-title">Como usar o Aporte Certo</h2><p>Informe mensalmente sua renda tributável, IR retido, INSS, aportes em PGBL e gastos de saúde. O resumo calcula o limite dedutível de 12%, compara declaração completa e simplificada e mostra uma estimativa de restituição ou imposto a pagar.</p><h3>Regras consideradas</h3><ul><li>PGBL é dedutível até 12% da renda tributável para quem contribui ao INSS ou regime próprio.</li><li>Saúde é dedutível integralmente, desde que comprovada.</li><li>A declaração simplificada usa 20% da renda, limitada ao teto informado.</li></ul><div className="notice warning"><CircleAlert size={18} /> É uma estimativa de planejamento; confirme regras e valores vigentes com um contador ou com a Receita Federal.</div></section>}
+  </div>
+}
+
+function ConfigYearSelector({ years, selectedYear, onChange, onDelete }) {
+  const options = Object.keys(years).map(Number).sort((a, b) => b - a)
+  return <section className="card pgbl-year-selector"><div><span className="label">Ano fiscal</span><strong>Configurações do Aporte Certo</strong><p className="card-sub">Selecione o ano para editar seus parâmetros ou excluir seus dados.</p></div><div className="pgbl-year-selector-actions"><select className="input" value={selectedYear} onChange={(event) => onChange(event.target.value)} aria-label="Ano fiscal"><option value={selectedYear}>{selectedYear}</option>{options.filter((year) => year !== selectedYear).map((year) => <option key={year} value={year}>{year}</option>)}</select><button type="button" className="btn btn-sm btn-danger" onClick={onDelete}>Excluir ano</button></div></section>
+}
+
+function Metric({ label, value }) { return <div className="card pgbl-metric"><span className="label">{label}</span><strong>{value}</strong></div> }
+function StatusCard({ result }) { return <aside className={`card pgbl-status ${result.excedente ? 'danger' : result.delta ? 'warning' : 'success'}`}><span className="label">Status rápido</span><h2>{result.status}</h2><p>Base: {money(result.base)}</p><p>Limite: {money(result.limite)}</p><p>Saúde: {money(result.saude)}</p></aside> }
