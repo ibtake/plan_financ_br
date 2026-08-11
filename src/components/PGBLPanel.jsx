@@ -4,7 +4,7 @@ import { usePGBL } from '../hooks/usePGBL.js'
 
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 const DEFAULT_PARAMS = { limitePgblPercentual: 0.12, descontoSimplificadoPercentual: 0.2, tetoDescontoSimplificado: 17640, deducaoPorDependenteAno: 2275.08, tetoEducacaoPorPessoaAno: 3561.5, fonte: 'Receita Federal — referência 2025/2026', tabela: [[29145.6, 0, 0], [33919.8, 2185.92, 0.075], [45012.6, 4729.92, 0.15], [55976.16, 8105.88, 0.225], [Infinity, 10904.76, 0.275]] }
-const blankMonths = () => MONTHS.map((mes) => ({ mes, base: '', retido: '', inss: '', pgbl: '', saude: '' }))
+const blankMonths = () => MONTHS.map((mes) => ({ mes, base: '', retido: '', inss: '', pgbl: '', saude: '', educacao: '' }))
 const parseBRInput = (value) => {
   const raw = String(value ?? '').trim()
   if (!raw) return ''
@@ -23,9 +23,12 @@ const normalizeParams = (params = DEFAULT_PARAMS) => ({ ...DEFAULT_PARAMS, ...pa
 export function calculatePGBL(months, premise, params) {
   const total = (field) => months.reduce((sum, month) => sum + toNumeric(month[field]), 0)
   const base = total('base'), retido = total('retido'), inss = total('inss'), pgbl = total('pgbl'), saude = total('saude')
+  const educacaoLancada = total('educacao')
+  const educacao = educacaoLancada || toNumeric(premise.educacao)
   const limite = premise.contribuiInss ? base * params.limitePgblPercentual : 0
   const pgblDedutivel = Math.min(pgbl, limite)
-  const completo = inss + pgblDedutivel + saude + premise.dependentes * params.deducaoPorDependenteAno + Math.min(premise.educacao, params.tetoEducacaoPorPessoaAno * (premise.dependentes + 1))
+  const educacaoDedutivel = Math.min(educacao, params.tetoEducacaoPorPessoaAno * (premise.dependentes + 1))
+  const completo = inss + pgblDedutivel + saude + premise.dependentes * params.deducaoPorDependenteAno + educacaoDedutivel
   const simplificado = Math.min(base * params.descontoSimplificadoPercentual, params.tetoDescontoSimplificado)
   const deductions = Math.max(completo, simplificado)
   const baseFinal = Math.max(base - deductions, 0)
@@ -34,7 +37,7 @@ export function calculatePGBL(months, premise, params) {
   const delta = Math.max(limite - pgbl, 0)
   const excedente = Math.max(pgbl - limite, 0)
   const status = !premise.contribuiInss ? 'PGBL não dedutível para você' : excedente > 0 ? 'PARE — você já passou do teto' : delta === 0 ? 'NO TETO — aporte ideal' : `APORTAR MAIS ${money(delta)} até o fim do ano`
-  return { base, retido, inss, pgbl, saude, limite, pgblDedutivel, completo, simplificado, baseFinal, faixa, ir, restituicao: retido - ir, delta, excedente, status, modelo: completo >= simplificado ? 'COMPLETA' : 'SIMPLIFICADA' }
+  return { base, retido, inss, pgbl, saude, educacao, educacaoDedutivel, limite, pgblDedutivel, completo, simplificado, baseFinal, faixa, ir, restituicao: retido - ir, delta, excedente, status, modelo: completo >= simplificado ? 'COMPLETA' : 'SIMPLIFICADA' }
 }
 
 function Field({ label, value, onChange, type = 'number', step = '0.01' }) {
@@ -49,7 +52,7 @@ export default function PGBLPanel() {
   const years = plans
   const latestYear = Math.max(...Object.keys(years).map(Number))
   const data = { ...(years[selectedYear] || { months: blankMonths(), premise: { contribuiInss: true, dependentes: 0, educacao: 0 }, params: normalizeParams(years[latestYear]?.params) }), year: selectedYear }
-  const result = useMemo(() => calculatePGBL(data.months, data.premise, data.params), [data])
+  const result = useMemo(() => calculatePGBL(data.months, data.premise, normalizeParams(data.params)), [data])
   const update = (next) => {
     if (next.year) return changeYear(next.year)
     savePlan({ ...data, ...next, params: normalizeParams({ ...data.params, ...(next.params || {}) }) })
@@ -99,7 +102,7 @@ function LocalizedPGBLTable({ data, result, onChange, onYearChange }) {
 }
 
 function TransposedPGBLTable({ data, result, onChange, onYearChange }) {
-  const fields = [['base', 'Base IR'], ['retido', 'IR retido'], ['inss', 'INSS'], ['pgbl', 'Aporte PGBL'], ['saude', 'Saúde']]
+  const fields = [['base', 'Base IR'], ['retido', 'IR retido'], ['inss', 'INSS'], ['pgbl', 'Aporte PGBL'], ['saude', 'Saúde'], ['educacao', 'Educação']]
   return <div className="pgbl-localized-layout"><StatusCard result={result} /><section className="card pgbl-table-card"><div className="card-head"><div><h2 className="card-title">Lançamentos mensais</h2><p className="card-sub">Valores em reais no padrão brasileiro.</p></div><Field label="Ano" value={data.year} onChange={onYearChange} step="1" /></div><div className="pgbl-table-wrap"><table className="pgbl-table pgbl-table-transposed"><thead><tr><th>Item</th>{data.months.map((month) => <th key={month.mes}>{month.mes.slice(0, 3)}</th>)}<th>Total geral</th></tr></thead><tbody>{fields.map(([field, label]) => <tr key={field}><th>{label}</th>{data.months.map((month, index) => <td key={month.mes}><input className="input pgbl-cell" type="text" inputMode="decimal" value={formatBRInput(month[field])} onChange={(event) => onChange(index, field, parseBRInput(event.target.value))} aria-label={`${label} de ${month.mes}`} /></td>)}<td>{money(data.months.reduce((sum, month) => sum + toNumeric(month[field]), 0))}</td></tr>)}</tbody><tfoot><tr><th>Total geral</th>{data.months.map((month, index) => <th key={month.mes}>{money(fields.reduce((sum, [field]) => sum + toNumeric(month[field]), 0))}</th>)}<th>{money(result.base + result.retido + result.inss + result.pgbl + result.saude)}</th></tr></tfoot></table></div></section></div>
 }
 
