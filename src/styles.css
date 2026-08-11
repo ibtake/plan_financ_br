@@ -1080,7 +1080,7 @@ body:has(.modal-backdrop) .fab {
   border-radius: var(--radius-lg);
   background: linear-gradient(135deg, var(--primary-soft), var(--surface));
   box-shadow: var(--shadow);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .balance-hero .card-sub {

@@ -72,7 +72,7 @@ export default function TrendChart({ trend, variant = 'card', accumulatedValue =
                 axisLine={{ stroke: 'var(--border)' }}
                 tickLine={false}
               />
-              <Tooltip active={Boolean(tooltipPosition)} content={<TooltipContent />} position={tooltipPosition || undefined} wrapperClassName={tooltipPosition ? `tooltip-${tooltipPosition.placement}` : ''} offset={0} cursor={false} />
+              <Tooltip active={Boolean(tooltipPosition)} content={<TooltipContent />} position={tooltipPosition || undefined} wrapperClassName={tooltipPosition ? `tooltip-${tooltipPosition.placement}` : ''} allowEscapeViewBox={{ x: true, y: true }} offset={0} cursor={false} />
               <Area
                 type="monotone"
                 dataKey="positiveCumulative"
