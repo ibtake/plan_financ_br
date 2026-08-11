@@ -118,7 +118,7 @@ declare
   v_uid          uuid;
   v_token_iat    bigint;
   v_user_updated timestamptz;
-  c_grace        constant bigint := 10;
+  c_grace        constant bigint := 1;
 begin
   v_uid := auth.uid();
   if v_uid is null then
@@ -306,10 +306,16 @@ declare
   v_email text;
   v_event_count integer;
 begin
-  -- Exige usuario autenticado: evita poluicao anonima do log
-  if v_uid is null then
+  -- Exige usuario autenticado e token ainda valido; eventos de MFA continuam
+  -- permitidos em AAL1 porque esta RPC registra a transicao de autenticacao.
+  if v_uid is null or not public.is_token_valid() then
     return;
   end if;
+
+  -- Serializa o limite por usuario dentro da transacao. Sem este lock,
+  -- chamadas concorrentes podem todas observar a mesma contagem e exceder
+  -- a cota de 50 eventos por hora.
+  perform pg_advisory_xact_lock(hashtext(v_uid::text));
 
   -- CORRECAO 3: Rate limiting - conta eventos na ultima hora
   select count(*) into v_event_count
@@ -559,6 +565,66 @@ create trigger transactions_no_owner_change
 
 grant select, insert, update, delete on public.transactions to authenticated;
 
+-- Alterna uma ocorrencia de pagamento dentro de uma transacao atomica.
+-- O FOR UPDATE impede que duas abas percam marcacoes concorrentes.
+create or replace function public.toggle_paid_occurrence(
+  p_transaction_id text,
+  p_occurrence_index integer
+)
+returns public.transactions
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_transaction public.transactions;
+begin
+  if v_uid is null or not public.is_token_valid() or not public.has_required_aal() then
+    raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode = '28000';
+  end if;
+  if p_occurrence_index is null or p_occurrence_index < 0 then
+    raise exception 'ocorrencia invalida' using errcode = '22023';
+  end if;
+
+  select * into v_transaction
+  from public.transactions
+  where user_id = v_uid and id = p_transaction_id
+  for update;
+
+  if not found then
+    raise exception 'lancamento nao encontrado' using errcode = 'P0002';
+  end if;
+  if p_occurrence_index >= v_transaction.installments then
+    raise exception 'ocorrencia fora do parcelamento' using errcode = '22023';
+  end if;
+
+  if p_occurrence_index = 0 then
+    v_transaction.paid := not v_transaction.paid;
+  elsif coalesce(v_transaction.paid_occurrences, '{}'::jsonb) ? p_occurrence_index::text then
+    v_transaction.paid_occurrences := v_transaction.paid_occurrences - p_occurrence_index::text;
+  else
+    v_transaction.paid_occurrences := jsonb_set(
+      coalesce(v_transaction.paid_occurrences, '{}'::jsonb),
+      array[p_occurrence_index::text],
+      'true'::jsonb,
+      true
+    );
+  end if;
+
+  update public.transactions
+  set paid = v_transaction.paid,
+      paid_occurrences = v_transaction.paid_occurrences
+  where user_id = v_uid and id = p_transaction_id
+  returning * into v_transaction;
+
+  return v_transaction;
+end;
+$$;
+
+revoke all on function public.toggle_paid_occurrence(text, integer) from public, anon;
+grant execute on function public.toggle_paid_occurrence(text, integer) to authenticated;
+
 
 -- =====================================================================
 -- BLOCO 12 - Orcamentos
@@ -768,6 +834,7 @@ create table if not exists public.widget_install_codes (
 
 create table if not exists public.widget_tokens (
   id uuid primary key default gen_random_uuid(),
+  install_code_id uuid not null references public.widget_install_codes(id),
   user_id uuid not null references auth.users(id) on delete cascade,
   token_hash text not null unique,
   last_used_at timestamptz,
@@ -777,10 +844,37 @@ create table if not exists public.widget_tokens (
 
 create index if not exists widget_install_codes_user_idx on public.widget_install_codes(user_id, created_at desc);
 create index if not exists widget_tokens_user_idx on public.widget_tokens(user_id, created_at desc);
+create unique index if not exists widget_tokens_install_code_unique on public.widget_tokens(install_code_id);
 
 alter table public.widget_install_codes enable row level security;
 alter table public.widget_tokens enable row level security;
 revoke all on public.widget_install_codes, public.widget_tokens from public, anon, authenticated;
+
+create or replace function public.activate_widget_install_code(p_code_hash text, p_token_hash text)
+returns table (install_code_id uuid, user_id uuid)
+language sql
+security definer
+set search_path = public
+as $$
+  with consumed as (
+    update public.widget_install_codes
+    set used_at = now()
+    where code_hash = p_code_hash
+      and used_at is null
+      and expires_at > now()
+    returning id, user_id
+  ), inserted as (
+    insert into public.widget_tokens (install_code_id, user_id, token_hash)
+    select id, user_id, p_token_hash
+    from consumed
+    returning install_code_id, user_id
+  )
+  select install_code_id, user_id
+  from inserted;
+$$;
+
+revoke all on function public.activate_widget_install_code(text, text) from public, anon, authenticated;
+grant execute on function public.activate_widget_install_code(text, text) to service_role;
 
 -- BLOCO 22 - Exclusao confirmada de metas (estado final para instalacao limpa)
 create or replace function public.delete_goal(p_goal_id text)

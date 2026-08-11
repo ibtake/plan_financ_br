@@ -321,7 +321,7 @@ export function AuthProvider({ children }) {
     if (!supabase) return { error: 'Supabase nao configurado.' }
     const { error } = await supabase.auth.resetPasswordForEmail(
       String(email || '').trim().toLowerCase(),
-      { redirectTo: `${window.location.origin}/`, ...(captchaToken ? { captchaToken } : {}) },
+      { redirectTo: `${window.location.origin}/reset-password`, ...(captchaToken ? { captchaToken } : {}) },
     )
     if (error) return { error: translateAuthError(error) }
     await logAuthEvent(AUTH_EVENTS.PASSWORD_RESET, 'warning', {})
@@ -336,7 +336,18 @@ export function AuthProvider({ children }) {
     const { error } = await supabase.auth.updateUser({ password: newPassword })
     if (error) return { error: translateAuthError(error) }
     await logAuthEvent(AUTH_EVENTS.PASSWORD_CHANGED, 'warning', {})
+    const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' })
+    if (signOutError) return { error: translateAuthError(signOutError) }
     return { ok: true }
+  }, [])
+
+  const exchangeRecoveryCode = useCallback(async (code) => {
+    if (!supabase) return { error: 'Supabase nao configurado.' }
+    const normalizedCode = String(code || '').trim()
+    if (!normalizedCode) return { error: 'Link de recuperacao invalido ou expirado.' }
+    const { data, error } = await supabase.auth.exchangeCodeForSession(normalizedCode)
+    if (error || !data?.session) return { error: translateAuthError(error) || 'Link de recuperacao invalido ou expirado.' }
+    return { data }
   }, [])
 
   // ---------- MFA / TOTP ----------
@@ -378,6 +389,10 @@ export function AuthProvider({ children }) {
         return { error: translateAuthError(error) }
       }
       await logAuthEvent(AUTH_EVENTS.MFA_ENROLLED, 'warning', {})
+      const { error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError) {
+        return { error: 'MFA ativado, mas nao foi possivel atualizar a sessao. Faca login novamente.' }
+      }
       await refreshAssurance()
       return { ok: true }
     },
@@ -447,6 +462,7 @@ export function AuthProvider({ children }) {
     signIn,
     signOut,
     resetPassword,
+    exchangeRecoveryCode,
     updatePassword,
     listFactors,
     enrollMfa,

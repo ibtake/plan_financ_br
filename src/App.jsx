@@ -15,6 +15,7 @@ import IconManager from './components/IconManager.jsx'
 import SettingsPanel from './components/SettingsPanel.jsx'
 import SecurityPanel from './components/SecurityPanel.jsx'
 import AuthScreen from './components/auth/AuthScreen.jsx'
+import ResetPasswordScreen from './components/auth/ResetPasswordScreen.jsx'
 import RequiredPasswordChange from './components/auth/RequiredPasswordChange.jsx'
 import { useAuth } from './contexts/AuthContext.jsx'
 import { useMonthlyData } from './hooks/useFinance.js'
@@ -99,6 +100,9 @@ const PAGE_META = {
 
 export default function App() {
   const auth = useAuth()
+  const isResetPasswordRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password'
+
+  if (isResetPasswordRoute) return <ResetPasswordScreen />
 
   if (auth.loading) {
     return <div className="app-loading"><div className="spinner" /><span>Verificando sessão...</span></div>
