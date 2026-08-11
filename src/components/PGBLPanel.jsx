@@ -6,6 +6,7 @@ import { amountToInput, formatAmountInput, parseAmount } from '../utils/format.j
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 const DEFAULT_PARAMS = { limitePgblPercentual: 0.12, descontoSimplificadoPercentual: 0.2, tetoDescontoSimplificado: 17640, deducaoPorDependenteAno: 2275.08, tetoEducacaoPorPessoaAno: 3561.5, fonte: 'Receita Federal — referência 2025/2026', tabela: [[29145.6, 0, 0], [33919.8, 2185.92, 0.075], [45012.6, 4729.92, 0.15], [55976.16, 8105.88, 0.225], [Infinity, 10904.76, 0.275]] }
 const blankMonths = () => MONTHS.map((mes) => ({ mes, base: '', retido: '', inss: '', pgbl: '', saude: '', educacao: '' }))
+Object.assign(DEFAULT_PARAMS, { reducaoAnualLimite: 60000, reducaoAnualMaxima: 2694.15, reducaoAnualFaixaFinal: 88200, reducaoAnualIntercepto: 8429.73, reducaoAnualCoeficiente: 0.095575, fonte: 'Receita Federal — referência 2026/2027', tabela: [[29145.6, 0, 0], [33919.8, 2185.92, 0.075], [45012.6, 4729.91, 0.15], [55976.16, 8105.85, 0.225], [Infinity, 10904.66, 0.275]] })
 const parseBRInput = (value) => {
   const raw = String(value ?? '').trim()
   if (!raw) return ''
@@ -19,7 +20,12 @@ const formatBRInput = (value) => { const parsed = parseBRInput(value); return pa
 const toNumeric = (value) => Number(parseBRInput(value) || 0)
 const money = (value) => toNumeric(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const numberValue = (value) => value === '' ? '' : Math.max(0, Number(value) || 0)
-const normalizeParams = (params = DEFAULT_PARAMS) => ({ ...DEFAULT_PARAMS, ...params, tabela: (params.tabela || DEFAULT_PARAMS.tabela).map((row, index, rows) => [index === rows.length - 1 || row[0] == null ? Infinity : Number(row[0]), Number(row[1]) || 0, Number(row[2]) || 0]) })
+const normalizeParams = (params = DEFAULT_PARAMS) => {
+  const merged = { ...DEFAULT_PARAMS, ...params }
+  const legacy2026 = Array.isArray(params?.tabela) && Number(params.tabela?.[2]?.[1]) === 4729.92 && Number(params.tabela?.[3]?.[1]) === 8105.88 && Number(params.tabela?.[4]?.[1]) === 10904.76
+  const tabela = legacy2026 ? DEFAULT_PARAMS.tabela : (merged.tabela || DEFAULT_PARAMS.tabela)
+  return { ...merged, tabela: tabela.map((row, index, rows) => [index === rows.length - 1 || row[0] == null ? Infinity : Number(row[0]), Number(row[1]) || 0, Number(row[2]) || 0]) }
+}
 
 export function calculatePGBL(months, premise, params) {
   const total = (field) => months.reduce((sum, month) => sum + toNumeric(month[field]), 0)
@@ -34,11 +40,17 @@ export function calculatePGBL(months, premise, params) {
   const deductions = Math.max(completo, simplificado)
   const baseFinal = Math.max(base - deductions, 0)
   const faixa = params.tabela.find((item) => baseFinal <= item[0]) || params.tabela.at(-1)
-  const ir = Math.max(baseFinal * faixa[2] - faixa[1], 0)
+  const irBase = Math.max(baseFinal * faixa[2] - faixa[1], 0)
+  const reducaoAnual = base <= params.reducaoAnualLimite
+    ? Math.min(irBase, params.reducaoAnualMaxima)
+    : base <= params.reducaoAnualFaixaFinal
+      ? Math.min(irBase, Math.max(0, params.reducaoAnualIntercepto - params.reducaoAnualCoeficiente * base))
+      : 0
+  const ir = Math.max(irBase - reducaoAnual, 0)
   const delta = Math.max(limite - pgbl, 0)
   const excedente = Math.max(pgbl - limite, 0)
   const status = !premise.contribuiInss ? 'PGBL não dedutível para você' : excedente > 0 ? 'PARE — você já passou do teto' : delta === 0 ? 'NO TETO — aporte ideal' : `APORTAR MAIS ${money(delta)} até o fim do ano`
-  return { base, retido, inss, pgbl, saude, educacao, educacaoDedutivel, limite, pgblDedutivel, completo, simplificado, baseFinal, faixa, ir, restituicao: retido - ir, delta, excedente, status, modelo: completo >= simplificado ? 'COMPLETA' : 'SIMPLIFICADA' }
+  return { base, retido, inss, pgbl, saude, educacao, educacaoDedutivel, limite, pgblDedutivel, completo, simplificado, baseFinal, faixa, irBase, reducaoAnual, ir, restituicao: retido - ir, delta, excedente, status, modelo: completo >= simplificado ? 'COMPLETA' : 'SIMPLIFICADA' }
 }
 
 function Field({ label, value, onChange, type = 'number', step = '0.01' }) {
