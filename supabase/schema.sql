@@ -839,18 +839,49 @@ create table if not exists public.widget_tokens (
   token_hash text not null unique,
   last_used_at timestamptz,
   revoked_at timestamptz,
+  access_expires_at timestamptz not null default (now() + interval '30 days'),
+  refresh_token_hash text,
+  refresh_expires_at timestamptz not null default (now() + interval '365 days'),
   created_at timestamptz not null default now()
 );
 
 create index if not exists widget_install_codes_user_idx on public.widget_install_codes(user_id, created_at desc);
 create index if not exists widget_tokens_user_idx on public.widget_tokens(user_id, created_at desc);
 create unique index if not exists widget_tokens_install_code_unique on public.widget_tokens(install_code_id);
+create unique index if not exists widget_tokens_refresh_hash_unique on public.widget_tokens(refresh_token_hash) where refresh_token_hash is not null;
+
+create table if not exists public.pgbl_plans (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  year integer not null check (year between 2000 and 2200),
+  months jsonb not null default '[]'::jsonb,
+  premise jsonb not null default '{}'::jsonb,
+  fiscal_params jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, year)
+);
+create index if not exists pgbl_plans_user_year_idx on public.pgbl_plans(user_id, year desc);
+alter table public.pgbl_plans enable row level security;
+alter table public.pgbl_plans force row level security;
+drop policy if exists "own pgbl plans select" on public.pgbl_plans;
+create policy "own pgbl plans select" on public.pgbl_plans for select using (auth.uid()=user_id and public.is_token_valid() and public.has_required_aal());
+drop policy if exists "own pgbl plans insert" on public.pgbl_plans;
+create policy "own pgbl plans insert" on public.pgbl_plans for insert with check (auth.uid()=user_id and public.is_token_valid() and public.has_required_aal());
+drop policy if exists "own pgbl plans update" on public.pgbl_plans;
+create policy "own pgbl plans update" on public.pgbl_plans for update using (auth.uid()=user_id and public.is_token_valid() and public.has_required_aal()) with check (auth.uid()=user_id and public.is_token_valid() and public.has_required_aal());
+drop policy if exists "own pgbl plans delete" on public.pgbl_plans;
+create policy "own pgbl plans delete" on public.pgbl_plans for delete using (auth.uid()=user_id and public.is_token_valid() and public.has_required_aal());
+drop trigger if exists pgbl_plans_updated_at on public.pgbl_plans;
+create trigger pgbl_plans_updated_at before update on public.pgbl_plans for each row execute function public.set_updated_at();
+drop trigger if exists pgbl_plans_no_owner_change on public.pgbl_plans;
+create trigger pgbl_plans_no_owner_change before update on public.pgbl_plans for each row execute function public.prevent_owner_change();
+grant select, insert, update, delete on public.pgbl_plans to authenticated;
 
 alter table public.widget_install_codes enable row level security;
 alter table public.widget_tokens enable row level security;
 revoke all on public.widget_install_codes, public.widget_tokens from public, anon, authenticated;
 
-create or replace function public.activate_widget_install_code(p_code_hash text, p_token_hash text)
+create or replace function public.activate_widget_install_code(p_code_hash text, p_token_hash text, p_refresh_token_hash text)
 returns table (install_code_id uuid, user_id uuid)
 language sql
 security definer
@@ -864,8 +895,8 @@ as $$
       and expires_at > now()
     returning id, user_id
   ), inserted as (
-    insert into public.widget_tokens (install_code_id, user_id, token_hash)
-    select id, user_id, p_token_hash
+    insert into public.widget_tokens (install_code_id, user_id, token_hash, refresh_token_hash)
+    select id, user_id, p_token_hash, p_refresh_token_hash
     from consumed
     returning install_code_id, user_id
   )
@@ -873,8 +904,8 @@ as $$
   from inserted;
 $$;
 
-revoke all on function public.activate_widget_install_code(text, text) from public, anon, authenticated;
-grant execute on function public.activate_widget_install_code(text, text) to service_role;
+revoke all on function public.activate_widget_install_code(text, text, text) from public, anon, authenticated;
+grant execute on function public.activate_widget_install_code(text, text, text) to service_role;
 
 -- BLOCO 22 - Exclusao confirmada de metas (estado final para instalacao limpa)
 create or replace function public.delete_goal(p_goal_id text)
@@ -975,6 +1006,7 @@ begin
   delete from public.budgets      where user_id = v_uid;
   delete from public.goals        where user_id = v_uid;
   delete from public.categories   where user_id = v_uid;
+  delete from public.pgbl_plans    where user_id = v_uid;
 
   insert into public.security_events (user_id, event_type, severity, details)
   values (v_uid, 'bulk_delete', 'warning',
@@ -1251,7 +1283,7 @@ begin
   if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if;
   if jsonb_typeof(p_data) <> 'object' then raise exception 'backup invalido' using errcode='22023'; end if;
   if exists (select 1 from jsonb_to_recordset(coalesce(p_data->'goals','[]'::jsonb)) x(id text,goal_type text,reverse_completed_at timestamptz) where coalesce(x.goal_type,'standard')='reverse' and x.reverse_completed_at is not null and not exists (select 1 from jsonb_to_recordset(coalesce(p_data->'reverseGoalHistory','[]'::jsonb)) h(goal_id text) where h.goal_id=x.id)) then raise exception 'backup de meta reversa concluida sem historico' using errcode='22023'; end if;
-  delete from public.transactions where user_id=u; delete from public.budgets where user_id=u; delete from public.goals where user_id=u; delete from public.categories where user_id=u; delete from public.reverse_goal_retention_settings where user_id=u;
+  delete from public.transactions where user_id=u; delete from public.budgets where user_id=u; delete from public.goals where user_id=u; delete from public.categories where user_id=u; delete from public.pgbl_plans where user_id=u; delete from public.reverse_goal_retention_settings where user_id=u;
   insert into public.categories(user_id,id,name,icon,color,type,target_percentage) select u,x.id,x.name,x.icon,x.color,x.type,coalesce(x.target_percentage,0) from jsonb_to_recordset(coalesce(p_data->'categories','[]'::jsonb)) x(id text,name text,icon text,color text,type text,target_percentage numeric);
   insert into public.transactions(user_id,id,type,description,amount,category_id,date,method,paid,recurrence,recurrence_end,installments,tags,note,paid_occurrences,created_at,updated_at) select u,x.id,x.type,x.description,x.amount,x.category_id,x.date,x.method,x.paid,x.recurrence,x.recurrence_end,x.installments,x.tags,x.note,x.paid_occurrences,coalesce(x.created_at,now()),coalesce(x.updated_at,now()) from jsonb_to_recordset(coalesce(p_data->'transactions','[]'::jsonb)) x(id text,type text,description text,amount numeric,category_id text,date date,method text,paid boolean,recurrence text,recurrence_end date,installments integer,tags text[],note text,paid_occurrences jsonb,created_at timestamptz,updated_at timestamptz);
   insert into public.budgets(user_id,category_id,limit_amount) select u,x.category_id,x.limit_amount from jsonb_to_recordset(coalesce(p_data->'budgets','[]'::jsonb)) x(category_id text,limit_amount numeric);
@@ -1259,6 +1291,7 @@ begin
   insert into public.reverse_goal_contributions(goal_id,user_id,amount,occurred_on,note) select x.goal_id,u,x.amount,x.occurred_on,x.note from jsonb_to_recordset(coalesce(p_data->'reverseGoalContributions','[]'::jsonb)) x(goal_id text,amount numeric,occurred_on date,note text) join public.goals g on g.user_id=u and g.id=x.goal_id and g.goal_type='reverse';
   insert into public.reverse_goal_history(goal_id,user_id,reference_month,applied_on,balance_before,balance_after,selic_rate_percent,selic_factor,correction_amount,contribution_amount) select x.goal_id,u,x.reference_month,x.applied_on,x.balance_before,x.balance_after,x.selic_rate_percent,x.selic_factor,x.correction_amount,x.contribution_amount from jsonb_to_recordset(coalesce(p_data->'reverseGoalHistory','[]'::jsonb)) x(goal_id text,reference_month date,applied_on date,balance_before numeric,balance_after numeric,selic_rate_percent numeric,selic_factor numeric,correction_amount numeric,contribution_amount numeric) join public.goals g on g.user_id=u and g.id=x.goal_id and g.goal_type='reverse';
   insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) select x.goal_id,u,x.event_type,x.occurred_on,coalesce(x.details,'{}'::jsonb) from jsonb_to_recordset(coalesce(p_data->'reverseGoalEvents','[]'::jsonb)) x(goal_id text,event_type text,occurred_on date,details jsonb) join public.goals g on g.user_id=u and g.id=x.goal_id and g.goal_type='reverse';
+  insert into public.pgbl_plans(user_id,year,months,premise,fiscal_params) select u,x.year,x.months,x.premise,x.fiscal_params from jsonb_to_recordset(coalesce(p_data->'pgblPlans','[]'::jsonb)) x(year integer,months jsonb,premise jsonb,fiscal_params jsonb);
   if p_data ? 'reverseGoalRetentionMonths' then insert into public.reverse_goal_retention_settings(user_id,completed_goal_retention_months) values(u,nullif(p_data->>'reverseGoalRetentionMonths','')::smallint); end if;
   for item in select id from public.goals where user_id=u and goal_type='reverse' and reverse_completed_at is null loop perform public.rebuild_reverse_goal_for_user(item.id,u); end loop;
 end; $$;
