@@ -7,6 +7,8 @@ export default function ResetPasswordScreen() {
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(true)
   const [ready, setReady] = useState(false)
+  const [mfaRequired, setMfaRequired] = useState(false)
+  const [mfaCode, setMfaCode] = useState('')
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
 
@@ -15,18 +17,42 @@ export default function ResetPasswordScreen() {
     const code = new URLSearchParams(window.location.search).get('code')
     window.history.replaceState({}, document.title, '/reset-password')
 
-    auth.exchangeRecoveryCode(code).then((result) => {
+    auth.exchangeRecoveryCode(code).then(async (result) => {
       if (!active) return
-      setBusy(false)
       if (result.error) {
+        setBusy(false)
         setError(result.error)
         return
       }
-      setReady(true)
+      const factors = await auth.listFactors()
+      if (!active) return
+      setBusy(false)
+      if (factors.length) setMfaRequired(true)
+      else setReady(true)
     })
 
     return () => { active = false }
-  }, [auth.exchangeRecoveryCode])
+  }, [auth.exchangeRecoveryCode, auth.listFactors])
+
+  const submitMfa = async (event) => {
+    event.preventDefault()
+    const code = mfaCode.replace(/\D/g, '').slice(0, 6)
+    if (code.length !== 6) {
+      setError('Digite os 6 digitos do codigo do autenticador.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    const result = await auth.verifyMfaChallenge(code)
+    setBusy(false)
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+    setMfaCode('')
+    setMfaRequired(false)
+    setReady(true)
+  }
 
   const submit = async (event) => {
     event.preventDefault()
@@ -44,6 +70,10 @@ export default function ResetPasswordScreen() {
     const result = await auth.updatePassword(password)
     setBusy(false)
     if (result.error) {
+      if (result.code === 'insufficient_aal') {
+        setMfaRequired(true)
+        setReady(false)
+      }
       setError(result.error)
       return
     }
@@ -67,7 +97,14 @@ export default function ResetPasswordScreen() {
 
         {done && <a className="btn btn-primary btn-block" style={{ marginTop: 18 }} href="/">Voltar para o login</a>}
 
-        {!done && ready && (
+        {!done && mfaRequired && (
+          <form className="stack" style={{ gap: 14, marginTop: 18 }} onSubmit={submitMfa}>
+            <div className="field"><label className="label" htmlFor="reset-mfa-code">Codigo do autenticador</label><input id="reset-mfa-code" className="input" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={6} value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))} required /></div>
+            <button className="btn btn-primary btn-block" type="submit" disabled={busy}>{busy ? 'Validando...' : 'Confirmar identidade'}</button>
+          </form>
+        )}
+
+        {!done && ready && !mfaRequired && (
           <form className="stack" style={{ gap: 14, marginTop: 18 }} onSubmit={submit}>
             <div className="field"><label className="label" htmlFor="reset-password">Nova senha</label><input id="reset-password" className="input" type="password" autoComplete="new-password" minLength={10} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
             <div className="field"><label className="label" htmlFor="reset-confirm">Confirmar nova senha</label><input id="reset-confirm" className="input" type="password" autoComplete="new-password" minLength={10} maxLength={128} value={confirm} onChange={(event) => setConfirm(event.target.value)} required /></div>

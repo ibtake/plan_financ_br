@@ -91,6 +91,9 @@ export function translateAuthError(error) {
   if (raw.includes('mfa_factor_name_conflict')) {
     return 'Ja existe uma configuracao MFA com este nome. Tente ativar novamente.'
   }
+  if (raw.includes('insufficient_aal')) {
+    return 'Confirme o codigo do seu aplicativo autenticador para continuar.'
+  }
   if (raw.includes('too_many_enrolled_mfa_factors')) {
     return 'O limite de fatores MFA foi atingido. Remova um fator antigo e tente novamente.'
   }

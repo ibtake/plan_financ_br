@@ -334,7 +334,7 @@ export function AuthProvider({ children }) {
     const strength = validatePassword(newPassword)
     if (!strength.valid) return { error: 'A nova senha nao atende a politica de seguranca.' }
     const { error } = await supabase.auth.updateUser({ password: newPassword })
-    if (error) return { error: translateAuthError(error) }
+    if (error) return { error: translateAuthError(error), code: error.code || null }
     await logAuthEvent(AUTH_EVENTS.PASSWORD_CHANGED, 'warning', {})
     const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' })
     if (signOutError) return { error: translateAuthError(signOutError) }
