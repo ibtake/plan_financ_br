@@ -244,7 +244,8 @@ create table if not exists public.security_events (
       'bulk_delete',
       'data_imported',
       'rls_violation_attempt',
-      'suspicious_activity'
+      'suspicious_activity',
+      'rate_limited'
     ))
 );
 
@@ -305,6 +306,7 @@ declare
   v_uid   uuid := auth.uid();
   v_email text;
   v_event_count integer;
+  v_details jsonb;
 begin
   -- Exige usuario autenticado e token ainda valido; eventos de MFA continuam
   -- permitidos em AAL1 porque esta RPC registra a transicao de autenticacao.
@@ -323,8 +325,8 @@ begin
   where user_id = v_uid
     and created_at > now() - interval '1 hour';
 
-  -- V-04: nunca descartar eventos criticos; cota vale so para info/warning
-  if v_event_count >= 50 and coalesce(p_severity, 'info') <> 'critical' then
+  -- A severidade e controlada pelo chamador; a cota vale para todos os eventos.
+  if v_event_count >= 50 then
     -- grava no maximo 1 resumo por hora, em vez de silenciar tudo
     if not exists (
       select 1 from public.security_events
@@ -344,6 +346,11 @@ begin
     return;
   end if;
 
+  v_details := coalesce(p_details, '{}'::jsonb);
+  if octet_length(convert_to(v_details::text, 'utf8')) > 16384 then
+    v_details := jsonb_build_object('truncated', true, 'reason', 'details exceeded 16 KiB');
+  end if;
+
   select email into v_email from auth.users where id = v_uid;
 
   insert into public.security_events (
@@ -355,7 +362,7 @@ begin
     coalesce(p_severity, 'info'),
     v_email,
     left(coalesce(p_user_agent, ''), 400),
-    coalesce(p_details, '{}'::jsonb)
+    v_details
   );
 
   -- V-09 (REQ 8): retencao de 7 dias. Restrito ao proprio usuario e apoiado
@@ -595,7 +602,7 @@ begin
   if not found then
     raise exception 'lancamento nao encontrado' using errcode = 'P0002';
   end if;
-  if p_occurrence_index >= v_transaction.installments then
+  if v_transaction.installments > 1 and p_occurrence_index >= v_transaction.installments then
     raise exception 'ocorrencia fora do parcelamento' using errcode = '22023';
   end if;
 

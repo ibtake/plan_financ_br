@@ -162,8 +162,11 @@ function buildInsights({ summary, previousSummary, byCategory, previousByCategor
   return list.slice(0, 6)
 }
 
-export default function Insights(props) {
-  const insights = useMemo(() => buildInsights(props), [props])
+export default function Insights({ summary, previousSummary, byCategory, previousByCategory, budgets, categories, occurrences, goals }) {
+  const insights = useMemo(
+    () => buildInsights({ summary, previousSummary, byCategory, previousByCategory, budgets, categories, occurrences, goals }),
+    [summary, previousSummary, byCategory, previousByCategory, budgets, categories, occurrences, goals],
+  )
 
   return (
     <div className="card">

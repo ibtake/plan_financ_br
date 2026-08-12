@@ -114,14 +114,6 @@ export function expandMonth(transactions, monthKey) {
 }
 
 /** Ocorrencias agregadas de varios meses (para graficos de evolucao) */
-export function expandMonths(transactions, monthKeys) {
-  const map = {}
-  for (const key of monthKeys) {
-    map[key] = expandMonth(transactions, key)
-  }
-  return map
-}
-
 /** Texto amigavel da recorrencia de um lancamento */
 export function recurrenceLabel(tx) {
   const installments = Number(tx.installments) || 1

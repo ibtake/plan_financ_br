@@ -14,7 +14,7 @@
 //   - Ha logout automatico por inatividade.
 // =====================================================================
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase, isSupabaseConfigured, configurationProblem, translateAuthError } from '../lib/supabase.js'
 import { AUTH_EVENTS, logAuthEvent } from './authAudit.js'
 import {
@@ -451,7 +451,7 @@ export function AuthProvider({ children }) {
     [listFactors, refreshAssurance],
   )
 
-  const value = {
+  const value = useMemo(() => ({
     session,
     user,
     loading,
@@ -469,7 +469,7 @@ export function AuthProvider({ children }) {
     verifyMfaEnrollment,
     verifyMfaChallenge,
     disableMfa,
-  }
+  }), [session, user, loading, mfaStage, assuranceLevel, missingConfig, signIn, signOut, resetPassword, exchangeRecoveryCode, updatePassword, listFactors, enrollMfa, verifyMfaEnrollment, verifyMfaChallenge, disableMfa])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
