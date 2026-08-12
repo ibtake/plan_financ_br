@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth, validatePassword } from '../../contexts/AuthContext.jsx'
+import CodeInput from './CodeInput.jsx'
 
 export default function ResetPasswordScreen() {
   const auth = useAuth()
@@ -99,7 +100,7 @@ export default function ResetPasswordScreen() {
 
         {!done && mfaRequired && (
           <form className="stack" style={{ gap: 14, marginTop: 18 }} onSubmit={submitMfa}>
-            <div className="field"><label className="label" htmlFor="reset-mfa-code">Codigo do autenticador</label><input id="reset-mfa-code" className="input" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={6} value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))} required /></div>
+            <div className="field"><label className="label">Codigo do autenticador</label><CodeInput value={mfaCode} onChange={setMfaCode} disabled={busy} /></div>
             <button className="btn btn-primary btn-block" type="submit" disabled={busy}>{busy ? 'Validando...' : 'Confirmar identidade'}</button>
           </form>
         )}
