@@ -83,7 +83,8 @@ export default function PGBLPanel() {
   const [view, setView] = useState('resumo')
   const years = plans
   const latestYear = Math.max(...Object.keys(years).map(Number))
-  const data = { ...(years[selectedYear] || { months: blankMonths(), premise: { contribuiInss: true, dependentes: 0, educacao: 0 }, params: normalizeParams(years[latestYear]?.params) }), year: selectedYear }
+  const selectedPlan = years[selectedYear] || { months: blankMonths(), premise: { contribuiInss: true, dependentes: 0, educacao: 0 }, params: years[latestYear]?.params }
+  const data = { ...selectedPlan, year: selectedYear, params: normalizeParams(selectedPlan.params) }
   const result = useMemo(() => calculatePGBL(data.months, data.premise, normalizeParams(data.params)), [data])
   const update = (next) => {
     if (next.year) return changeYear(next.year)
