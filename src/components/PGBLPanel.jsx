@@ -24,18 +24,31 @@ const normalizeParams = (params = DEFAULT_PARAMS) => {
   const merged = { ...DEFAULT_PARAMS, ...params }
   const legacy2026 = Array.isArray(params?.tabela) && Number(params.tabela?.[2]?.[1]) === 4729.92 && Number(params.tabela?.[3]?.[1]) === 8105.88 && Number(params.tabela?.[4]?.[1]) === 10904.76
   const tabela = legacy2026 ? DEFAULT_PARAMS.tabela : (merged.tabela || DEFAULT_PARAMS.tabela)
-  return { ...merged, tabela: tabela.map((row, index, rows) => [index === rows.length - 1 || row[0] == null ? Infinity : Number(row[0]), Number(row[1]) || 0, Number(row[2]) || 0]) }
+  const finiteOr = (value, fallback, min = 0, max = Infinity) => {
+    const number = Number(value)
+    return Number.isFinite(number) && number >= min && number <= max ? number : fallback
+  }
+  return {
+    ...merged,
+    limitePgblPercentual: finiteOr(merged.limitePgblPercentual, DEFAULT_PARAMS.limitePgblPercentual, 0, 1),
+    descontoSimplificadoPercentual: finiteOr(merged.descontoSimplificadoPercentual, DEFAULT_PARAMS.descontoSimplificadoPercentual, 0, 1),
+    tetoDescontoSimplificado: finiteOr(merged.tetoDescontoSimplificado, DEFAULT_PARAMS.tetoDescontoSimplificado, 0, 100000),
+    deducaoPorDependenteAno: finiteOr(merged.deducaoPorDependenteAno, DEFAULT_PARAMS.deducaoPorDependenteAno, 0, 100000),
+    tetoEducacaoPorPessoaAno: finiteOr(merged.tetoEducacaoPorPessoaAno, DEFAULT_PARAMS.tetoEducacaoPorPessoaAno, 0, 100000),
+    tabela: tabela.map((row, index, rows) => [index === rows.length - 1 || row[0] == null ? Infinity : Number(row[0]), Number(row[1]) || 0, Number(row[2]) || 0]),
+  }
 }
 
 export function calculatePGBL(months, premise, params) {
   const total = (field) => months.reduce((sum, month) => sum + toNumeric(month[field]), 0)
+  const dependentes = Math.max(0, Number(premise.dependentes) || 0)
   const base = total('base'), retido = total('retido'), inss = total('inss'), pgbl = total('pgbl'), saude = total('saude')
   const educacaoLancada = total('educacao')
   const educacao = educacaoLancada || toNumeric(premise.educacao)
   const limite = premise.contribuiInss ? base * params.limitePgblPercentual : 0
   const pgblDedutivel = Math.min(pgbl, limite)
-  const educacaoDedutivel = Math.min(educacao, params.tetoEducacaoPorPessoaAno * (premise.dependentes + 1))
-  const completo = inss + pgblDedutivel + saude + premise.dependentes * params.deducaoPorDependenteAno + educacaoDedutivel
+  const educacaoDedutivel = Math.min(educacao, params.tetoEducacaoPorPessoaAno * (dependentes + 1))
+  const completo = inss + pgblDedutivel + saude + dependentes * params.deducaoPorDependenteAno + educacaoDedutivel
   const simplificado = Math.min(base * params.descontoSimplificadoPercentual, params.tetoDescontoSimplificado)
   const deductions = Math.max(completo, simplificado)
   const baseFinal = Math.max(base - deductions, 0)
