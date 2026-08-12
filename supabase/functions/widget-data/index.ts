@@ -77,16 +77,33 @@ Deno.serve(async (request) => {
   const date = saoPauloDate()
   const admin = createClient(url, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } })
   const widgetToken = request.headers.get('x-widget-token')?.trim() || ''
+  const refreshToken = request.headers.get('x-widget-refresh-token')?.trim() || ''
   let userId = ''
   let tokenHash = ''
+  let responseToken = ''
+  let responseRefreshToken = ''
 
   if (widgetToken) {
     const presentedToken = widgetToken
     tokenHash = await hash(presentedToken)
-    const { data, error: tokenLookupError } = await admin.from('widget_tokens').select('user_id').eq('token_hash', tokenHash).is('revoked_at', null).maybeSingle()
+    const { data, error: tokenLookupError } = await admin.from('widget_tokens').select('user_id').eq('token_hash', tokenHash).is('revoked_at', null).gt('access_expires_at', new Date().toISOString()).maybeSingle()
     authLog({ mode: 'token', tokenPresent: Boolean(presentedToken), tokenLength: presentedToken.length, tokenFingerprint: tokenHash.slice(0, 12), tokenFound: Boolean(data), lookupError: tokenLookupError?.code || null })
     userId = data?.user_id || ''
-  } else if (body.code) {
+  }
+  if (!userId && refreshToken) {
+    const refreshHash = await hash(refreshToken)
+    const { data, error: refreshError } = await admin.from('widget_tokens').select('id,user_id').eq('refresh_token_hash', refreshHash).is('revoked_at', null).gt('refresh_expires_at', new Date().toISOString()).maybeSingle()
+    if (refreshError) return response(503, { error: 'Não foi possível renovar o widget.' })
+    if (data) {
+      responseToken = randomToken()
+      responseRefreshToken = randomToken()
+      const rotated = await admin.from('widget_tokens').update({ token_hash: await hash(responseToken), refresh_token_hash: await hash(responseRefreshToken), access_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), last_used_at: new Date().toISOString() }).eq('id', data.id)
+      if (rotated.error) return response(503, { error: 'Não foi possível renovar o widget.' })
+      userId = data.user_id
+      tokenHash = await hash(responseToken)
+    }
+  }
+  if (!userId && body.code) {
     authLog({ mode: 'install_code', codePresent: true })
     const codeHash = await hash(String(body.code))
     const { data: install } = await admin.from('widget_install_codes').select('id,user_id,expires_at,used_at').eq('code_hash', codeHash).maybeSingle()
@@ -94,14 +111,17 @@ Deno.serve(async (request) => {
     authLog({ mode: 'install_code_result', found: Boolean(install), used: Boolean(install?.used_at), valid: installValid })
     if (installValid) {
       const token = randomToken()
+      const refresh = randomToken()
       tokenHash = await hash(token)
-      const { data: activation, error: activationError } = await admin.rpc('activate_widget_install_code', { p_code_hash: codeHash, p_token_hash: tokenHash })
+      const refreshHash = await hash(refresh)
+      const { data: activation, error: activationError } = await admin.rpc('activate_widget_install_code', { p_code_hash: codeHash, p_token_hash: tokenHash, p_refresh_token_hash: refreshHash })
       const activated = Array.isArray(activation) ? activation[0] : activation
       authLog({ mode: 'install_code_insert', tokenFingerprint: tokenHash.slice(0, 12), inserted: Boolean(activated), insertError: activationError?.code || null })
       if (activationError) return response(503, { error: 'Não foi possível ativar o widget.' })
       if (!activated) return response(401, { error: 'Widget não autorizado.' })
       userId = activated.user_id
-      body.__newToken = token
+      responseToken = token
+      responseRefreshToken = refresh
       authLog({ mode: 'install_code_activated', activated: true })
     }
   } else {
@@ -117,5 +137,5 @@ Deno.serve(async (request) => {
     return index !== null && !paid ? [{ description: String(tx.description).slice(0, 80), amount: Number(tx.amount) || 0, date, installment: Number(tx.installments) > 1 ? `${index + 1}/${tx.installments}` : null }] : []
   })
   if (tokenHash) await admin.from('widget_tokens').update({ last_used_at: new Date().toISOString() }).eq('token_hash', tokenHash)
-  return response(200, { date, bills, total: bills.reduce((sum, bill) => sum + bill.amount, 0), ...(body.__newToken ? { token: body.__newToken } : {}) })
+  return response(200, { date, bills, total: bills.reduce((sum, bill) => sum + bill.amount, 0), ...(responseToken ? { token: responseToken, refreshToken: responseRefreshToken } : {}) })
 })

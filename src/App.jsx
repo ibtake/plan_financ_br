@@ -166,7 +166,7 @@ function AuthenticatedApp() {
   const openEdit = (occurrence) => { setEditing(occurrence); setFormOpen(true) }
 
   const saveTransaction = (data) => {
-    if (editing) finance.updateTransaction(editing.sourceId || editing.id, data)
+    if (editing) finance.updateTransaction(editing.sourceId || editing.id, data, editing.occurrenceIndex)
     else finance.addTransaction(data)
     if (notificationFocus) {
       setNotificationFocus(null)

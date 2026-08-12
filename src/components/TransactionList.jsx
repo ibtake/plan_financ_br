@@ -136,10 +136,6 @@ export default function TransactionList({
   const search = controlled ? (searchProp ?? '') : localSearch
   const setSearch = controlled ? onSearchChange : setLocalSearch
 
-  if (focusOccurrence) {
-    return <div className="card notification-treatment"><div className="card-head"><div><div className="card-title">Tratar lançamento pendente</div><div className="card-sub">Conclua a ação e você retornará à visão geral.</div></div><button type="button" className="btn btn-sm" onClick={onFocusDone}>Voltar ao início</button></div><div className="tx-list"><TransactionItem tx={focusOccurrence} categories={categories} onEdit={onEdit} onDelete={(item) => { onDelete(item); onFocusDone?.() }} onDuplicate={onDuplicate} onTogglePaid={(item) => { onTogglePaid(item); onFocusDone?.() }} /></div></div>
-  }
-
   const activeFilters =
     (type !== 'all' ? 1 : 0) +
     (categoryId !== 'all' ? 1 : 0) +
@@ -197,6 +193,10 @@ export default function TransactionList({
     const ids = new Set(occurrences.map((t) => t.categoryId))
     return categories.filter((c) => ids.has(c.id))
   }, [occurrences, categories])
+
+  if (focusOccurrence) {
+    return <div className="card notification-treatment"><div className="card-head"><div><div className="card-title">Tratar lançamento pendente</div><div className="card-sub">Conclua a ação e você retornará à visão geral.</div></div><button type="button" className="btn btn-sm" onClick={onFocusDone}>Voltar ao início</button></div><div className="tx-list"><TransactionItem tx={focusOccurrence} categories={categories} onEdit={onEdit} onDelete={(item) => { onDelete(item); onFocusDone?.() }} onDuplicate={onDuplicate} onTogglePaid={(item) => { onTogglePaid(item); onFocusDone?.() }} /></div></div>
+  }
 
   return (
     <div className="card">

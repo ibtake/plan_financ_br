@@ -44,14 +44,6 @@ export function formatPercent(value, digits = 0) {
   return `${n.toFixed(digits).replace('.', ',')}%`
 }
 
-export function formatNumber(value, digits = 2) {
-  if (valuesAreHidden()) return PRIVATE_NUMBER
-  return new Intl.NumberFormat('pt-BR', {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(Number(value) || 0)
-}
-
 // ---------- Datas ----------
 
 export const MONTH_NAMES = [
@@ -150,12 +142,6 @@ export function formatDate(isoDate) {
 }
 
 /** Formata AAAA-MM-DD como "12 mar" */
-export function formatDateShort(isoDate) {
-  if (!isoDate) return ''
-  const [, m, d] = String(isoDate).slice(0, 10).split('-')
-  return `${d} ${MONTH_SHORT[Number(m) - 1]?.toLowerCase() ?? ''}`
-}
-
 /** Quantidade de dias entre hoje e uma data (positivo = futuro) */
 export function daysUntil(isoDate) {
   if (!isoDate) return 0

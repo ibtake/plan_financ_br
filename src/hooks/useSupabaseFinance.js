@@ -236,12 +236,15 @@ export function useSupabaseFinance() {
     return tx
   }, [persist, user])
 
-  const updateTransaction = useCallback((id, input) => {
+  const updateTransaction = useCallback((id, input, occurrenceIndex = 0) => {
     const rootId = String(id).split('#')[0]
+    const patch = Number(occurrenceIndex) > 0
+      ? Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'date' && key !== 'paid'))
+      : input
     let updated
     setTransactions((prev) => prev.map((tx) => {
       if (tx.id !== rootId) return tx
-      updated = normalizeTransaction({ ...tx, ...input, id: rootId })
+      updated = normalizeTransaction({ ...tx, ...patch, id: rootId })
       return updated
     }))
     if (updated) void persist(
