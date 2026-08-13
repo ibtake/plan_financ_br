@@ -1,7 +1,23 @@
 import { useEffect, useState } from 'react'
 import { useAuth, validatePassword } from '../../contexts/AuthContext.jsx'
+import { supabase } from '../../lib/supabase.js'
 import CodeInput from './CodeInput.jsx'
 
+/**
+ * Tela de redefinicao de senha.
+ *
+ * Fluxo com detectSessionInUrl=true:
+ * 1. O Supabase client detecta o code na URL automaticamente e troca por sessao
+ * 2. onAuthStateChange dispara SIGNED_IN com a sessao de recovery
+ * 3. AuthContext atualiza session e user
+ * 4. ResetPasswordScreen detecta que ja tem sessao valida e libera o formulario
+ *
+ * Fluxo de fallback manual:
+ * 1. Se a sessao nao foi estabelecida automaticamente, tenta extrair o code
+ *    manualmente de window.location.search (PKCE) ou window.location.hash (Implicit)
+ * 2. Chama exchangeRecoveryCode manualmente
+ * 3. Se falhar, exibe erro
+ */
 export default function ResetPasswordScreen() {
   const auth = useAuth()
   const [password, setPassword] = useState('')
@@ -15,25 +31,90 @@ export default function ResetPasswordScreen() {
 
   useEffect(() => {
     let active = true
-    const code = new URLSearchParams(window.location.search).get('code')
-    window.history.replaceState({}, document.title, '/reset-password')
+    let settled = false
 
-    auth.exchangeRecoveryCode(code).then(async (result) => {
+    // Limpa os parametros da URL para nao vazar o code
+    if (window.location.search || window.location.hash) {
+      window.history.replaceState({}, document.title, '/reset-password')
+    }
+
+    const tryManualExchange = async () => {
+      // Fallback 1: PKCE code no query string (?code=xxx)
+      let code = new URLSearchParams(window.location.search).get('code')
+
+      // Fallback 2: hash fragment com access_token (Implicit flow)
+      if (!code) {
+        const hash = window.location.hash || ''
+        const hashParams = new URLSearchParams(hash.replace(/^#/, ''))
+        code = hashParams.get('code')
+        // Se achou no hash, o Supabase processou e redirecionou com hash
+        if (!code) {
+          const accessToken = hashParams.get('access_token')
+          if (accessToken) {
+            // Ja tem token no hash - o cliente Supabase pode ter processado
+            // Vamos verificar sessao
+            return null
+          }
+        }
+      }
+
+      if (!code) return null
+
+      const result = await auth.exchangeRecoveryCode(code)
+      return result
+    }
+
+    const settle = async () => {
+      if (settled) return
+      settled = true
       if (!active) return
-      if (result.error) {
+
+      // 1. Verifica se a sessao ja foi estabelecida (auto-detected)
+      const { data: currentSession } = await supabase.auth.getSession()
+      if (active && currentSession?.session) {
+        // Sessao estabelecida automaticamente pelo detectSessionInUrl
+        setBusy(false)
+        const factors = await auth.listFactors()
+        if (active) {
+          if (factors.length) setMfaRequired(true)
+          else setReady(true)
+        }
+        return
+      }
+
+      // 2. Fallback: tentar extracao manual do code
+      const result = await tryManualExchange()
+      if (!active) return
+
+      if (result && result.error) {
         setBusy(false)
         setError(result.error)
         return
       }
-      const factors = await auth.listFactors()
-      if (!active) return
-      setBusy(false)
-      if (factors.length) setMfaRequired(true)
-      else setReady(true)
-    })
 
-    return () => { active = false }
-  }, [auth.exchangeRecoveryCode, auth.listFactors])
+      if (result && result.data) {
+        const factors = await auth.listFactors()
+        if (!active) return
+        setBusy(false)
+        if (factors.length) setMfaRequired(true)
+        else setReady(true)
+        return
+      }
+
+      // 3. Nada encontrado - erro
+      setBusy(false)
+      setError('Link de recuperacao invalido ou expirado.')
+    }
+
+    // Aguarda o ciclo de deteccao automatica do Supabase client
+    // O onAuthStateChange pode levar alguns ms para processar
+    const timer = setTimeout(settle, 500)
+
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [auth])
 
   const submitMfa = async (event) => {
     event.preventDefault()
