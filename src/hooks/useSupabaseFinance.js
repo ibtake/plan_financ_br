@@ -126,13 +126,13 @@ export function useSupabaseFinance() {
     window.setTimeout(() => setError(''), 6000)
   }, [])
 
-  const load = useCallback(async ({ preserveError = false } = {}) => {
+  const load = useCallback(async ({ preserveError = false, preserveLoading = false } = {}) => {
     const requestId = ++latestLoadRequest.current
     if (!user || !supabase) {
       if (requestId === latestLoadRequest.current) setLoading(false)
       return false
     }
-    setLoading(true)
+    if (!preserveLoading) setLoading(true)
     if (!preserveError) setError('')
     // Preferencias de interface nao podem impedir o acesso aos dados financeiros.
     // A leitura permanece paralela, mas e tratada separadamente para manter a
@@ -358,7 +358,7 @@ export function useSupabaseFinance() {
       p_color: input.color || '#6366f1',
     }), 'create_standard')
     if (!ok) return false
-    await load()
+    await load({ preserveLoading: true })
     return true
   }, [callGoalRpc, load])
 
@@ -568,7 +568,7 @@ export function useSupabaseFinance() {
         reportError(error)
         return false
       }
-      await load()
+      await load({ preserveLoading: true })
       return true
     } catch (error) {
       reportError(error)

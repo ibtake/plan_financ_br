@@ -43,6 +43,11 @@ export function usePGBL() {
 
   useEffect(() => { void load() }, [load])
 
+  useEffect(() => () => {
+    for (const timer of pending.current.values()) window.clearTimeout(timer)
+    pending.current.clear()
+  }, [])
+
   const savePlan = useCallback((plan) => {
     setPlans((current) => ({ ...current, [plan.year]: plan }))
     if (!user || !supabase) return

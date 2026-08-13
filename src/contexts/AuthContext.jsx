@@ -130,28 +130,38 @@ export function AuthProvider({ children }) {
 
     let active = true
 
-    const applySession = async (nextSession) => {
-      if (!active) return
+    let authEventReceived = false
+    let sessionVersion = 0
+
+    const applySession = async (nextSession, version) => {
+      if (!active || version !== sessionVersion) return
       if (nextSession && isIdleSession(nextSession)) {
         clearUserActivity()
         await supabase.auth.signOut()
         nextSession = null
       }
-      setSession(nextSession || null)
-      setUser(nextSession?.user || null)
       if (nextSession) await refreshAssurance()
       else {
         setMfaStage('none')
         setAssuranceLevel(null)
       }
-      if (active) setLoading(false)
+      if (!active || version !== sessionVersion) return
+      setSession(nextSession || null)
+      setUser(nextSession?.user || null)
+      setLoading(false)
     }
 
-    supabase.auth.getSession().then(({ data }) => applySession(data.session))
-
     const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      authEventReceived = true
+      const version = ++sessionVersion
       if (event === 'SIGNED_IN') markUserActivity()
-      void applySession(newSession)
+      void applySession(newSession, version)
+    })
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (authEventReceived) return
+      const version = ++sessionVersion
+      void applySession(data.session, version)
     })
 
     // O Safari em modo app pode congelar a renovação automática do token em
