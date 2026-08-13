@@ -55,8 +55,12 @@ export const supabase = isSupabaseConfigured
         persistSession: true,
         // Renova o token de acesso automaticamente antes de expirar
         autoRefreshToken: true,
-        // O fluxo de recuperacao troca o code PKCE explicitamente na tela dedicada.
-        detectSessionInUrl: false,
+        // detectSessionInUrl: true permite que o cliente Supabase detecte
+        // automaticamente o code PKCE na URL ao inicializar, trocando-o por
+        // uma sessao. Isso torna o reset de senha resiliente a redirecionamentos
+        // de clientes de email que podem corromper o redirect_to.
+        // ResetPasswordScreen tambem tenta extracao manual como fallback.
+        detectSessionInUrl: true,
         // PKCE: fluxo recomendado para aplicacoes que rodam no navegador
         flowType: 'pkce',
       },
