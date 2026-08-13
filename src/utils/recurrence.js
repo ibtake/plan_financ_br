@@ -28,10 +28,16 @@ function dayOf(isoDate) {
 
 /** Soma dias a uma data ISO */
 function addDays(isoDate, days) {
-  const d = new Date(`${String(isoDate).slice(0, 10)}T00:00:00`)
-  d.setDate(d.getDate() + days)
-  const off = d.getTimezoneOffset()
-  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10)
+  const [year, month, day] = String(isoDate).slice(0, 10).split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
+}
+
+function dayDiff(fromDate, toDate) {
+  const toUtc = (value) => {
+    const [year, month, day] = String(value).slice(0, 10).split('-').map(Number)
+    return Date.UTC(year, month - 1, day)
+  }
+  return Math.round((toUtc(toDate) - toUtc(fromDate)) / 86400000)
 }
 
 /**
@@ -67,14 +73,12 @@ function occurrencesInMonth(tx, monthKey) {
   // Semanal: varias ocorrencias dentro do mesmo mes
   if (recurrence === 'weekly') {
     const out = []
-    let cursor = tx.date
-    let index = 0
-    // limite de seguranca: 5 anos de semanas
-    while (monthKeyFromDate(cursor) <= monthKey && index < 260) {
-      if (monthKeyFromDate(cursor) === monthKey) {
-        if (tx.recurrenceEnd && cursor > tx.recurrenceEnd) break
-        out.push(makeOccurrence(tx, index, cursor))
-      }
+    const firstIndex = Math.max(0, Math.ceil(dayDiff(tx.date, `${monthKey}-01`) / 7))
+    let index = firstIndex
+    let cursor = addDays(tx.date, index * 7)
+    while (monthKeyFromDate(cursor) === monthKey) {
+      if (tx.recurrenceEnd && cursor > tx.recurrenceEnd) break
+      out.push(makeOccurrence(tx, index, cursor))
       cursor = addDays(cursor, 7)
       index++
     }
