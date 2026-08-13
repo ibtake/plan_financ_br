@@ -1,7 +1,7 @@
   name: Nightly Deep Scan
 
   on:
-    schedule:
+    #schedule:
       #- cron: "0 5 * * *"
     workflow_dispatch:
 
