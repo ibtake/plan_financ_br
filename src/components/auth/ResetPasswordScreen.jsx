@@ -1,22 +1,27 @@
 import { useEffect, useState } from 'react'
 import { useAuth, validatePassword } from '../../contexts/AuthContext.jsx'
 import { supabase } from '../../lib/supabase.js'
+import { recoveryCode } from '../../lib/recoveryCode.js'
 import CodeInput from './CodeInput.jsx'
 
 /**
  * Tela de redefinicao de senha.
  *
- * Fluxo com detectSessionInUrl=true:
- * 1. O Supabase client detecta o code na URL automaticamente e troca por sessao
- * 2. onAuthStateChange dispara SIGNED_IN com a sessao de recovery
- * 3. AuthContext atualiza session e user
- * 4. ResetPasswordScreen detecta que ja tem sessao valida e libera o formulario
+ * Estrategia em tres camadas:
+ *   1. O code/access_token da URL e capturado em recoveryCode.js no
+ *      momento da importacao do modulo, ANTES que qualquer componente
+ *      React monte ou que o Supabase client remova os parametros da URL.
+ *   2. Aguarda auth.loading = false (AuthContext terminou init).
+ *   3. Se auth.session existir, o auto-detect (detectSessionInUrl) funcionou
+ *      e o Supabase client ja trocou o code por uma sessao.
+ *      Senao, tenta a troca manual com o recoveryCode salvo em modulo.
+ *      Se nada funcionar, mostra erro.
  *
- * Fluxo de fallback manual:
- * 1. Se a sessao nao foi estabelecida automaticamente, tenta extrair o code
- *    manualmente de window.location.search (PKCE) ou window.location.hash (Implicit)
- * 2. Chama exchangeRecoveryCode manualmente
- * 3. Se falhar, exibe erro
+ * Isso e resiliente a:
+ *   - React StrictMode (que monta/desmonta duas vezes)
+ *   - Email clients que corrompem o redirect_to (o code ainda chega na URL)
+ *   - Race condition entre ordem dos effects (AuthProvider executa antes)
+ *   - Supabase client removendo ?code=xxx da URL durante getSession()
  */
 export default function ResetPasswordScreen() {
   const auth = useAuth()
@@ -29,92 +34,70 @@ export default function ResetPasswordScreen() {
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
 
+  // --- EFEITO: processa o fluxo de recuperacao ---
   useEffect(() => {
     let active = true
     let settled = false
-
-    // Limpa os parametros da URL para nao vazar o code
-    if (window.location.search || window.location.hash) {
-      window.history.replaceState({}, document.title, '/reset-password')
-    }
-
-    const tryManualExchange = async () => {
-      // Fallback 1: PKCE code no query string (?code=xxx)
-      let code = new URLSearchParams(window.location.search).get('code')
-
-      // Fallback 2: hash fragment com access_token (Implicit flow)
-      if (!code) {
-        const hash = window.location.hash || ''
-        const hashParams = new URLSearchParams(hash.replace(/^#/, ''))
-        code = hashParams.get('code')
-        // Se achou no hash, o Supabase processou e redirecionou com hash
-        if (!code) {
-          const accessToken = hashParams.get('access_token')
-          if (accessToken) {
-            // Ja tem token no hash - o cliente Supabase pode ter processado
-            // Vamos verificar sessao
-            return null
-          }
-        }
-      }
-
-      if (!code) return null
-
-      const result = await auth.exchangeRecoveryCode(code)
-      return result
-    }
 
     const settle = async () => {
       if (settled) return
       settled = true
       if (!active) return
 
-      // 1. Verifica se a sessao ja foi estabelecida (auto-detected)
-      const { data: currentSession } = await supabase.auth.getSession()
-      if (active && currentSession?.session) {
-        // Sessao estabelecida automaticamente pelo detectSessionInUrl
+      // Aguarda a inicializacao do AuthContext
+      if (auth.loading) return
+
+      // CAMADA 1: auto-detect funcionou (detectSessionInUrl)
+      if (auth.session) {
         setBusy(false)
         const factors = await auth.listFactors()
-        if (active) {
-          if (factors.length) setMfaRequired(true)
-          else setReady(true)
+        if (!active) return
+        if (factors.length) setMfaRequired(true)
+        else setReady(true)
+        // Limpa a URL apos sucesso
+        if (window.location.search || window.location.hash) {
+          window.history.replaceState({}, document.title, '/reset-password')
         }
         return
       }
 
-      // 2. Fallback: tentar extracao manual do code
-      const result = await tryManualExchange()
-      if (!active) return
-
-      if (result && result.error) {
-        setBusy(false)
-        setError(result.error)
-        return
-      }
-
-      if (result && result.data) {
-        const factors = await auth.listFactors()
+      // CAMADA 2: troca manual com o code salvo no modulo
+      // (capturado antes que o Supabase client removesse da URL)
+      if (recoveryCode) {
+        const result = await auth.exchangeRecoveryCode(recoveryCode)
         if (!active) return
-        setBusy(false)
-        if (factors.length) setMfaRequired(true)
-        else setReady(true)
-        return
+        if (result && result.error) {
+          setBusy(false)
+          setError(result.error)
+          return
+        }
+        if (result && result.data) {
+          const factors = await auth.listFactors()
+          if (!active) return
+          setBusy(false)
+          if (factors.length) setMfaRequired(true)
+          else setReady(true)
+          // Limpa a URL apos sucesso
+          if (window.location.search || window.location.hash) {
+            window.history.replaceState({}, document.title, '/reset-password')
+          }
+          return
+        }
       }
 
-      // 3. Nada encontrado - erro
+      // CAMADA 3: nada funcionou
       setBusy(false)
       setError('Link de recuperacao invalido ou expirado.')
     }
 
-    // Aguarda o ciclo de deteccao automatica do Supabase client
-    // O onAuthStateChange pode levar alguns ms para processar
-    const timer = setTimeout(settle, 500)
+    settle()
 
     return () => {
       active = false
-      clearTimeout(timer)
     }
-  }, [auth])
+  }, [auth, auth.loading]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Depende de auth e auth.loading para garantir que re-executa
+  // quando loading muda (primitivo) e quando auth muda (objeto)
 
   const submitMfa = async (event) => {
     event.preventDefault()
