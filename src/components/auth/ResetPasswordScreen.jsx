@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth, validatePassword } from '../../contexts/AuthContext.jsx'
 import { supabase } from '../../lib/supabase.js'
 import { recoveryCode } from '../../lib/recoveryCode.js'
@@ -35,13 +35,15 @@ export default function ResetPasswordScreen() {
   const [error, setError] = useState('')
 
   // --- EFEITO: processa o fluxo de recuperacao ---
+  const settled = useRef(false)
+
   useEffect(() => {
     let active = true
-    let settled = false
 
     const settle = async () => {
-      if (settled) return
-      settled = true
+      if (!active) return
+      if (settled.current) return
+      if (!auth.loading) settled.current = true
       if (!active) return
 
       // Remove o code/access_token da URL imediatamente, em qualquer caminho
@@ -106,24 +108,39 @@ export default function ResetPasswordScreen() {
   // Depende de auth e auth.loading para garantir que re-executa
   // quando loading muda (primitivo) e quando auth muda (objeto)
 
-  const submitMfa = async (event) => {
-    event.preventDefault()
-    const code = mfaCode.replace(/\D/g, '').slice(0, 6)
-    if (code.length !== 6) {
-      setError('Digite os 6 digitos do codigo do autenticador.')
-      return
-    }
+  // Auto-submit do codigo MFA quando atinge 6 digitos (colagem ou autofill)
+  // Mesmo comportamento do AuthScreen.jsx
+  const submittedMfaCode = useRef(null)
+
+  const submitMfaCode = async (value) => {
+    const normalizedCode = String(value || '').replace(/\D/g, '').slice(0, 6)
+    if (normalizedCode.length !== 6) return
+    if (submittedMfaCode.current === normalizedCode) return
+    submittedMfaCode.current = normalizedCode
     setBusy(true)
     setError('')
-    const result = await auth.verifyMfaChallenge(code)
+    const result = await auth.verifyMfaChallenge(normalizedCode)
     setBusy(false)
     if (result.error) {
       setError(result.error)
+      setMfaCode('')
+      submittedMfaCode.current = null
       return
     }
     setMfaCode('')
     setMfaRequired(false)
     setReady(true)
+  }
+
+  useEffect(() => {
+    if (mfaRequired && mfaCode.length === 6 && !busy) {
+      void submitMfaCode(mfaCode)
+    }
+  }, [mfaRequired, mfaCode, busy])
+
+  const submitMfa = async (event) => {
+    event.preventDefault()
+    await submitMfaCode(mfaCode)
   }
 
   const submit = async (event) => {
