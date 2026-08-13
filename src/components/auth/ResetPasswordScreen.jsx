@@ -44,6 +44,13 @@ export default function ResetPasswordScreen() {
       settled = true
       if (!active) return
 
+      // Remove o code/access_token da URL imediatamente, em qualquer caminho
+      // (sucesso ou erro). O valor ja foi capturado no modulo recoveryCode.js,
+      // entao esta limpeza precoce nao quebra a troca manual (CAMADA 2).
+      if (window.location.search || window.location.hash) {
+        window.history.replaceState({}, document.title, '/reset-password')
+      }
+
       // Aguarda a inicializacao do AuthContext
       if (auth.loading) return
 
