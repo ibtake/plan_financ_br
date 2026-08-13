@@ -50,7 +50,7 @@ export function calculatePGBL(months, premise, params) {
   const completo = inss + pgblDedutivel + saude + dependentes * params.deducaoPorDependenteAno + educacaoDedutivel
   const simplificado = Math.min(
     base * params.descontoSimplificadoPercentual,
-    Math.min(params.tetoDescontoSimplificado, DEFAULT_PARAMS.tetoDescontoSimplificado),
+    params.tetoDescontoSimplificado,
   )
   const deductions = Math.max(completo, simplificado)
   const baseFinal = Math.max(base - deductions, 0)
