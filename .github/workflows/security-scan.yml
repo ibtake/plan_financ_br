@@ -18,8 +18,43 @@ jobs:
         run: curl -sSL https://strix.ai/install | bash
 
       - name: Run Full Security Scan via Partner Router
+        # continue-on-error garante que o job siga para o passo de
+        # summary mesmo quando o Strix sai com código != 0 (achados encontrados).
+        # O status real do PR ainda é refletido pelo job (ver step final).
+        id: scan
+        continue-on-error: true
         env:
           STRIX_LLM: ${{ secrets.STRIX_LLM }}                                  # ex: openai/gpt-5.4 ou o nome do modelo no parceiro
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}                              # chave do parceiro (enviada como Bearer token)
           LLM_API_BASE: ${{ secrets.LLM_API_BASE }}                            # URL base do parceiro
         run: strix -n -t ./ --scan-mode quick
+
+      - name: Publicar relatório no Job Summary
+        if: always()
+        run: |
+          RUN_DIR=$(ls -td strix_runs/*/ 2>/dev/null | head -n 1)
+
+          if [ -z "$RUN_DIR" ] || [ ! -f "${RUN_DIR}report.md" ]; then
+            echo "## 🛡️ Security Scan" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "⚠️ Nenhum relatório encontrado em \`strix_runs/\`. Verifique os logs do passo anterior." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "## 🛡️ Security Scan Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          cat "${RUN_DIR}report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload dos artefatos completos do scan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strix-scan-results-${{ github.run_id }}
+          path: strix_runs/
+          retention-days: 30
+
+      - name: Falhar o job se vulnerabilidades foram encontradas
+        if: steps.scan.outcome == 'failure'
+        run: |
+          echo "::error::Strix encontrou vulnerabilidades. Veja o Job Summary para detalhes."
+          exit 1
