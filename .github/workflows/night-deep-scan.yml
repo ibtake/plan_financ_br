@@ -24,7 +24,7 @@
           env:
             STRIX_LLM: ${{ secrets.STRIX_LLM }}
             LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-            #LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
+            LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
           run: |
             strix -n \
               --target ./ \
