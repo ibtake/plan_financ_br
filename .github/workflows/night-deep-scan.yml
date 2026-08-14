@@ -30,4 +30,3 @@
               --target ./ \
               --scan-mode deep \
               --scope-mode full \
-              --max-budget-usd 25
