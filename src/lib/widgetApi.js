@@ -13,23 +13,29 @@ const REFRESH_TOKEN_KEY = 'dindin-widget-refresh-token-v1'
 const ICON_PATH = FileManager.local().joinPath(FileManager.local().documentsDirectory(), 'dindin-10-widget.png')
 
 async function load() {
-  async function requestData(token, refreshToken) {
+  async function requestData(token, refreshToken, install = false) {
     const request = new Request(API)
     request.method = 'POST'
     const headers = { 'Content-Type': 'application/json' }
     if (token) headers['X-Widget-Token'] = token
     if (refreshToken) headers['X-Widget-Refresh-Token'] = refreshToken
     request.headers = headers
-    request.body = JSON.stringify(token ? {} : { code: INSTALL_CODE })
+    request.body = JSON.stringify(install ? { code: INSTALL_CODE } : {})
     try {
       return { data: await request.loadJSON(), status: request.response?.statusCode || 0 }
     } catch (error) {
       throw new Error('Falha HTTP ' + (request.response?.statusCode || '?') + ': ' + error.message)
     }
   }
-  let token = Keychain.contains(TOKEN_KEY) ? Keychain.get(TOKEN_KEY) : null
-  let refreshToken = Keychain.contains(REFRESH_TOKEN_KEY) ? Keychain.get(REFRESH_TOKEN_KEY) : null
-  if (!config.runsInWidget && !token) {
+  function readTokens() {
+    return {
+      token: Keychain.contains(TOKEN_KEY) ? Keychain.get(TOKEN_KEY) : null,
+      refreshToken: Keychain.contains(REFRESH_TOKEN_KEY) ? Keychain.get(REFRESH_TOKEN_KEY) : null,
+    }
+  }
+  let { token, refreshToken } = readTokens()
+  const firstInstall = !token && !refreshToken
+  if (!config.runsInWidget && !token && !refreshToken) {
     const widget = new ListWidget()
     widget.backgroundColor = new Color('#101827')
     const message = widget.addText('Widget pronto para instalar')
@@ -44,14 +50,26 @@ async function load() {
     Script.complete()
     return
   }
-  let response = await requestData(token, refreshToken)
-  if (token && response.status === 401 && refreshToken) {
-    response = await requestData(null, refreshToken)
+  let response = await requestData(token, refreshToken, firstInstall)
+  if (response.status === 401) {
+    const latest = readTokens()
+    if (latest.token && latest.token !== token) {
+      token = latest.token
+      refreshToken = latest.refreshToken
+      response = await requestData(token, refreshToken)
+    }
   }
-  if (token && response.status === 401) {
-    Keychain.remove(TOKEN_KEY)
-    Keychain.remove(REFRESH_TOKEN_KEY)
-    response = await requestData(null, null)
+  if (response.status === 401 && refreshToken) response = await requestData(null, refreshToken)
+  if (response.status === 401) {
+    const latest = readTokens()
+    if (latest.token && latest.token !== token) {
+      token = latest.token
+      refreshToken = latest.refreshToken
+      response = await requestData(token, refreshToken)
+    }
+  }
+  if (response.status === 401 && firstInstall) {
+    response = await requestData(null, null, true)
   }
   const result = response.data
   if (result.token) Keychain.set(TOKEN_KEY, result.token)

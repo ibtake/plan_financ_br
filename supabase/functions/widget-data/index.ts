@@ -92,15 +92,24 @@ Deno.serve(async (request) => {
   }
   if (!userId && refreshToken) {
     const refreshHash = await hash(refreshToken)
-    const { data, error: refreshError } = await admin.from('widget_tokens').select('id,user_id').eq('refresh_token_hash', refreshHash).is('revoked_at', null).gt('refresh_expires_at', new Date().toISOString()).maybeSingle()
+    responseToken = randomToken()
+    responseRefreshToken = randomToken()
+    const responseTokenHash = await hash(responseToken)
+    const responseRefreshTokenHash = await hash(responseRefreshToken)
+    const { data: rotatedRows, error: refreshError } = await admin.rpc('rotate_widget_refresh_token', {
+      p_current_refresh_token_hash: refreshHash,
+      p_token_hash: responseTokenHash,
+      p_refresh_token_hash: responseRefreshTokenHash,
+      p_access_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    })
     if (refreshError) return response(503, { error: 'Não foi possível renovar o widget.' })
-    if (data) {
-      responseToken = randomToken()
-      responseRefreshToken = randomToken()
-      const rotated = await admin.from('widget_tokens').update({ token_hash: await hash(responseToken), refresh_token_hash: await hash(responseRefreshToken), access_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), last_used_at: new Date().toISOString() }).eq('id', data.id)
-      if (rotated.error) return response(503, { error: 'Não foi possível renovar o widget.' })
-      userId = data.user_id
-      tokenHash = await hash(responseToken)
+    const rotated = Array.isArray(rotatedRows) ? rotatedRows[0] : rotatedRows
+    if (rotated?.user_id) {
+      userId = rotated.user_id
+      tokenHash = responseTokenHash
+    } else {
+      responseToken = ''
+      responseRefreshToken = ''
     }
   }
   if (!userId && body.code) {
@@ -136,6 +145,6 @@ Deno.serve(async (request) => {
     const paid = index === 0 ? tx.paid !== false : Boolean(tx.paid_occurrences?.[index])
     return index !== null && !paid ? [{ description: String(tx.description).slice(0, 80), amount: Number(tx.amount) || 0, date, installment: Number(tx.installments) > 1 ? `${index + 1}/${tx.installments}` : null }] : []
   })
-  if (tokenHash) await admin.from('widget_tokens').update({ last_used_at: new Date().toISOString() }).eq('token_hash', tokenHash)
+  if (tokenHash && !responseToken) await admin.from('widget_tokens').update({ last_used_at: new Date().toISOString() }).eq('token_hash', tokenHash)
   return response(200, { date, bills, total: bills.reduce((sum, bill) => sum + bill.amount, 0), ...(responseToken ? { token: responseToken, refreshToken: responseRefreshToken } : {}) })
 })
