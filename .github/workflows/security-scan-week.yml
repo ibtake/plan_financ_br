@@ -1,0 +1,64 @@
+name: Security Vulnerability Scan (Weekly)
+
+# Roda toda segunda-feira as 08:00 (America/Sao_Paulo, UTC-3 o ano todo)
+# ou manualmente via "Run workflow" na aba Actions.
+on:
+  schedule:
+    - cron: '0 11 * * 1'
+  workflow_dispatch: {}
+
+# Somente leitura: o workflow nunca escreve nada no repositorio.
+permissions:
+  contents: read
+
+# Evita duas execucoes simultaneas (ex: cron + disparo manual no mesmo horario).
+concurrency:
+  group: security-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Scan de dependencias + classificacao por IA
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout do repositorio
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar osv-scanner
+        run: |
+          curl -sL "https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64" -o /usr/local/bin/osv-scanner
+          chmod +x /usr/local/bin/osv-scanner
+          osv-scanner --version
+
+      - name: Rodar comparacao deterministica (osv-scanner)
+        run: |
+          set +e
+          osv-scanner scan source -r . --format json --output osv-results.json
+          code=$?
+          set -e
+          # 0 = sem achados, 1 = achados encontrados: ambos sao execucoes validas.
+          # Qualquer outro codigo indica falha real do scanner (rede, binario, etc).
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then
+            echo "::error::osv-scanner falhou com codigo $code (nao relacionado a vulnerabilidades encontradas)"
+            exit "$code"
+          fi
+          echo "osv-scanner concluido (codigo de saida $code)"
+
+      - name: Classificar e resumir com IA
+        env:
+          LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          STRIX_LLM: ${{ secrets.STRIX_LLM }}
+        run: python scripts/security-scan/analyze.py osv-results.json
+
+      # Nada e commitado. O relatorio completo fica:
+      #  1) no Job Summary desta execucao (aba Actions > este run > Summary)
+      #  2) no log bruto deste step (aba Actions > este run > este job > este step)
+      # A retencao dos logs/summaries segue a configuracao de retencao de
+      # Actions do repositorio (Settings > Actions > General).
