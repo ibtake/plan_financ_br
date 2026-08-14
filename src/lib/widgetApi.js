@@ -35,21 +35,6 @@ async function load() {
   }
   let { token, refreshToken } = readTokens()
   const firstInstall = !token && !refreshToken
-  if (!config.runsInWidget && !token && !refreshToken) {
-    const widget = new ListWidget()
-    widget.backgroundColor = new Color('#101827')
-    const message = widget.addText('Widget pronto para instalar')
-    message.textColor = Color.white()
-    message.font = Font.boldSystemFont(16)
-    widget.addSpacer(6)
-    const detail = widget.addText('Adicione este script à tela inicial para concluir a ativação.')
-    detail.textColor = new Color('#cbd5e1')
-    detail.font = Font.systemFont(12)
-    detail.minimumScaleFactor = 0.8
-    Script.setWidget(widget)
-    Script.complete()
-    return
-  }
   let response = await requestData(token, refreshToken, firstInstall)
   if (response.status === 401) {
     const latest = readTokens()
