@@ -28,13 +28,15 @@ async function load() {
     }
   }
   function readTokens() {
+    const read = (key) => Keychain.contains(key) ? Keychain.get(key).trim() || null : null
     return {
-      token: Keychain.contains(TOKEN_KEY) ? Keychain.get(TOKEN_KEY) : null,
-      refreshToken: Keychain.contains(REFRESH_TOKEN_KEY) ? Keychain.get(REFRESH_TOKEN_KEY) : null,
+      token: read(TOKEN_KEY),
+      refreshToken: read(REFRESH_TOKEN_KEY),
     }
   }
   let { token, refreshToken } = readTokens()
   const firstInstall = !token && !refreshToken
+  let installAttempted = firstInstall
   let response = await requestData(token, refreshToken, firstInstall)
   if (response.status === 401) {
     const latest = readTokens()
@@ -53,7 +55,8 @@ async function load() {
       response = await requestData(token, refreshToken)
     }
   }
-  if (response.status === 401 && firstInstall) {
+  if (response.status === 401 && !installAttempted) {
+    installAttempted = true
     response = await requestData(null, null, true)
   }
   const result = response.data
