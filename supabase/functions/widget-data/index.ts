@@ -3,8 +3,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 const jsonHeaders = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
 const encoder = new TextEncoder()
 
-function response(status: number, body: Record<string, unknown>) {
-  return new Response(JSON.stringify(body), { status, headers: jsonHeaders })
+function response(status: number, body: Record<string, unknown>, extraHeaders: Record<string, string> = {}) {
+  return new Response(JSON.stringify(body), { status, headers: { ...jsonHeaders, ...extraHeaders } })
 }
 
 function authLog(fields: Record<string, unknown>) {
@@ -14,6 +14,16 @@ function authLog(fields: Record<string, unknown>) {
 async function hash(value: string) {
   const bytes = await crypto.subtle.digest('SHA-256', encoder.encode(value))
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function enforceRateLimit(admin: ReturnType<typeof createClient>, keyHash: string, operation: 'token' | 'refresh' | 'install') {
+  const { data, error } = await admin.rpc('consume_widget_rate_limit', { p_key_hash: keyHash, p_operation: operation })
+  if (error) return response(503, { error: 'Serviço indisponível.' })
+  const result = Array.isArray(data) ? data[0] : data
+  if (!result?.allowed) {
+    return response(429, { error: 'Muitas tentativas. Tente novamente mais tarde.' }, { 'Retry-After': String(result?.retry_after_seconds || 60) })
+  }
+  return null
 }
 
 function randomToken() {
@@ -86,12 +96,16 @@ Deno.serve(async (request) => {
   if (widgetToken) {
     const presentedToken = widgetToken
     tokenHash = await hash(presentedToken)
+    const rateLimitResponse = await enforceRateLimit(admin, tokenHash, 'token')
+    if (rateLimitResponse) return rateLimitResponse
     const { data, error: tokenLookupError } = await admin.from('widget_tokens').select('user_id').eq('token_hash', tokenHash).is('revoked_at', null).gt('access_expires_at', new Date().toISOString()).maybeSingle()
     authLog({ mode: 'token', tokenPresent: Boolean(presentedToken), tokenLength: presentedToken.length, tokenFingerprint: tokenHash.slice(0, 12), tokenFound: Boolean(data), lookupError: tokenLookupError?.code || null })
     userId = data?.user_id || ''
   }
   if (!userId && refreshToken) {
     const refreshHash = await hash(refreshToken)
+    const rateLimitResponse = await enforceRateLimit(admin, refreshHash, 'refresh')
+    if (rateLimitResponse) return rateLimitResponse
     responseToken = randomToken()
     responseRefreshToken = randomToken()
     const responseTokenHash = await hash(responseToken)
@@ -115,6 +129,8 @@ Deno.serve(async (request) => {
   if (!userId && body.code) {
     authLog({ mode: 'install_code', codePresent: true })
     const codeHash = await hash(String(body.code))
+    const rateLimitResponse = await enforceRateLimit(admin, codeHash, 'install')
+    if (rateLimitResponse) return rateLimitResponse
     const { data: install } = await admin.from('widget_install_codes').select('id,user_id,expires_at,used_at').eq('code_hash', codeHash).maybeSingle()
     const installValid = Boolean(install && !install.used_at && new Date(install.expires_at).getTime() > Date.now())
     authLog({ mode: 'install_code_result', found: Boolean(install), used: Boolean(install?.used_at), valid: installValid })
