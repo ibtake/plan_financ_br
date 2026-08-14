@@ -1,32 +1,67 @@
-  name: Nightly Deep Scan
+name: Nightly Deep Scan
 
-  on:
-    #schedule:
-      #- cron: "0 5 * * *"
-    workflow_dispatch:
+on:
+  #schedule:
+    #- cron: "0 5 * * *"
+  workflow_dispatch:
 
-  permissions:
-    contents: read
+permissions:
+  contents: read
 
-  jobs:
-    deep-scan:
-      runs-on: ubuntu-latest
+jobs:
+  deep-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      steps:
-        - uses: actions/checkout@v6
-          with:
-            fetch-depth: 0
+      - name: Install Strix
+        run: curl -sSL https://strix.ai/install | bash
 
-        - name: Install Strix
-          run: curl -sSL https://strix.ai/install | bash
+      - name: Run Deep Security Scan
+        id: scan
+        continue-on-error: true
+        env:
+          STRIX_LLM: ${{ secrets.STRIX_LLM }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
+        run: |
+          strix -n \
+            --target ./ \
+            --scan-mode deep \
+            --scope-mode full
 
-        - name: Run Deep Security Scan
-          env:
-            STRIX_LLM: ${{ secrets.STRIX_LLM }}
-            LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-            LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
-          run: |
-            strix -n \
-              --target ./ \
-              --scan-mode deep \
-              --scope-mode full \
+      - name: Publicar relatório no Job Summary
+        if: always()
+        run: |
+          RUN_DIR=$(ls -td strix_runs/*/ 2>/dev/null | head -n 1)
+
+          if [ -z "$RUN_DIR" ] || [ ! -f "${RUN_DIR}report.md" ]; then
+            echo "## 🛡️ Nightly Deep Scan" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "⚠️ Nenhum relatório encontrado em \`strix_runs/\`. Verifique os logs do passo anterior." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "## 🛡️ Nightly Deep Scan Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "_Scan mode: deep · Scope: full_" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          cat "${RUN_DIR}report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload dos artefatos completos do scan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strix-nightly-deep-scan-${{ github.run_id }}
+          path: strix_runs/
+          retention-days: 90
+
+      # Descomente se quiser que o run apareça como "failed" no histórico
+      # de Actions quando vulnerabilidades forem encontradas (ex: para
+      # disparar notificação/alerta do próprio GitHub).
+      # - name: Marcar run como falho se houver achados
+      #   if: steps.scan.outcome == 'failure'
+      #   run: |
+      #     echo "::error::Strix encontrou vulnerabilidades no scan noturno. Veja o Job Summary."
+      #     exit 1
