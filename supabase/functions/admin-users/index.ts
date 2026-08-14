@@ -168,7 +168,7 @@ Deno.serve(async (request) => {
       user_agent: 'admin-users',
     })
     if (auditError) {
-      console.error('initial_password_change_audit_failed', { userId: user.id, error: auditError.message })
+      console.error('initial_password_change_audit_failed', { userId: user.id, errorCode: auditError.code || 'unknown' })
       return response(request, 503, {
         error: 'A senha foi alterada, mas não foi possível registrar o evento de segurança.',
         code: 'password_audit_failed',
