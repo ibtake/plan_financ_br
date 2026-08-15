@@ -44,6 +44,9 @@ Deno.serve(async (request) => {
   const admin = createClient(url, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } })
   let body: Record<string, unknown> = {}
   try { body = await request.json() } catch { /* corpo vazio */ }
+  if (body.action !== undefined && body.action !== 'status' && body.action !== 'revoke') {
+    return response(request, 400, { error: 'Ação inválida.' })
+  }
   if (body.action === 'status') {
     const { data: tokens, error: statusError } = await admin
       .from('widget_tokens')

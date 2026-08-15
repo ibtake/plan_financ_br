@@ -125,7 +125,6 @@ begin
     return false;
   end if;
 
-  -- "iat" = momento de emissao do token, em segundos Unix
   v_token_iat := coalesce((auth.jwt() ->> 'iat')::bigint, 0);
   if v_token_iat = 0 then
     return false;
@@ -135,13 +134,10 @@ begin
   from auth.users
   where id = v_uid;
 
-  -- Sem registro de updated_at nao ha o que comparar: nao bloqueia o acesso
   if v_user_updated is null then
     return true;
   end if;
 
-  -- floor() evita o arredondamento para cima do cast direto a bigint, que
-  -- tornaria falso um token emitido no mesmo segundo da alteracao.
   return v_token_iat + c_grace >= floor(extract(epoch from v_user_updated))::bigint;
 end;
 $$;
@@ -293,41 +289,46 @@ grant select on public.security_events to authenticated;
 
 create or replace function public.log_security_event(
   p_event_type text,
-  p_severity   text default 'info',
-  p_details    jsonb default '{}'::jsonb,
+  p_severity text default 'info',
+  p_details jsonb default '{}'::jsonb,
   p_user_agent text default null
 )
 returns void
 language plpgsql
 security definer
-set search_path = public, pg_temp  -- CORRECAO 1: protecao contra schema shadowing
+set search_path = public, pg_temp
 as $$
 declare
-  v_uid   uuid := auth.uid();
+  v_uid uuid := auth.uid();
   v_email text;
-  v_event_count integer;
+  v_common_count integer;
+  v_critical_count integer;
+  v_severity text := lower(coalesce(nullif(trim(p_severity), ''), 'info'));
   v_details jsonb;
 begin
-  -- Exige usuario autenticado e token ainda valido; eventos de MFA continuam
-  -- permitidos em AAL1 porque esta RPC registra a transicao de autenticacao.
   if v_uid is null or not public.is_token_valid() then
     return;
   end if;
 
-  -- Serializa o limite por usuario dentro da transacao. Sem este lock,
-  -- chamadas concorrentes podem todas observar a mesma contagem e exceder
-  -- a cota de 50 eventos por hora.
   perform pg_advisory_xact_lock(hashtext(v_uid::text));
 
-  -- CORRECAO 3: Rate limiting - conta eventos na ultima hora
-  select count(*) into v_event_count
+  select count(*) into v_critical_count
   from public.security_events
   where user_id = v_uid
+    and lower(coalesce(severity, 'info')) = 'critical'
     and created_at > now() - interval '1 hour';
 
-  -- A severidade e controlada pelo chamador; a cota vale para todos os eventos.
-  if v_event_count >= 50 then
-    -- grava no maximo 1 resumo por hora, em vez de silenciar tudo
+  if v_severity = 'critical' and v_critical_count >= 10 then
+    return;
+  end if;
+
+  select count(*) into v_common_count
+  from public.security_events
+  where user_id = v_uid
+    and lower(coalesce(severity, 'info')) <> 'critical'
+    and created_at > now() - interval '1 hour';
+
+  if v_severity <> 'critical' and v_common_count >= 50 then
     if not exists (
       select 1 from public.security_events
       where user_id = v_uid
@@ -340,7 +341,7 @@ begin
       ) values (
         v_uid, 'rate_limited', 'warning', v_email,
         left(coalesce(p_user_agent, ''), 400),
-        jsonb_build_object('reason', 'hourly log quota reached')
+        jsonb_build_object('reason', 'hourly common audit quota reached')
       );
     end if;
     return;
@@ -352,21 +353,17 @@ begin
   end if;
 
   select email into v_email from auth.users where id = v_uid;
-
   insert into public.security_events (
     user_id, event_type, severity, email, user_agent, details
-  )
-  values (
+  ) values (
     v_uid,
     p_event_type,
-    coalesce(p_severity, 'info'),
+    v_severity,
     v_email,
     left(coalesce(p_user_agent, ''), 400),
     v_details
   );
 
-  -- V-09 (REQ 8): retencao de 7 dias. Restrito ao proprio usuario e apoiado
-  -- no indice (user_id, created_at desc), sem varredura da tabela.
   delete from public.security_events
   where user_id = v_uid
     and created_at < now() - interval '7 days';
@@ -376,6 +373,172 @@ $$;
 revoke all on function public.log_security_event(text, text, jsonb, text) from public;
 revoke all on function public.log_security_event(text, text, jsonb, text) from anon;
 grant execute on function public.log_security_event(text, text, jsonb, text) to authenticated;
+
+-- BLOCO 24 - Rate limit administrativo e ledger de metas padrão (v11, v19, v20)
+create table if not exists public.admin_action_rate_limits (
+  admin_id uuid not null references auth.users(id) on delete cascade,
+  action text not null check (action in ('status', 'list-users', 'create-user', 'widget-metrics')),
+  window_started_at timestamptz not null default now(),
+  request_count integer not null default 0 check (request_count >= 0),
+  primary key (admin_id, action)
+);
+alter table public.admin_action_rate_limits enable row level security;
+alter table public.admin_action_rate_limits force row level security;
+revoke all on table public.admin_action_rate_limits from public, anon, authenticated;
+create or replace function public.consume_admin_rate_limit(p_admin_id uuid, p_action text)
+returns boolean language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_count integer; v_started timestamptz; v_limit integer;
+begin
+  if p_action not in ('status', 'list-users', 'create-user', 'widget-metrics') then raise exception 'acao invalida'; end if;
+  v_limit := case p_action when 'create-user' then 5 when 'list-users' then 30 when 'widget-metrics' then 30 else 60 end;
+  insert into public.admin_action_rate_limits(admin_id, action, window_started_at, request_count)
+  values (p_admin_id, p_action, now(), 1)
+  on conflict (admin_id, action) do update set
+    window_started_at = case when public.admin_action_rate_limits.window_started_at < now() - interval '1 minute' then now() else public.admin_action_rate_limits.window_started_at end,
+    request_count = case when public.admin_action_rate_limits.window_started_at < now() - interval '1 minute' then 1 else public.admin_action_rate_limits.request_count + 1 end
+  returning request_count, window_started_at into v_count, v_started;
+  return v_count <= v_limit;
+end; $$;
+revoke all on function public.consume_admin_rate_limit(uuid,text) from public,anon,authenticated;
+grant execute on function public.consume_admin_rate_limit(uuid,text) to service_role;
+
+create table if not exists public.standard_goal_contributions (
+  id bigint generated always as identity primary key,
+  goal_id text not null,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  amount numeric(14,2) not null check (amount > 0),
+  occurred_on date not null,
+  note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists standard_goal_contributions_goal_date_idx on public.standard_goal_contributions(user_id,goal_id,occurred_on desc,id desc);
+alter table public.standard_goal_contributions enable row level security;
+alter table public.standard_goal_contributions force row level security;
+create policy "own standard goal contributions select" on public.standard_goal_contributions for select to authenticated using (auth.uid()=user_id and public.is_token_valid() and public.has_required_aal());
+grant select on public.standard_goal_contributions to authenticated;
+
+create or replace function public.rebuild_standard_goal(p_goal_id text, p_user_id uuid)
+returns void language plpgsql security definer set search_path=public,pg_temp as $$
+declare total numeric(14,2);
+begin
+  select coalesce(round(sum(amount), 2), 0) into total
+  from public.standard_goal_contributions
+  where goal_id = p_goal_id and user_id = p_user_id;
+  update public.goals set current = total, updated_at = now()
+  where id = p_goal_id and user_id = p_user_id and goal_type = 'standard';
+end; $$;
+create or replace function public.create_standard_goal(
+  p_name text, p_target numeric, p_initial_contribution numeric default 0,
+  p_deadline date default null, p_icon text default '🎯', p_color text default '#6366f1'
+) returns text language plpgsql security definer set search_path=public,pg_temp as $$
+declare u uuid := auth.uid(); gid text := gen_random_uuid()::text;
+begin
+  if u is null or not public.is_token_valid() or not public.has_required_aal() then
+    raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000';
+  end if;
+  if nullif(btrim(p_name),'') is null or char_length(btrim(p_name)) > 120
+     or p_target <= 0 or p_initial_contribution < 0 or p_deadline > current_date + interval '100 years' then
+    raise exception 'dados da meta invalidos' using errcode='22023';
+  end if;
+  insert into public.goals (id,user_id,name,target,current,deadline,icon,color,goal_type)
+  values (gid,u,btrim(p_name),round(p_target,2),0,p_deadline,left(coalesce(p_icon,'🎯'),8),coalesce(p_color,'#6366f1'),'standard');
+  if p_initial_contribution > 0 then
+    insert into public.standard_goal_contributions (goal_id,user_id,amount,occurred_on,note)
+    values (gid,u,round(p_initial_contribution,2),current_date,'Aporte inicial');
+    perform public.rebuild_standard_goal(gid,u);
+  end if;
+  return gid;
+end; $$;
+create or replace function public.add_standard_goal_contribution(
+  p_goal_id text, p_amount numeric, p_occurred_on date
+) returns void language plpgsql security definer set search_path=public,pg_temp as $$
+declare u uuid := auth.uid();
+begin
+  if u is null or not public.is_token_valid() or not public.has_required_aal() then
+    raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000';
+  end if;
+  perform 1 from public.goals
+  where id=p_goal_id and user_id=u and goal_type='standard' for update;
+  if not found then raise exception 'meta nao encontrada' using errcode='P0002'; end if;
+  if p_amount <= 0 or p_occurred_on is null or p_occurred_on > current_date then
+    raise exception 'aporte invalido' using errcode='22023';
+  end if;
+  -- Backups antigos restauram somente goals.current. Ao primeiro novo aporte,
+  -- transforma esse saldo em um lancamento para que ele nunca seja perdido.
+  insert into public.standard_goal_contributions (goal_id,user_id,amount,occurred_on,note)
+  select g.id,g.user_id,round(g.current,2),coalesce(g.updated_at::date,current_date),'Saldo restaurado'
+  from public.goals g
+  where g.id=p_goal_id and g.user_id=u and g.current>0
+    and not exists (select 1 from public.standard_goal_contributions c where c.goal_id=g.id and c.user_id=g.user_id);
+  insert into public.standard_goal_contributions (goal_id,user_id,amount,occurred_on)
+  values (p_goal_id,u,round(p_amount,2),p_occurred_on);
+  perform public.rebuild_standard_goal(p_goal_id,u);
+end; $$;
+create or replace function public.update_standard_goal_contribution(
+  p_contribution_id bigint, p_amount numeric, p_occurred_on date
+) returns void language plpgsql security definer set search_path=public,pg_temp as $$
+declare u uuid := auth.uid(); gid text;
+begin
+  if u is null or not public.is_token_valid() or not public.has_required_aal() then
+    raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000';
+  end if;
+  select c.goal_id into gid from public.standard_goal_contributions c
+  join public.goals g on g.user_id=c.user_id and g.id=c.goal_id
+  where c.id=p_contribution_id and c.user_id=u and g.goal_type='standard' for update;
+  if not found then raise exception 'aporte indisponivel para edicao' using errcode='P0002'; end if;
+  if p_amount <= 0 or p_occurred_on is null or p_occurred_on > current_date then
+    raise exception 'aporte invalido' using errcode='22023';
+  end if;
+  update public.standard_goal_contributions
+  set amount=round(p_amount,2), occurred_on=p_occurred_on, updated_at=now()
+  where id=p_contribution_id and user_id=u;
+  perform public.rebuild_standard_goal(gid,u);
+end; $$;
+create or replace function public.update_standard_goal_metadata(
+  p_goal_id text, p_name text, p_target numeric, p_deadline date,
+  p_icon text default '🎯', p_color text default '#6366f1'
+) returns void language plpgsql security definer set search_path=public,pg_temp as $$
+declare u uuid := auth.uid();
+begin
+  if u is null or not public.is_token_valid() or not public.has_required_aal() then
+    raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000';
+  end if;
+  if nullif(btrim(p_name),'') is null or char_length(btrim(p_name)) > 120
+     or p_target <= 0 or p_deadline > current_date + interval '100 years' then
+    raise exception 'dados da meta invalidos' using errcode='22023';
+  end if;
+  update public.goals
+  set name=btrim(p_name), target=round(p_target,2), deadline=p_deadline,
+      icon=left(coalesce(p_icon,'🎯'),8), color=coalesce(p_color,'#6366f1'), updated_at=now()
+  where id=p_goal_id and user_id=u and goal_type='standard';
+  if not found then raise exception 'meta nao encontrada' using errcode='P0002'; end if;
+end; $$;
+revoke all on function public.rebuild_standard_goal(text,uuid) from public,anon,authenticated;
+revoke all on function public.create_standard_goal(text,numeric,numeric,date,text,text) from public,anon;
+revoke all on function public.add_standard_goal_contribution(text,numeric,date) from public,anon;
+revoke all on function public.update_standard_goal_contribution(bigint,numeric,date) from public,anon;
+revoke all on function public.update_standard_goal_metadata(text,text,numeric,date,text,text) from public,anon;
+grant execute on function public.create_standard_goal(text,numeric,numeric,date,text,text) to authenticated;
+grant execute on function public.add_standard_goal_contribution(text,numeric,date) to authenticated;
+grant execute on function public.update_standard_goal_contribution(bigint,numeric,date) to authenticated;
+grant execute on function public.update_standard_goal_metadata(text,text,numeric,date,text,text) to authenticated;
+
+create or replace function public.update_reverse_goal_contribution(p_contribution_id bigint,p_amount numeric,p_occurred_on date)
+returns void language plpgsql security definer set search_path=public,pg_temp as $$ declare u uuid:=auth.uid(); gid text; start_date date; completed_at timestamptz;
+begin
+ if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if;
+ select c.goal_id,g.reverse_start_date,g.reverse_completed_at into gid,start_date,completed_at from public.reverse_goal_contributions c join public.goals g on g.user_id=c.user_id and g.id=c.goal_id where c.id=p_contribution_id and c.user_id=u for update;
+ if not found or completed_at is not null then raise exception 'aporte indisponivel para edicao' using errcode='22023'; end if;
+ if p_amount<=0 or p_occurred_on is null or p_occurred_on<start_date or p_occurred_on>current_date then raise exception 'aporte invalido' using errcode='22023'; end if;
+ update public.reverse_goal_contributions set amount=round(p_amount,2),occurred_on=p_occurred_on where id=p_contribution_id and user_id=u;
+ insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(gid,u,'recalculated',current_date,jsonb_build_object('message','Historico recalculado devido a alteracao de aporte.'));
+ perform public.rebuild_reverse_goal_for_user(gid,u);
+end; $$;
+revoke all on function public.update_reverse_goal_contribution(bigint,numeric,date) from public,anon;
+grant execute on function public.update_reverse_goal_contribution(bigint,numeric,date) to authenticated;
+
+-- BLOCO 25 - replace_my_data final: metas padrão, metas reversas e PGBL (v37)
 
 
 -- =====================================================================
@@ -755,6 +918,10 @@ create trigger goals_no_owner_change
 
 grant select, insert, update, delete on public.goals to authenticated;
 
+alter table public.standard_goal_contributions
+  add constraint standard_goal_contributions_goal_fk
+  foreign key (user_id, goal_id) references public.goals(user_id, id) on delete cascade;
+
 
 -- =====================================================================
 -- BLOCO 13.1 - Restauracao transacional de backup
@@ -765,67 +932,29 @@ grant select, insert, update, delete on public.goals to authenticated;
 -- A funcao usa o usuario autenticado, nunca um user_id recebido do navegador,
 -- e repete as verificacoes de token e AAL/MFA porque SECURITY DEFINER ignora RLS.
 
-create or replace function public.replace_my_data(p_data jsonb)
-returns void
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_uid uuid := auth.uid();
+
+-- BLOCO 22 - Métricas agregadas de autenticação do widget (v35)
+create table if not exists public.widget_auth_metrics (
+  metric_date date not null default current_date,
+  failure_type text not null check (failure_type in ('token', 'refresh', 'install_code', 'unauthorized')),
+  sampled_count integer not null default 0 check (sampled_count >= 0),
+  last_sampled_at timestamptz not null default now(),
+  primary key (metric_date, failure_type)
+);
+alter table public.widget_auth_metrics enable row level security;
+alter table public.widget_auth_metrics force row level security;
+revoke all on table public.widget_auth_metrics from public, anon, authenticated;
+create or replace function public.record_widget_auth_metric(p_failure_type text)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  if v_uid is null or not public.is_token_valid() or not public.has_required_aal() then
-    raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode = '28000';
-  end if;
-
-  delete from public.transactions where user_id = v_uid;
-  delete from public.budgets where user_id = v_uid;
-  delete from public.goals where user_id = v_uid;
-  delete from public.categories where user_id = v_uid;
-
-  insert into public.categories (user_id, id, name, icon, color, type, target_percentage)
-  select v_uid, x.id, x.name, x.icon, x.color, x.type, coalesce(x.target_percentage, 0)
-  from jsonb_to_recordset(p_data->'categories')
-    as x(id text, name text, icon text, color text, type text, target_percentage numeric);
-
-  insert into public.transactions (
-    user_id, id, type, description, amount, category_id, date, method,
-    paid, recurrence, recurrence_end, installments, tags, note,
-    paid_occurrences, created_at, updated_at
-  )
-  select
-    v_uid, x.id, x.type, x.description, x.amount, x.category_id, x.date, x.method,
-    x.paid, x.recurrence, x.recurrence_end, x.installments, x.tags, x.note,
-    x.paid_occurrences, coalesce(x.created_at, now()), coalesce(x.updated_at, now())
-  from jsonb_to_recordset(p_data->'transactions')
-    as x(
-      id text, type text, description text, amount numeric, category_id text,
-      date date, method text, paid boolean, recurrence text, recurrence_end date,
-      installments integer, tags text[], note text, paid_occurrences jsonb,
-      created_at timestamptz, updated_at timestamptz
-    );
-
-  insert into public.budgets (user_id, category_id, limit_amount, created_at, updated_at)
-  select v_uid, x.category_id, x.limit_amount,
-    coalesce(x.created_at, now()), coalesce(x.updated_at, now())
-  from jsonb_to_recordset(p_data->'budgets')
-    as x(category_id text, limit_amount numeric, created_at timestamptz, updated_at timestamptz);
-
-  insert into public.goals (
-    user_id, id, name, target, current, deadline, icon, color, created_at, updated_at
-  )
-  select v_uid, x.id, x.name, x.target, x.current, x.deadline, x.icon, x.color,
-    coalesce(x.created_at, now()), coalesce(x.updated_at, now())
-  from jsonb_to_recordset(p_data->'goals')
-    as x(
-      id text, name text, target numeric, current numeric, deadline date,
-      icon text, color text, created_at timestamptz, updated_at timestamptz
-    );
-end;
-$$;
-
-revoke execute on function public.replace_my_data(jsonb) from public, anon;
-grant execute on function public.replace_my_data(jsonb) to authenticated;
+  if p_failure_type not in ('token', 'refresh', 'install_code', 'unauthorized') then return; end if;
+  insert into public.widget_auth_metrics (metric_date, failure_type, sampled_count)
+  values (current_date, p_failure_type, 1)
+  on conflict (metric_date, failure_type) do update
+    set sampled_count = least(public.widget_auth_metrics.sampled_count + 1, 1000000000), last_sampled_at = now();
+end; $$;
+revoke all on function public.record_widget_auth_metric(text) from public, anon, authenticated;
+grant execute on function public.record_widget_auth_metric(text) to service_role;
 
 -- BLOCO 22 - Widget Scriptable (códigos temporários e tokens read-only)
 -- O frontend nunca acessa estas tabelas diretamente; somente as Edge
@@ -888,7 +1017,11 @@ alter table public.widget_install_codes enable row level security;
 alter table public.widget_tokens enable row level security;
 revoke all on public.widget_install_codes, public.widget_tokens from public, anon, authenticated;
 
-create or replace function public.activate_widget_install_code(p_code_hash text, p_token_hash text, p_refresh_token_hash text)
+create or replace function public.activate_widget_install_code(
+  p_code_hash text,
+  p_token_hash text,
+  p_refresh_token_hash text
+)
 returns table (install_code_id uuid, user_id uuid)
 language sql
 security definer
@@ -902,13 +1035,16 @@ as $$
       and expires_at > now()
     returning id, user_id
   ), inserted as (
-    insert into public.widget_tokens (install_code_id, user_id, token_hash, refresh_token_hash)
-    select id, user_id, p_token_hash, p_refresh_token_hash
+    insert into public.widget_tokens (
+      install_code_id, user_id, token_hash, refresh_token_hash,
+      access_expires_at, refresh_expires_at
+    )
+    select id, user_id, p_token_hash, p_refresh_token_hash,
+      now() + interval '30 days', now() + interval '365 days'
     from consumed
     returning install_code_id, user_id
   )
-  select install_code_id, user_id
-  from inserted;
+  select install_code_id, user_id from inserted;
 $$;
 
 revoke all on function public.activate_widget_install_code(text, text, text) from public, anon, authenticated;
@@ -950,22 +1086,42 @@ create table if not exists public.widget_rate_limits (
 alter table public.widget_rate_limits enable row level security;
 alter table public.widget_rate_limits force row level security;
 
-create or replace function public.consume_widget_rate_limit(p_key_hash text, p_operation text)
+create or replace function public.consume_widget_rate_limit(
+  p_key_hash text,
+  p_operation text
+)
 returns table (allowed boolean, retry_after_seconds integer)
-language plpgsql security definer set search_path = public, pg_temp as $$
-declare v_count integer; v_started timestamptz; v_limit integer; v_window_seconds integer := 60;
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_count integer;
+  v_started timestamptz;
+  v_limit integer;
+  v_window_seconds integer := 60;
 begin
-  if p_key_hash is null or p_key_hash !~ '^[0-9a-f]{64}$' then raise exception 'chave de rate limit invalida'; end if;
-  if p_operation not in ('token', 'refresh', 'install') then raise exception 'operacao de rate limit invalida'; end if;
+  if p_key_hash is null or p_key_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'chave de rate limit invalida';
+  end if;
+  if p_operation not in ('token', 'refresh', 'install') then
+    raise exception 'operacao de rate limit invalida';
+  end if;
+
   v_limit := case p_operation when 'token' then 60 when 'refresh' then 10 else 5 end;
+
   insert into public.widget_rate_limits(key_hash, operation, window_started_at, request_count)
   values (p_key_hash, p_operation, now(), 1)
   on conflict (key_hash, operation) do update set
     window_started_at = case when public.widget_rate_limits.window_started_at < now() - make_interval(secs => v_window_seconds) then now() else public.widget_rate_limits.window_started_at end,
     request_count = case when public.widget_rate_limits.window_started_at < now() - make_interval(secs => v_window_seconds) then 1 else public.widget_rate_limits.request_count + 1 end
   returning request_count, window_started_at into v_count, v_started;
-  return query select v_count <= v_limit, greatest(0, ceil(extract(epoch from (v_started + make_interval(secs => v_window_seconds) - now())))::integer);
-end; $$;
+
+  return query select
+    v_count <= v_limit,
+    greatest(0, ceil(extract(epoch from (v_started + make_interval(secs => v_window_seconds) - now())))::integer);
+end;
+$$;
 
 revoke all on table public.widget_rate_limits from public, anon, authenticated;
 revoke all on function public.consume_widget_rate_limit(text, text) from public, anon, authenticated;
@@ -1022,8 +1178,6 @@ begin
     ('dividas',       new.id, 'Dívidas',           'expense', '#dc2626', '💳', false),
     ('impostos',      new.id, 'Impostos',          'expense', '#64748b', '🧾', false),
     ('outros-d',      new.id, 'Outros',            'expense', '#94a3b8', '📦', false),
-    -- V-10 (REQ 3): categorias do tipo reinvestido, para que o usuario consiga
-    -- lancar reinvestimento sem precisar cadastrar categoria antes
     ('aportes',       new.id, 'Aportes e investimentos', 'reinvested', '#8b5cf6', '📈', false),
     ('outros-ri',     new.id, 'Outros reinvestimentos',  'reinvested', '#a855f7', '📦', false),
     ('salario',       new.id, 'Salário',           'income',  '#22c55e', '💼', false),
@@ -1054,29 +1208,20 @@ create trigger on_auth_user_created
 -- =====================================================================
 
 create or replace function public.delete_my_data()
-returns void
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_uid uuid := auth.uid();
+returns void language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_uid uuid := auth.uid();
 begin
   if v_uid is null or not public.is_token_valid() or not public.has_required_aal() then
     raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode = '28000';
   end if;
-
   delete from public.transactions where user_id = v_uid;
-  delete from public.budgets      where user_id = v_uid;
-  delete from public.goals        where user_id = v_uid;
-  delete from public.categories   where user_id = v_uid;
-  delete from public.pgbl_plans    where user_id = v_uid;
-
+  delete from public.budgets where user_id = v_uid;
+  delete from public.goals where user_id = v_uid;
+  delete from public.categories where user_id = v_uid;
+  delete from public.pgbl_plans where user_id = v_uid;
   insert into public.security_events (user_id, event_type, severity, details)
-  values (v_uid, 'bulk_delete', 'warning',
-          jsonb_build_object('scope', 'all_financial_data'));
-end;
-$$;
+  values (v_uid, 'bulk_delete', 'warning', jsonb_build_object('scope', 'all_financial_data'));
+end; $$;
 
 revoke all on function public.delete_my_data() from public;
 revoke all on function public.delete_my_data() from anon;
@@ -1190,47 +1335,6 @@ create policy "own reverse goal contributions select" on public.reverse_goal_con
 create policy "own reverse goal history select" on public.reverse_goal_history for select to authenticated using (auth.uid() = user_id and public.is_token_valid() and public.has_required_aal());
 grant select on public.selic_monthly_rates, public.reverse_goal_contributions, public.reverse_goal_history to authenticated;
 
-create or replace function public.rebuild_reverse_goal(p_goal_id text) returns void language plpgsql security definer set search_path = public, pg_temp as $$
-declare g public.goals%rowtype; p date; last_month date := (date_trunc('month', current_date)::date - interval '1 month')::date; r numeric(10,6); bal numeric(14,2); correction numeric(14,2); contribution numeric(14,2); corrected numeric(14,2);
-begin
-  select * into g from public.goals where id = p_goal_id for update;
-  if not found or g.goal_type <> 'reverse' then raise exception 'meta reversa nao encontrada' using errcode = 'P0002'; end if;
-  delete from public.reverse_goal_history where goal_id = g.id; bal := g.reverse_original_amount; corrected := g.reverse_original_amount; p := date_trunc('month', g.reverse_start_date)::date;
-  while p <= last_month loop
-    select rate_percent into r from public.selic_monthly_rates where reference_month = p; exit when not found;
-    correction := round(bal * (r / 100) * g.reverse_selic_factor, 2);
-    select coalesce(sum(amount),0)::numeric(14,2) into contribution from public.reverse_goal_contributions where goal_id=g.id and occurred_on>=p and occurred_on<(p+interval '1 month')::date;
-    insert into public.reverse_goal_history(goal_id,user_id,reference_month,applied_on,balance_before,balance_after,selic_rate_percent,selic_factor,correction_amount,contribution_amount) values(g.id,g.user_id,p,(p+interval '1 month')::date,bal,greatest(0,round(bal+correction-contribution,2)),r,g.reverse_selic_factor,correction,contribution);
-    bal:=greatest(0,round(bal+correction-contribution,2)); corrected:=round(corrected+correction,2); p:=(p+interval '1 month')::date;
-  end loop;
-  select coalesce(sum(amount),0)::numeric(14,2) into contribution from public.reverse_goal_contributions where goal_id=g.id and occurred_on>=p; bal:=greatest(0,round(bal-contribution,2));
-  update public.goals set reverse_remaining_amount=bal,reverse_corrected_amount=corrected,target=corrected,current=greatest(0,round(corrected-bal,2)),reverse_completed_at=case when bal=0 then coalesce(reverse_completed_at,now()) else null end,updated_at=now() where id=g.id;
-end; $$;
-
-create or replace function public.create_reverse_goal(p_name text,p_original_amount numeric,p_initial_contribution numeric,p_start_date date,p_selic_factor numeric,p_icon text default '🎯',p_color text default '#6366f1') returns text language plpgsql security definer set search_path = public, pg_temp as $$
-declare u uuid:=auth.uid(); id text:=gen_random_uuid()::text;
-begin
-  if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if;
-  if nullif(btrim(p_name),'') is null or char_length(btrim(p_name))>120 or p_original_amount<=0 or p_initial_contribution<0 or p_initial_contribution>p_original_amount or p_start_date is null or p_start_date>current_date or p_selic_factor not between .5 and 1.5 then raise exception 'dados da meta invalidos' using errcode='22023'; end if;
-  insert into public.goals(id,user_id,name,target,current,deadline,icon,color,goal_type,reverse_original_amount,reverse_remaining_amount,reverse_corrected_amount,reverse_start_date,reverse_selic_factor) values(id,u,btrim(p_name),p_original_amount,p_initial_contribution,null,left(coalesce(p_icon,'🎯'),8),coalesce(p_color,'#6366f1'),'reverse',p_original_amount,p_original_amount-p_initial_contribution,p_original_amount,p_start_date,round(p_selic_factor,4));
-  if p_initial_contribution>0 then insert into public.reverse_goal_contributions(goal_id,user_id,amount,occurred_on,note) values(id,u,round(p_initial_contribution,2),p_start_date,'Aporte inicial'); end if;
-  perform public.rebuild_reverse_goal(id); return id;
-end; $$;
-
-create or replace function public.add_reverse_goal_contribution(p_goal_id text,p_amount numeric,p_occurred_on date,p_note text default null) returns void language plpgsql security definer set search_path = public, pg_temp as $$
-declare u uuid:=auth.uid(); start_date date;
-begin
-  if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if;
-  select reverse_start_date into start_date from public.goals where id=p_goal_id and user_id=u and goal_type='reverse'; if not found then raise exception 'meta reversa nao encontrada' using errcode='P0002'; end if;
-  if p_amount<=0 or p_occurred_on is null or p_occurred_on<start_date or p_occurred_on>current_date or (p_note is not null and char_length(p_note)>500) then raise exception 'aporte invalido' using errcode='22023'; end if;
-  insert into public.reverse_goal_contributions(goal_id,user_id,amount,occurred_on,note) values(p_goal_id,u,round(p_amount,2),p_occurred_on,nullif(btrim(p_note),'')); perform public.rebuild_reverse_goal(p_goal_id);
-end; $$;
-
-create or replace function public.rebuild_all_reverse_goals() returns integer language plpgsql security definer set search_path = public, pg_temp as $$ declare g record; n integer:=0; begin for g in select id from public.goals where goal_type='reverse' and reverse_completed_at is null loop perform public.rebuild_reverse_goal(g.id); n:=n+1; end loop; return n; end; $$;
-revoke all on function public.rebuild_reverse_goal(text) from public,anon,authenticated; revoke all on function public.rebuild_all_reverse_goals() from public,anon,authenticated;
-revoke all on function public.create_reverse_goal(text,numeric,numeric,date,numeric,text,text) from public,anon; revoke all on function public.add_reverse_goal_contribution(text,numeric,date,text) from public,anon;
-grant execute on function public.create_reverse_goal(text,numeric,numeric,date,numeric,text,text) to authenticated; grant execute on function public.add_reverse_goal_contribution(text,numeric,date,text) to authenticated;
-
 -- BLOCO 18 - Complemento da Meta Reversa V1.3.0 (estado final para instalacao limpa)
 alter table public.goals add column if not exists reverse_total_contributed numeric(14,2) not null default 0;
 alter table public.goals add column if not exists reverse_correction_amount numeric(14,2) not null default 0;
@@ -1244,22 +1348,143 @@ alter table public.reverse_goal_retention_settings enable row level security; al
 create policy "own reverse goal events select" on public.reverse_goal_events for select to authenticated using (auth.uid()=user_id and public.is_token_valid() and public.has_required_aal());
 create policy "own reverse goal retention select" on public.reverse_goal_retention_settings for select to authenticated using (auth.uid()=user_id and public.is_token_valid() and public.has_required_aal());
 grant select on public.reverse_goal_events, public.reverse_goal_retention_settings to authenticated;
-create or replace function public.rebuild_reverse_goal(p_goal_id text) returns void language plpgsql security definer set search_path=public,pg_temp as $$
-declare g public.goals%rowtype; p date; last_complete date := (date_trunc('month',current_date)::date-interval '1 month')::date; r numeric(10,6); bal numeric(14,2); correction numeric(14,2); contribution numeric(14,2); correction_total numeric(14,2):=0; total_contributed numeric(14,2):=0; completed_now boolean:=false; completion_date date;
-begin select * into g from public.goals where id=p_goal_id for update; if not found or g.goal_type<>'reverse' then raise exception 'meta reversa nao encontrada' using errcode='P0002'; end if; if g.reverse_completed_at is not null or coalesce(g.reverse_remaining_amount,0)=0 then return; end if;
-delete from public.reverse_goal_history where goal_id=g.id; bal:=g.reverse_original_amount; p:=date_trunc('month',g.reverse_start_date)::date;
-while p<=last_complete loop select rate_percent into r from public.selic_monthly_rates where reference_month=p; exit when not found; select coalesce(sum(amount),0)::numeric(14,2) into contribution from public.reverse_goal_contributions where goal_id=g.id and occurred_on>=p and occurred_on<(p+interval '1 month')::date; total_contributed:=total_contributed+contribution; correction:=case when bal<=contribution then 0 else round((bal-contribution)*(r/100)*g.reverse_selic_factor,2) end; insert into public.reverse_goal_history(goal_id,user_id,reference_month,applied_on,balance_before,balance_after,selic_rate_percent,selic_factor,correction_amount,contribution_amount) values(g.id,g.user_id,p,(p+interval '1 month')::date,bal,greatest(0,round(bal-contribution+correction,2)),r,g.reverse_selic_factor,correction,contribution); bal:=greatest(0,round(bal-contribution+correction,2)); correction_total:=round(correction_total+correction,2); if bal=0 then select max(occurred_on) into completion_date from public.reverse_goal_contributions where goal_id=g.id and occurred_on>=p and occurred_on<(p+interval '1 month')::date; end if; exit when bal=0; p:=(p+interval '1 month')::date; end loop;
-if bal>0 then select coalesce(sum(amount),0)::numeric(14,2) into contribution from public.reverse_goal_contributions where goal_id=g.id and occurred_on>=p; total_contributed:=total_contributed+contribution; bal:=greatest(0,round(bal-contribution,2)); if bal=0 then select max(occurred_on) into completion_date from public.reverse_goal_contributions where goal_id=g.id and occurred_on>=p; end if; end if; completed_now:=bal=0;
-update public.goals set reverse_remaining_amount=bal,reverse_correction_amount=correction_total,reverse_corrected_amount=round(reverse_original_amount+correction_total,2),reverse_total_contributed=total_contributed,reverse_progress_percent=case when round(reverse_original_amount+correction_total,2)=0 then 0 else round(least(100,(1-bal/round(reverse_original_amount+correction_total,2))*100),2) end,target=round(reverse_original_amount+correction_total,2),current=total_contributed,reverse_completed_at=case when completed_now then coalesce(completion_date,current_date)::timestamptz else null end,updated_at=now() where id=g.id;
-if completed_now then insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(g.id,g.user_id,'completed',coalesce(completion_date,current_date),jsonb_build_object('message','A meta foi concluida e nao recebera novas correcoes.')); end if; end; $$;
-create or replace function public.create_reverse_goal(p_name text,p_original_amount numeric,p_initial_contribution numeric,p_start_date date,p_selic_factor numeric,p_icon text default '🎯',p_color text default '#6366f1') returns text language plpgsql security definer set search_path=public,pg_temp as $$
-declare u uuid:=auth.uid(); id text:=gen_random_uuid()::text; begin if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if; if nullif(btrim(p_name),'') is null or char_length(btrim(p_name))>120 or p_original_amount<=0 or p_initial_contribution<0 or p_initial_contribution>p_original_amount or p_start_date is null or p_start_date>current_date or p_selic_factor not between .5 and 1.5 then raise exception 'dados da meta invalidos' using errcode='22023'; end if; insert into public.goals(id,user_id,name,target,current,deadline,icon,color,goal_type,reverse_original_amount,reverse_remaining_amount,reverse_corrected_amount,reverse_start_date,reverse_selic_factor) values(id,u,btrim(p_name),p_original_amount,p_initial_contribution,null,left(coalesce(p_icon,'🎯'),8),coalesce(p_color,'#6366f1'),'reverse',p_original_amount,p_original_amount-p_initial_contribution,p_original_amount,p_start_date,round(p_selic_factor,4)); insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(id,u,'created',p_start_date,jsonb_build_object('message','Meta Reversa criada.')); if p_initial_contribution>0 then insert into public.reverse_goal_contributions(goal_id,user_id,amount,occurred_on,note) values(id,u,round(p_initial_contribution,2),p_start_date,'Aporte inicial'); insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(id,u,'contribution',p_start_date,jsonb_build_object('amount',round(p_initial_contribution,2),'note','Aporte inicial')); end if; perform public.rebuild_reverse_goal(id); return id; end; $$;
-create or replace function public.add_reverse_goal_contribution(p_goal_id text,p_amount numeric,p_occurred_on date,p_note text default null) returns void language plpgsql security definer set search_path=public,pg_temp as $$
-declare u uuid:=auth.uid(); start_date date; completed_at timestamptz; begin if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if; select reverse_start_date,reverse_completed_at into start_date,completed_at from public.goals where id=p_goal_id and user_id=u and goal_type='reverse' for update; if not found then raise exception 'meta reversa nao encontrada' using errcode='P0002'; end if; if completed_at is not null then raise exception 'meta reversa concluida nao aceita novos aportes' using errcode='22023'; end if; if p_amount<=0 or p_occurred_on is null or p_occurred_on<start_date or p_occurred_on>current_date or (p_note is not null and char_length(p_note)>500) then raise exception 'aporte invalido' using errcode='22023'; end if; insert into public.reverse_goal_contributions(goal_id,user_id,amount,occurred_on,note) values(p_goal_id,u,round(p_amount,2),p_occurred_on,nullif(btrim(p_note),'')); insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(p_goal_id,u,'contribution',p_occurred_on,jsonb_build_object('amount',round(p_amount,2),'note',nullif(btrim(p_note),''))); if p_occurred_on<current_date then insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(p_goal_id,u,'recalculated',current_date,jsonb_build_object('message','Historico recalculado devido a um aporte registrado retroativamente.','contribution_date',p_occurred_on)); end if; perform public.rebuild_reverse_goal(p_goal_id); end; $$;
-create or replace function public.rebuild_all_reverse_goals() returns integer language plpgsql security definer set search_path=public,pg_temp as $$ declare item record; c integer:=0; begin for item in select id from public.goals where goal_type='reverse' and reverse_completed_at is null and reverse_remaining_amount>0 loop perform public.rebuild_reverse_goal(item.id); c:=c+1; end loop; return c; end; $$;
-create or replace function public.set_reverse_goal_retention(p_months smallint default null) returns void language plpgsql security definer set search_path=public,pg_temp as $$ declare u uuid:=auth.uid(); begin if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if; if p_months is not null and p_months not between 1 and 12 then raise exception 'periodo de retencao invalido' using errcode='22023'; end if; insert into public.reverse_goal_retention_settings(user_id,completed_goal_retention_months,updated_at) values(u,p_months,now()) on conflict(user_id) do update set completed_goal_retention_months=excluded.completed_goal_retention_months,updated_at=now(); end; $$;
-create or replace function public.cleanup_expired_reverse_goals() returns integer language plpgsql security definer set search_path=public,pg_temp as $$ declare deleted_count integer; begin delete from public.goals g using public.reverse_goal_retention_settings s where g.user_id=s.user_id and g.goal_type='reverse' and g.reverse_completed_at is not null and s.completed_goal_retention_months is not null and g.reverse_completed_at<now()-make_interval(months=>s.completed_goal_retention_months); get diagnostics deleted_count=row_count; return deleted_count; end; $$;
+create or replace function public.rebuild_reverse_goal(p_goal_id text)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_goal public.goals%rowtype;
+  v_period date;
+  v_last_complete date := (date_trunc('month', current_date)::date - interval '1 month')::date;
+  v_rate numeric(10,6);
+  v_balance numeric(14,2);
+  v_correction numeric(14,2);
+  v_contribution numeric(14,2);
+  v_correction_total numeric(14,2) := 0;
+  v_total_contributed numeric(14,2) := 0;
+  v_completed_now boolean := false;
+  v_completion_date date;
+begin
+  select * into v_goal from public.goals where id = p_goal_id for update;
+  if not found or v_goal.goal_type <> 'reverse' then
+    raise exception 'meta reversa nao encontrada' using errcode = 'P0002';
+  end if;
+  -- A conclusao e definitiva: historico e valores nao voltam a ser processados.
+  if v_goal.reverse_completed_at is not null or coalesce(v_goal.reverse_remaining_amount, 0) = 0 then
+    return;
+  end if;
+
+  delete from public.reverse_goal_history where goal_id = v_goal.id;
+  v_balance := v_goal.reverse_original_amount;
+  v_period := date_trunc('month', v_goal.reverse_start_date)::date;
+
+  while v_period <= v_last_complete loop
+    select rate_percent into v_rate from public.selic_monthly_rates where reference_month = v_period;
+    exit when not found;
+    select coalesce(sum(amount), 0)::numeric(14,2) into v_contribution
+      from public.reverse_goal_contributions
+      where goal_id = v_goal.id and occurred_on >= v_period and occurred_on < (v_period + interval '1 month')::date;
+    v_total_contributed := v_total_contributed + v_contribution;
+    -- O aporte reduz o saldo que existia naquele mes antes da correcao mensal.
+    v_correction := case when v_balance <= v_contribution then 0 else round((v_balance - v_contribution) * (v_rate / 100) * v_goal.reverse_selic_factor, 2) end;
+    insert into public.reverse_goal_history (
+      goal_id, user_id, reference_month, applied_on, balance_before, balance_after,
+      selic_rate_percent, selic_factor, correction_amount, contribution_amount
+    ) values (
+      v_goal.id, v_goal.user_id, v_period, (v_period + interval '1 month')::date,
+      v_balance, greatest(0, round(v_balance - v_contribution + v_correction, 2)),
+      v_rate, v_goal.reverse_selic_factor, v_correction, v_contribution
+    );
+    v_balance := greatest(0, round(v_balance - v_contribution + v_correction, 2));
+    v_correction_total := round(v_correction_total + v_correction, 2);
+    if v_balance = 0 then
+      select max(occurred_on) into v_completion_date from public.reverse_goal_contributions
+      where goal_id = v_goal.id and occurred_on >= v_period and occurred_on < (v_period + interval '1 month')::date;
+    end if;
+    exit when v_balance = 0;
+    v_period := (v_period + interval '1 month')::date;
+  end loop;
+
+  if v_balance > 0 then
+    select coalesce(sum(amount), 0)::numeric(14,2) into v_contribution
+      from public.reverse_goal_contributions where goal_id = v_goal.id and occurred_on >= v_period;
+    v_total_contributed := v_total_contributed + v_contribution;
+    v_balance := greatest(0, round(v_balance - v_contribution, 2));
+    if v_balance = 0 then
+      select max(occurred_on) into v_completion_date from public.reverse_goal_contributions where goal_id = v_goal.id and occurred_on >= v_period;
+    end if;
+  end if;
+  v_completed_now := v_balance = 0;
+
+  update public.goals set
+    reverse_remaining_amount = v_balance,
+    reverse_correction_amount = v_correction_total,
+    reverse_corrected_amount = round(reverse_original_amount + v_correction_total, 2),
+    reverse_total_contributed = v_total_contributed,
+    reverse_progress_percent = case when round(reverse_original_amount + v_correction_total, 2) = 0 then 0 else round(least(100, (1 - v_balance / round(reverse_original_amount + v_correction_total, 2)) * 100), 2) end,
+    target = round(reverse_original_amount + v_correction_total, 2),
+    current = v_total_contributed,
+    reverse_completed_at = case when v_completed_now then coalesce(v_completion_date, current_date)::timestamptz else null end,
+    updated_at = now()
+  where id = v_goal.id;
+  if v_completed_now then
+    insert into public.reverse_goal_events (goal_id, user_id, event_type, occurred_on, details)
+    values (v_goal.id, v_goal.user_id, 'completed', coalesce(v_completion_date, current_date), jsonb_build_object('message', 'A meta foi concluida e nao recebera novas correcoes.'));
+  end if;
+end;
+$$;
+create or replace function public.create_reverse_goal(p_name text,p_original_amount numeric,p_initial_contribution numeric,p_start_date date,p_selic_factor numeric,p_icon text default '🎯',p_color text default '#6366f1')
+returns text language plpgsql security definer set search_path=public,pg_temp as $$
+declare u uuid:=auth.uid(); gid text:=gen_random_uuid()::text;
+begin
+ if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if;
+ if nullif(btrim(p_name),'') is null or char_length(btrim(p_name))>120 or p_original_amount<=0 or p_initial_contribution<0 or p_initial_contribution>p_original_amount or p_start_date is null or p_start_date<current_date-interval '19 years' or p_start_date>current_date or p_selic_factor not between .5 and 1.5 then raise exception 'dados da meta invalidos' using errcode='22023'; end if;
+ insert into public.goals(id,user_id,name,target,current,deadline,icon,color,goal_type,reverse_original_amount,reverse_remaining_amount,reverse_corrected_amount,reverse_start_date,reverse_selic_factor) values(gid,u,btrim(p_name),p_original_amount,0,null,left(coalesce(p_icon,'🎯'),8),coalesce(p_color,'#6366f1'),'reverse',p_original_amount,p_original_amount,p_original_amount,p_start_date,round(p_selic_factor,4));
+ insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(gid,u,'created',p_start_date,jsonb_build_object('message','Meta Reversa criada.'));
+ if p_initial_contribution>0 then insert into public.reverse_goal_contributions(goal_id,user_id,amount,occurred_on,note) values(gid,u,round(p_initial_contribution,2),p_start_date,null); insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(gid,u,'contribution',p_start_date,jsonb_build_object('amount',round(p_initial_contribution,2))); end if;
+ perform public.rebuild_reverse_goal_for_user(gid,u); return gid;
+end; $$;
+create or replace function public.add_reverse_goal_contribution(p_goal_id text,p_amount numeric,p_occurred_on date,p_note text default null)
+returns void language plpgsql security definer set search_path=public,pg_temp as $$ declare u uuid:=auth.uid(); start_date date; completed_at timestamptz;
+begin
+ if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if;
+ select reverse_start_date,reverse_completed_at into start_date,completed_at from public.goals where user_id=u and id=p_goal_id and goal_type='reverse' for update;
+ if not found then raise exception 'meta reversa nao encontrada' using errcode='P0002'; end if; if completed_at is not null then raise exception 'meta reversa concluida nao aceita novos aportes' using errcode='22023'; end if;
+ if p_amount<=0 or p_occurred_on is null or p_occurred_on<start_date or p_occurred_on>current_date then raise exception 'aporte invalido' using errcode='22023'; end if;
+ insert into public.reverse_goal_contributions(goal_id,user_id,amount,occurred_on,note) values(p_goal_id,u,round(p_amount,2),p_occurred_on,null);
+ insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(p_goal_id,u,'contribution',p_occurred_on,jsonb_build_object('amount',round(p_amount,2)));
+ if p_occurred_on<current_date then insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(p_goal_id,u,'recalculated',current_date,jsonb_build_object('message','Historico recalculado devido a um aporte registrado retroativamente.')); end if;
+ perform public.rebuild_reverse_goal_for_user(p_goal_id,u);
+end; $$;
+create or replace function public.rebuild_all_reverse_goals()
+returns integer language plpgsql security definer set search_path=public,pg_temp as $$ declare item record; n integer:=0; begin for item in select id,user_id from public.goals where goal_type='reverse' and reverse_completed_at is null and reverse_remaining_amount>0 loop perform public.rebuild_reverse_goal_for_user(item.id,item.user_id); n:=n+1; end loop; return n; end; $$;
+create or replace function public.set_reverse_goal_retention(p_months smallint default null)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_uid uuid := auth.uid();
+begin
+  if v_uid is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode = '28000'; end if;
+  if p_months is not null and p_months not between 1 and 12 then raise exception 'periodo de retencao invalido' using errcode = '22023'; end if;
+  insert into public.reverse_goal_retention_settings(user_id,completed_goal_retention_months,updated_at) values(v_uid,p_months,now())
+  on conflict(user_id) do update set completed_goal_retention_months=excluded.completed_goal_retention_months,updated_at=now();
+end; $$;
+create or replace function public.cleanup_expired_reverse_goals()
+returns integer language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_deleted integer;
+begin
+  delete from public.goals g using public.reverse_goal_retention_settings s
+  where g.user_id=s.user_id and g.goal_type='reverse' and g.reverse_completed_at is not null
+    and s.completed_goal_retention_months is not null
+    and g.reverse_completed_at < now() - make_interval(months => s.completed_goal_retention_months);
+  get diagnostics v_deleted = row_count;
+  return v_deleted;
+end; $$;
 revoke all on function public.set_reverse_goal_retention(smallint) from public,anon; grant execute on function public.set_reverse_goal_retention(smallint) to authenticated; revoke all on function public.cleanup_expired_reverse_goals() from public,anon,authenticated;
+grant execute on function public.create_reverse_goal(text,numeric,numeric,date,numeric,text,text) to authenticated;
+grant execute on function public.add_reverse_goal_contribution(text,numeric,date,text) to authenticated;
+grant execute on function public.rebuild_all_reverse_goals() to service_role;
+grant execute on function public.cleanup_expired_reverse_goals() to service_role;
 
 -- BLOCO 19 - Previsao de conclusao da Meta Reversa V1.3.2
 -- A previsao e calculada no banco apos cada reconstrucao, usando a media dos
@@ -1279,7 +1504,9 @@ revoke all on function public.refresh_reverse_goal_forecast(text,uuid) from publ
 
 create or replace function public.refresh_reverse_goal_forecast_after_rebuild() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
 begin
-  if new.goal_type='reverse' then perform public.refresh_reverse_goal_forecast(new.id,new.user_id); end if;
+  if new.goal_type = 'reverse' then
+    perform public.refresh_reverse_goal_forecast(new.id, new.user_id);
+  end if;
   return new;
 end; $$;
 revoke all on function public.refresh_reverse_goal_forecast_after_rebuild() from public,anon,authenticated;
@@ -1290,29 +1517,6 @@ begin;
 -- Objetivo: restaurar backups de Metas Reversas sem perda de dados.
 -- Pre-condicoes: V13, V14 e V15 aplicadas. Compativel com o frontend anterior.
 -- RLS/grants: nao altera RLS; apenas as RPCs publicas abaixo sao concedidas a authenticated.
-
-create or replace function public.replace_my_data(p_data jsonb)
-returns void language plpgsql security definer set search_path=public,pg_temp as $$
-declare u uuid:=auth.uid(); item record;
-begin
-  if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if;
-  if jsonb_typeof(p_data) <> 'object' then raise exception 'backup invalido' using errcode='22023'; end if;
-  delete from public.transactions where user_id=u;
-  delete from public.budgets where user_id=u;
-  delete from public.goals where user_id=u;
-  delete from public.categories where user_id=u;
-  delete from public.reverse_goal_retention_settings where user_id=u;
-  insert into public.categories(user_id,id,name,icon,color,type,target_percentage) select u,x.id,x.name,x.icon,x.color,x.type,coalesce(x.target_percentage,0) from jsonb_to_recordset(coalesce(p_data->'categories','[]')) x(id text,name text,icon text,color text,type text,target_percentage numeric);
-  insert into public.transactions(user_id,id,type,description,amount,category_id,date,method,paid,recurrence,recurrence_end,installments,tags,note,paid_occurrences,created_at,updated_at) select u,x.id,x.type,x.description,x.amount,x.category_id,x.date,x.method,x.paid,x.recurrence,x.recurrence_end,x.installments,x.tags,x.note,x.paid_occurrences,coalesce(x.created_at,now()),coalesce(x.updated_at,now()) from jsonb_to_recordset(coalesce(p_data->'transactions','[]')) x(id text,type text,description text,amount numeric,category_id text,date date,method text,paid boolean,recurrence text,recurrence_end date,installments integer,tags text[],note text,paid_occurrences jsonb,created_at timestamptz,updated_at timestamptz);
-  insert into public.budgets(user_id,category_id,limit_amount) select u,x.category_id,x.limit_amount from jsonb_to_recordset(coalesce(p_data->'budgets','[]')) x(category_id text,limit_amount numeric);
-  insert into public.goals(user_id,id,name,target,current,deadline,icon,color,goal_type,reverse_original_amount,reverse_remaining_amount,reverse_corrected_amount,reverse_start_date,reverse_selic_factor,reverse_completed_at,reverse_total_contributed,reverse_correction_amount,reverse_progress_percent,reverse_monthly_contribution_average,reverse_forecast_completion_date) select u,x.id,x.name,x.target,x.current,x.deadline,x.icon,x.color,coalesce(x.goal_type,'standard'),x.reverse_original_amount,x.reverse_remaining_amount,x.reverse_corrected_amount,x.reverse_start_date,x.reverse_selic_factor,x.reverse_completed_at,coalesce(x.reverse_total_contributed,0),coalesce(x.reverse_correction_amount,0),coalesce(x.reverse_progress_percent,0),x.reverse_monthly_contribution_average,x.reverse_forecast_completion_date from jsonb_to_recordset(coalesce(p_data->'goals','[]')) x(id text,name text,target numeric,current numeric,deadline date,icon text,color text,goal_type text,reverse_original_amount numeric,reverse_remaining_amount numeric,reverse_corrected_amount numeric,reverse_start_date date,reverse_selic_factor numeric,reverse_completed_at timestamptz,reverse_total_contributed numeric,reverse_correction_amount numeric,reverse_progress_percent numeric,reverse_monthly_contribution_average numeric,reverse_forecast_completion_date date);
-  insert into public.reverse_goal_contributions(goal_id,user_id,amount,occurred_on,note) select x.goal_id,u,x.amount,x.occurred_on,x.note from jsonb_to_recordset(coalesce(p_data->'reverseGoalContributions','[]')) x(goal_id text,amount numeric,occurred_on date,note text) join public.goals g on g.user_id=u and g.id=x.goal_id and g.goal_type='reverse';
-  insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) select x.goal_id,u,x.event_type,x.occurred_on,coalesce(x.details,'{}') from jsonb_to_recordset(coalesce(p_data->'reverseGoalEvents','[]')) x(goal_id text,event_type text,occurred_on date,details jsonb) join public.goals g on g.user_id=u and g.id=x.goal_id and g.goal_type='reverse';
-  if p_data ? 'reverseGoalRetentionMonths' then insert into public.reverse_goal_retention_settings(user_id,completed_goal_retention_months) values(u,nullif(p_data->>'reverseGoalRetentionMonths','')::smallint); end if;
-  for item in select id from public.goals where user_id=u and goal_type='reverse' loop perform public.rebuild_reverse_goal_for_user(item.id,u); end loop;
-end; $$;
-revoke all on function public.replace_my_data(jsonb) from public,anon;
-grant execute on function public.replace_my_data(jsonb) to authenticated;
 
 -- A previsao restaurada e sempre substituida pelo calculo atual do banco.
 commit;
@@ -1352,6 +1556,12 @@ begin
   insert into public.transactions(user_id,id,type,description,amount,category_id,date,method,paid,recurrence,recurrence_end,installments,tags,note,paid_occurrences,created_at,updated_at) select u,x.id,x.type,x.description,x.amount,x.category_id,x.date,x.method,x.paid,x.recurrence,x.recurrence_end,x.installments,x.tags,x.note,x.paid_occurrences,coalesce(x.created_at,now()),coalesce(x.updated_at,now()) from jsonb_to_recordset(coalesce(p_data->'transactions','[]'::jsonb)) x(id text,type text,description text,amount numeric,category_id text,date date,method text,paid boolean,recurrence text,recurrence_end date,installments integer,tags text[],note text,paid_occurrences jsonb,created_at timestamptz,updated_at timestamptz);
   insert into public.budgets(user_id,category_id,limit_amount) select u,x.category_id,x.limit_amount from jsonb_to_recordset(coalesce(p_data->'budgets','[]'::jsonb)) x(category_id text,limit_amount numeric);
   insert into public.goals(user_id,id,name,target,current,deadline,icon,color,goal_type,reverse_original_amount,reverse_remaining_amount,reverse_corrected_amount,reverse_start_date,reverse_selic_factor,reverse_completed_at,reverse_total_contributed,reverse_correction_amount,reverse_progress_percent,reverse_monthly_contribution_average,reverse_forecast_completion_date) select u,x.id,x.name,x.target,x.current,x.deadline,x.icon,x.color,coalesce(x.goal_type,'standard'),x.reverse_original_amount,x.reverse_remaining_amount,x.reverse_corrected_amount,x.reverse_start_date,x.reverse_selic_factor,x.reverse_completed_at,coalesce(x.reverse_total_contributed,0),coalesce(x.reverse_correction_amount,0),coalesce(x.reverse_progress_percent,0),x.reverse_monthly_contribution_average,x.reverse_forecast_completion_date from jsonb_to_recordset(coalesce(p_data->'goals','[]'::jsonb)) x(id text,name text,target numeric,current numeric,deadline date,icon text,color text,goal_type text,reverse_original_amount numeric,reverse_remaining_amount numeric,reverse_corrected_amount numeric,reverse_start_date date,reverse_selic_factor numeric,reverse_completed_at timestamptz,reverse_total_contributed numeric,reverse_correction_amount numeric,reverse_progress_percent numeric,reverse_monthly_contribution_average numeric,reverse_forecast_completion_date date);
+  if p_data ? 'standardGoalContributions' then
+    insert into public.standard_goal_contributions(goal_id,user_id,amount,occurred_on,note) select x.goal_id,u,round(x.amount,2),x.occurred_on,nullif(btrim(x.note),'') from jsonb_to_recordset(coalesce(p_data->'standardGoalContributions','[]'::jsonb)) x(goal_id text,amount numeric,occurred_on date,note text) join public.goals g on g.user_id=u and g.id=x.goal_id and g.goal_type='standard';
+  else
+    insert into public.standard_goal_contributions(goal_id,user_id,amount,occurred_on,note) select g.id,u,round(g.current,2),coalesce(g.updated_at::date,current_date),'Saldo restaurado' from public.goals g where g.user_id=u and g.goal_type='standard' and g.current>0;
+  end if;
+  update public.goals g set current=coalesce((select round(sum(c.amount),2) from public.standard_goal_contributions c where c.user_id=u and c.goal_id=g.id),0),updated_at=now() where g.user_id=u and g.goal_type='standard';
   insert into public.reverse_goal_contributions(goal_id,user_id,amount,occurred_on,note) select x.goal_id,u,x.amount,x.occurred_on,x.note from jsonb_to_recordset(coalesce(p_data->'reverseGoalContributions','[]'::jsonb)) x(goal_id text,amount numeric,occurred_on date,note text) join public.goals g on g.user_id=u and g.id=x.goal_id and g.goal_type='reverse';
   insert into public.reverse_goal_history(goal_id,user_id,reference_month,applied_on,balance_before,balance_after,selic_rate_percent,selic_factor,correction_amount,contribution_amount) select x.goal_id,u,x.reference_month,x.applied_on,x.balance_before,x.balance_after,x.selic_rate_percent,x.selic_factor,x.correction_amount,x.contribution_amount from jsonb_to_recordset(coalesce(p_data->'reverseGoalHistory','[]'::jsonb)) x(goal_id text,reference_month date,applied_on date,balance_before numeric,balance_after numeric,selic_rate_percent numeric,selic_factor numeric,correction_amount numeric,contribution_amount numeric) join public.goals g on g.user_id=u and g.id=x.goal_id and g.goal_type='reverse';
   insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) select x.goal_id,u,x.event_type,x.occurred_on,coalesce(x.details,'{}'::jsonb) from jsonb_to_recordset(coalesce(p_data->'reverseGoalEvents','[]'::jsonb)) x(goal_id text,event_type text,occurred_on date,details jsonb) join public.goals g on g.user_id=u and g.id=x.goal_id and g.goal_type='reverse';
