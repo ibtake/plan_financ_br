@@ -11,6 +11,12 @@ function authLog(fields: Record<string, unknown>) {
   console.log(JSON.stringify({ event: 'widget_auth', ...fields }))
 }
 
+async function recordSampledMetric(admin: ReturnType<typeof createClient>, failureType: 'token' | 'refresh' | 'install_code' | 'unauthorized') {
+  // ponytail: amostragem de 10%; trocar por janela global se o volume exigir contagem exata.
+  if (Math.random() >= 0.1) return
+  await admin.rpc('record_widget_auth_metric', { p_failure_type: failureType }).catch(() => {})
+}
+
 async function hash(value: string) {
   const bytes = await crypto.subtle.digest('SHA-256', encoder.encode(value))
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('')
@@ -100,6 +106,7 @@ Deno.serve(async (request) => {
     if (rateLimitResponse) return rateLimitResponse
     const { data, error: tokenLookupError } = await admin.from('widget_tokens').select('user_id').eq('token_hash', tokenHash).is('revoked_at', null).gt('access_expires_at', new Date().toISOString()).maybeSingle()
     authLog({ mode: 'token', tokenPresent: Boolean(presentedToken), tokenLength: presentedToken.length, tokenFingerprint: tokenHash.slice(0, 12), tokenFound: Boolean(data), lookupError: tokenLookupError?.code || null })
+    if (!data) await recordSampledMetric(admin, 'token')
     userId = data?.user_id || ''
   }
   if (!userId && refreshToken) {
@@ -122,6 +129,7 @@ Deno.serve(async (request) => {
       userId = rotated.user_id
       tokenHash = responseTokenHash
     } else {
+      await recordSampledMetric(admin, 'refresh')
       responseToken = ''
       responseRefreshToken = ''
     }
@@ -134,6 +142,7 @@ Deno.serve(async (request) => {
     const { data: install } = await admin.from('widget_install_codes').select('id,user_id,expires_at,used_at').eq('code_hash', codeHash).maybeSingle()
     const installValid = Boolean(install && !install.used_at && new Date(install.expires_at).getTime() > Date.now())
     authLog({ mode: 'install_code_result', found: Boolean(install), used: Boolean(install?.used_at), valid: installValid })
+    if (!installValid) await recordSampledMetric(admin, 'install_code')
     if (installValid) {
       const token = randomToken()
       const refresh = randomToken()
@@ -152,7 +161,10 @@ Deno.serve(async (request) => {
   } else {
     authLog({ mode: 'none', tokenPresent: false, codePresent: false })
   }
-  if (!userId) return response(401, { error: 'Widget não autorizado.' })
+  if (!userId) {
+    await recordSampledMetric(admin, 'unauthorized')
+    return response(401, { error: 'Widget não autorizado.' })
+  }
 
   const { data: rows, error } = await admin.from('transactions').select('description,amount,date,paid,recurrence,recurrence_end,installments,paid_occurrences,type').eq('user_id', userId).eq('type', 'expense')
   if (error) return response(503, { error: 'Não foi possível consultar as contas.' })

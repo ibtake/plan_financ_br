@@ -182,7 +182,7 @@ Deno.serve(async (request) => {
     return response(request, 403, { error: 'Acesso administrativo não autorizado.' })
   }
 
-  if (['status', 'list-users', 'create-user'].includes(action)) {
+  if (['status', 'list-users', 'create-user', 'widget-metrics'].includes(action)) {
     const { data: allowed, error: rateError } = await admin.rpc('consume_admin_rate_limit', {
       p_admin_id: user.id,
       p_action: action,
@@ -219,6 +219,17 @@ Deno.serve(async (request) => {
     }
     users.sort((a, b) => a.email.localeCompare(b.email, 'pt-BR'))
     return response(request, 200, { users })
+  }
+
+  if (action === 'widget-metrics') {
+    const { data, error } = await admin
+      .from('widget_auth_metrics')
+      .select('metric_date,failure_type,sampled_count,last_sampled_at')
+      .gte('metric_date', new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10))
+      .order('metric_date', { ascending: false })
+      .order('failure_type', { ascending: true })
+    if (error) return response(request, 503, { error: 'Não foi possível consultar as métricas do widget.' })
+    return response(request, 200, { sampleRate: 0.1, metrics: data || [] })
   }
 
   if (action === 'create-user') {

@@ -23,6 +23,7 @@ export default function AdminUserManagement() {
   const [code, setCode] = useState('')
   const [message, setMessage] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [metrics, setMetrics] = useState([])
 
   const loadUsers = useCallback(async () => {
     const result = await callAdminApi('list-users')
@@ -33,6 +34,11 @@ export default function AdminUserManagement() {
     setUsers(result.data?.users || [])
   }, [])
 
+  const loadMetrics = useCallback(async () => {
+    const result = await callAdminApi('widget-metrics')
+    if (!result.error) setMetrics(result.data?.metrics || [])
+  }, [])
+
   useEffect(() => {
     let active = true
     callAdminApi('status').then(async (result) => {
@@ -40,10 +46,10 @@ export default function AdminUserManagement() {
       if (result.error || !result.data?.admin) return setStatus('hidden')
       if (result.data.aal !== 'aal2') return setStatus('needs-mfa')
       setStatus('ready')
-      await loadUsers()
+      await Promise.all([loadUsers(), loadMetrics()])
     })
     return () => { active = false }
-  }, [loadUsers])
+  }, [loadMetrics, loadUsers])
 
   if (status === 'checking' || status === 'hidden') return null
 
@@ -113,6 +119,27 @@ export default function AdminUserManagement() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+      {status === 'ready' && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="card-head">
+            <div>
+              <div className="card-title">Falhas de autenticação do widget</div>
+              <div className="card-sub">Últimos 7 dias · métricas amostradas em 10%</div>
+            </div>
+            <button className="btn btn-sm" type="button" onClick={loadMetrics}>Atualizar</button>
+          </div>
+          {metrics.length === 0 ? <div className="empty">Nenhuma falha amostrada.</div> : (
+            <div className="stack">
+              {metrics.map((item) => (
+                <div className="setting-row" key={`${item.metric_date}-${item.failure_type}`}>
+                  <strong>{item.metric_date} · {item.failure_type}</strong>
+                  <span className="chip warning">{item.sampled_count} amostras</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>

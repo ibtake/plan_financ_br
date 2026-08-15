@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "migrations:check": "node scripts/validate-migrations.mjs",
-    "check": "npm run build && npm run migrations:check",
+    "schema:check": "node scripts/validate-schema-sync.mjs",
+    "check": "npm run build && npm run migrations:check && npm run schema:check",
     "deploy:check": "npm run check"
   },
   "dependencies": {

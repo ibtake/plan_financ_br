@@ -69,6 +69,8 @@ Atualizar o Planejador Financeiro preservando:
    posterior.
 5. Atualize `supabase/schema.sql` apenas com o estado consolidado final e somente
    depois que a migracao correspondente estiver validada.
+   Toda migration ou RPC nova deve atualizar o `schema.sql` na mesma alteração;
+   `npm run schema:check` bloqueia o check quando objetos de migrations faltam.
 6. Execute `npm run deploy:check` antes de considerar a tarefa concluida.
 7. Informe quais arquivos mudaram, quais testes passaram, se existe migracao,
    a ordem de publicacao e os passos de rollback.
