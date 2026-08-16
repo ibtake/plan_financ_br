@@ -141,8 +141,10 @@ Deno.serve(async (request) => {
     const refreshHash = await hash(refreshToken)
     // SEC-01: a existencia do refresh e verificada por leitura antes de
     // qualquer contador; a rotacao atomica (v33) continua sendo a unica
-    // fonte de verdade da troca de tokens.
-    const { data: refreshRow } = await admin.from('widget_tokens').select('user_id').eq('refresh_token_hash', refreshHash).maybeSingle()
+    // fonte de verdade da troca de tokens. Filtros de ciclo de vida iguais
+    // aos do caminho do token: credencial revogada ou expirada conta como
+    // invalida (telemetria + teto global), nao como credencial valida.
+    const { data: refreshRow } = await admin.from('widget_tokens').select('user_id').eq('refresh_token_hash', refreshHash).is('revoked_at', null).gt('refresh_expires_at', new Date().toISOString()).maybeSingle()
     if (!refreshRow) {
       await recordSampledMetric(admin, 'refresh')
       const invalidLimit = await enforceInvalidAttemptLimit(admin)

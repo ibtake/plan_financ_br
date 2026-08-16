@@ -38,10 +38,28 @@ Deno.serve(async (request) => {
   const authorization = request.headers.get('authorization') || ''
   if (!url || !serviceRole || !anonKey || !authorization.startsWith('Bearer ')) return response(request, 401, { error: 'Sessão inválida.' })
   const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false, autoRefreshToken: false } })
-  const { data, error } = await userClient.auth.getUser(authorization.slice(7))
+  const token = authorization.slice(7)
+  const { data, error } = await userClient.auth.getUser(token)
   if (error || !data.user) return response(request, 401, { error: 'Sessão inválida.' })
-  const code = crypto.randomUUID().replaceAll('-', '')
   const admin = createClient(url, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } })
+  // Paridade com has_required_aal() do banco: sessao precisa ser AAL2 SOMENTE
+  // quando o usuario possui fator MFA verificado. Sessao AAL1 com fator
+  // verificado nao emite/gerencia credenciais do widget (evita leitura
+  // persistente dos dados com apenas a senha da vitima).
+  const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token)
+  if (claimsError || !claimsData?.claims) return response(request, 401, { error: 'Sessão inválida.' })
+  if (claimsData.claims.aal !== 'aal2') {
+    const { data: factors, error: factorsError } = await admin.auth.admin.mfa.listFactors({ userId: data.user.id })
+    if (factorsError) return response(request, 503, { error: 'Não foi possível validar a verificação em duas etapas.' })
+    const hasVerifiedFactor = (factors?.factors || []).some((factor) => factor.status === 'verified')
+    if (hasVerifiedFactor) {
+      return response(request, 403, {
+        error: 'Confirme a verificação em duas etapas para gerenciar o widget.',
+        code: 'aal2_required',
+      })
+    }
+  }
+  const code = crypto.randomUUID().replaceAll('-', '')
   let body: Record<string, unknown> = {}
   try { body = await request.json() } catch { /* corpo vazio */ }
   if (body.action !== undefined && body.action !== 'status' && body.action !== 'revoke') {
