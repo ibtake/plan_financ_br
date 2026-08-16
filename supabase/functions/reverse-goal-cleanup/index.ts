@@ -21,7 +21,10 @@ Deno.serve(async (request) => {
   const declaredLength = Number(request.headers.get('content-length') || 0)
   if (!Number.isFinite(declaredLength) || declaredLength > 1_024) return response(413, { error: 'Requisição inválida.' })
 
+  // Fail-closed: sem o secret configurado a funcao fica indisponivel; header
+  // vazio jamais pode coincidir com um secret ausente.
   const expectedSecret = Deno.env.get('REVERSE_GOAL_CLEANUP_CRON_SECRET') || ''
+  if (!expectedSecret) return response(503, { error: 'Serviço temporariamente indisponível.' })
   if (!secureEqual(request.headers.get('x-reverse-goal-cleanup-secret') || '', expectedSecret)) {
     return response(401, { error: 'Não autorizado.' })
   }

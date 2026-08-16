@@ -377,7 +377,8 @@ grant execute on function public.log_security_event(text, text, jsonb, text) to 
 -- BLOCO 24 - Rate limit administrativo e ledger de metas padrão (v11, v19, v20)
 create table if not exists public.admin_action_rate_limits (
   admin_id uuid not null references auth.users(id) on delete cascade,
-  action text not null check (action in ('status', 'list-users', 'create-user', 'widget-metrics')),
+  -- v42: complete-password-change entra no teto server-side (10/min).
+  action text not null check (action in ('status', 'list-users', 'create-user', 'widget-metrics', 'complete-password-change')),
   window_started_at timestamptz not null default now(),
   request_count integer not null default 0 check (request_count >= 0),
   primary key (admin_id, action)
@@ -389,8 +390,8 @@ create or replace function public.consume_admin_rate_limit(p_admin_id uuid, p_ac
 returns boolean language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_count integer; v_started timestamptz; v_limit integer;
 begin
-  if p_action not in ('status', 'list-users', 'create-user', 'widget-metrics') then raise exception 'acao invalida'; end if;
-  v_limit := case p_action when 'create-user' then 5 when 'list-users' then 30 when 'widget-metrics' then 30 else 60 end;
+  if p_action not in ('status', 'list-users', 'create-user', 'widget-metrics', 'complete-password-change') then raise exception 'acao invalida'; end if;
+  v_limit := case p_action when 'create-user' then 5 when 'list-users' then 30 when 'widget-metrics' then 30 when 'complete-password-change' then 10 else 60 end;
   insert into public.admin_action_rate_limits(admin_id, action, window_started_at, request_count)
   values (p_admin_id, p_action, now(), 1)
   on conflict (admin_id, action) do update set
@@ -916,7 +917,12 @@ create trigger goals_no_owner_change
   before update on public.goals
   for each row execute function public.prevent_owner_change();
 
-grant select, insert, update, delete on public.goals to authenticated;
+-- v41 (SEC-02): escrita em goals somente via RPCs de negocio. O frontend
+-- atual so atualiza metadados (name/icon/color) direto na tabela; criacao,
+-- exclusao e aportes passam pelas RPCs SECURITY DEFINER.
+revoke all on table public.goals from authenticated;
+grant select on table public.goals to authenticated;
+grant update (name, icon, color) on table public.goals to authenticated;
 
 alter table public.standard_goal_contributions
   add constraint standard_goal_contributions_goal_fk
@@ -1077,7 +1083,7 @@ grant execute on function public.rotate_widget_refresh_token(text, text, text, t
 
 create table if not exists public.widget_rate_limits (
   key_hash text not null,
-  operation text not null check (operation in ('token', 'refresh', 'install')),
+  operation text not null check (operation in ('token', 'refresh', 'install', 'invalid')),
   window_started_at timestamptz not null default now(),
   request_count integer not null default 0 check (request_count >= 0),
   primary key (key_hash, operation)
@@ -1126,6 +1132,52 @@ $$;
 revoke all on table public.widget_rate_limits from public, anon, authenticated;
 revoke all on function public.consume_widget_rate_limit(text, text) from public, anon, authenticated;
 grant execute on function public.consume_widget_rate_limit(text, text) to service_role;
+
+-- v40 (SEC-01): contador global de tentativas invalidas + purge. Chamado
+-- somente apos falha de validacao de credencial; valores aleatorios nao
+-- criam mais linhas por credencial (ver migration v40).
+create or replace function public.consume_widget_invalid_attempt_limit()
+returns table (allowed boolean, retry_after_seconds integer)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_key constant text := encode(sha256('SEC-01-global-invalid-attempts'::bytea), 'hex');
+  v_count integer;
+  v_started timestamptz;
+  v_limit constant integer := 600;
+  v_window_seconds constant integer := 3600;
+begin
+  -- Contenção de lock: decisao de rate limit nunca pode travar.
+  perform set_config('lock_timeout', '2000ms', true);
+
+  -- Purge probabilistico (~1% das chamadas) de janelas mortas. Falha no
+  -- purge nunca afeta a decisao de limite.
+  begin
+    if random() < 0.01 then
+      delete from public.widget_rate_limits
+      where window_started_at < now() - make_interval(secs => 7200);
+    end if;
+  exception when others then
+    null;
+  end;
+
+  insert into public.widget_rate_limits(key_hash, operation, window_started_at, request_count)
+  values (v_key, 'invalid', now(), 1)
+  on conflict (key_hash, operation) do update set
+    window_started_at = case when public.widget_rate_limits.window_started_at < now() - make_interval(secs => v_window_seconds) then now() else public.widget_rate_limits.window_started_at end,
+    request_count = case when public.widget_rate_limits.window_started_at < now() - make_interval(secs => v_window_seconds) then 1 else public.widget_rate_limits.request_count + 1 end
+  returning request_count, window_started_at into v_count, v_started;
+
+  return query select
+    v_count <= v_limit,
+    greatest(0, ceil(extract(epoch from (v_started + make_interval(secs => v_window_seconds) - now())))::integer);
+end;
+$$;
+
+revoke all on function public.consume_widget_invalid_attempt_limit() from public, anon, authenticated;
+grant execute on function public.consume_widget_invalid_attempt_limit() to service_role;
 
 -- BLOCO 22 - Exclusao confirmada de metas (estado final para instalacao limpa)
 create or replace function public.delete_goal(p_goal_id text)
@@ -1500,8 +1552,10 @@ revoke all on function public.rebuild_reverse_goal(text) from public,anon,authen
 revoke all on function public.cleanup_expired_reverse_goals() from public,anon,authenticated;
 grant execute on function public.cleanup_expired_reverse_goals() to service_role;
 
--- Novas funcoes, tabelas e sequences exigem grants explicitos.
-alter default privileges for role postgres in schema public revoke all on functions from anon,authenticated;
+-- Novas funcoes, tabelas e sequences exigem grants explicitos. v41: o
+-- EXECUTE implicito de PUBLIC em funcoes novas tambem e revogado (revogar
+-- apenas de anon/authenticated nao remove o acesso herdado de PUBLIC).
+alter default privileges for role postgres in schema public revoke all on functions from public,anon,authenticated;
 alter default privileges for role postgres in schema public revoke all on tables from anon,authenticated;
 alter default privileges for role postgres in schema public revoke all on sequences from anon,authenticated;
 

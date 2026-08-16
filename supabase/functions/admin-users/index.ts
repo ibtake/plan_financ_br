@@ -150,6 +150,14 @@ Deno.serve(async (request) => {
     if (user.app_metadata?.must_change_password !== true) {
       return response(request, 403, { error: 'A troca inicial de senha não está pendente.' })
     }
+    // v42: unica acao mutante atendida antes da checagem administrativa
+    // (usuario comum em primeiro login); exige o mesmo teto server-side.
+    const { data: allowed, error: rateError } = await admin.rpc('consume_admin_rate_limit', {
+      p_admin_id: user.id,
+      p_action: action,
+    })
+    if (rateError) return response(request, 503, { error: 'Proteção temporariamente indisponível.' })
+    if (!allowed) return response(request, 429, { error: 'Muitas solicitações. Aguarde um minuto.' })
     if (!isStrongPassword(body.password)) {
       return response(request, 400, { error: 'A nova senha não atende à política de segurança.' })
     }

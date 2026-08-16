@@ -62,7 +62,10 @@ Deno.serve(async (request) => {
     return response(413, { error: 'Requisição inválida.' })
   }
 
+  // Fail-closed: sem o secret configurado a funcao fica indisponivel; header
+  // vazio jamais pode coincidir com um secret ausente.
   const cronSecret = Deno.env.get('SELIC_SYNC_CRON_SECRET') || ''
+  if (!cronSecret) return response(503, { error: 'Serviço temporariamente indisponível.' })
   const suppliedSecret = request.headers.get('x-selic-sync-secret') || ''
   if (!secureEqual(suppliedSecret, cronSecret)) return response(401, { error: 'Não autorizado.' })
 
