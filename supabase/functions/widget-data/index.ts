@@ -22,12 +22,31 @@ async function hash(value: string) {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+// Limite por credencial: so e chamado com credencial ja validada. A
+// entropia do token (256 bits) e a protecao real contra adivinhacao, por
+// isso falha do contador NAO bloqueia o usuario legitimo (fail-open).
 async function enforceRateLimit(admin: ReturnType<typeof createClient>, keyHash: string, operation: 'token' | 'refresh' | 'install') {
   const { data, error } = await admin.rpc('consume_widget_rate_limit', { p_key_hash: keyHash, p_operation: operation })
-  if (error) return response(503, { error: 'Serviço indisponível.' })
+  if (error) {
+    authLog({ rateLimit: 'error', operation, errorCode: error.code || null })
+    return null
+  }
   const result = Array.isArray(data) ? data[0] : data
   if (!result?.allowed) {
     return response(429, { error: 'Muitas tentativas. Tente novamente mais tarde.' }, { 'Retry-After': String(result?.retry_after_seconds || 60) })
+  }
+  return null
+}
+
+// Contador global de credenciais invalidas: unico caminho que persiste
+// estado para valores nao verificados. Sem resposta do contador, credencial
+// invalida NAO passa (fail-closed) - protege o armazenamento do plano gratuito.
+async function enforceInvalidAttemptLimit(admin: ReturnType<typeof createClient>) {
+  const { data, error } = await admin.rpc('consume_widget_invalid_attempt_limit')
+  if (error) return response(503, { error: 'Serviço indisponível.' })
+  const result = Array.isArray(data) ? data[0] : data
+  if (!result?.allowed) {
+    return response(429, { error: 'Muitas tentativas. Tente novamente mais tarde.' }, { 'Retry-After': String(result?.retry_after_seconds || 600) })
   }
   return null
 }
@@ -102,47 +121,70 @@ Deno.serve(async (request) => {
   if (widgetToken) {
     const presentedToken = widgetToken
     tokenHash = await hash(presentedToken)
-    const rateLimitResponse = await enforceRateLimit(admin, tokenHash, 'token')
-    if (rateLimitResponse) return rateLimitResponse
+    // SEC-01: validacao vem ANTES de qualquer contador. Valor invalido
+    // nao cria linha por credencial; so incrementa o teto global de
+    // tentativas invalidas.
     const { data, error: tokenLookupError } = await admin.from('widget_tokens').select('user_id').eq('token_hash', tokenHash).is('revoked_at', null).gt('access_expires_at', new Date().toISOString()).maybeSingle()
     authLog({ mode: 'token', tokenPresent: Boolean(presentedToken), tokenLength: presentedToken.length, tokenFingerprint: tokenHash.slice(0, 12), tokenFound: Boolean(data), lookupError: tokenLookupError?.code || null })
-    if (!data) await recordSampledMetric(admin, 'token')
-    userId = data?.user_id || ''
+    if (!data) {
+      await recordSampledMetric(admin, 'token')
+      const invalidLimit = await enforceInvalidAttemptLimit(admin)
+      if (invalidLimit) return invalidLimit
+      userId = ''
+    } else {
+      const rateLimitResponse = await enforceRateLimit(admin, tokenHash, 'token')
+      if (rateLimitResponse) return rateLimitResponse
+      userId = data.user_id
+    }
   }
   if (!userId && refreshToken) {
     const refreshHash = await hash(refreshToken)
-    const rateLimitResponse = await enforceRateLimit(admin, refreshHash, 'refresh')
-    if (rateLimitResponse) return rateLimitResponse
-    responseToken = randomToken()
-    responseRefreshToken = randomToken()
-    const responseTokenHash = await hash(responseToken)
-    const responseRefreshTokenHash = await hash(responseRefreshToken)
-    const { data: rotatedRows, error: refreshError } = await admin.rpc('rotate_widget_refresh_token', {
-      p_current_refresh_token_hash: refreshHash,
-      p_token_hash: responseTokenHash,
-      p_refresh_token_hash: responseRefreshTokenHash,
-      p_access_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    })
-    if (refreshError) return response(503, { error: 'Não foi possível renovar o widget.' })
-    const rotated = Array.isArray(rotatedRows) ? rotatedRows[0] : rotatedRows
-    if (rotated?.user_id) {
-      userId = rotated.user_id
-      tokenHash = responseTokenHash
-    } else {
+    // SEC-01: a existencia do refresh e verificada por leitura antes de
+    // qualquer contador; a rotacao atomica (v33) continua sendo a unica
+    // fonte de verdade da troca de tokens.
+    const { data: refreshRow } = await admin.from('widget_tokens').select('user_id').eq('refresh_token_hash', refreshHash).maybeSingle()
+    if (!refreshRow) {
       await recordSampledMetric(admin, 'refresh')
-      responseToken = ''
-      responseRefreshToken = ''
+      const invalidLimit = await enforceInvalidAttemptLimit(admin)
+      if (invalidLimit) return invalidLimit
+    } else {
+      const rateLimitResponse = await enforceRateLimit(admin, refreshHash, 'refresh')
+      if (rateLimitResponse) return rateLimitResponse
+      responseToken = randomToken()
+      responseRefreshToken = randomToken()
+      const responseTokenHash = await hash(responseToken)
+      const responseRefreshTokenHash = await hash(responseRefreshToken)
+      const { data: rotatedRows, error: refreshError } = await admin.rpc('rotate_widget_refresh_token', {
+        p_current_refresh_token_hash: refreshHash,
+        p_token_hash: responseTokenHash,
+        p_refresh_token_hash: responseRefreshTokenHash,
+        p_access_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      })
+      if (refreshError) return response(503, { error: 'Não foi possível renovar o widget.' })
+      const rotated = Array.isArray(rotatedRows) ? rotated[0] : rotated
+      if (rotated?.user_id) {
+        userId = rotated.user_id
+        tokenHash = responseTokenHash
+      } else {
+        await recordSampledMetric(admin, 'refresh')
+        responseToken = ''
+        responseRefreshToken = ''
+      }
     }
   }
   if (!userId && body.code) {
     authLog({ mode: 'install_code', codePresent: true })
     const codeHash = await hash(String(body.code))
-    const rateLimitResponse = await enforceRateLimit(admin, codeHash, 'install')
-    if (rateLimitResponse) return rateLimitResponse
+    // SEC-01: codigo de instalacao e verificado por leitura antes do
+    // contador; o consumo atomico (v25) continua na RPC de ativacao.
     const { data: install } = await admin.from('widget_install_codes').select('id,user_id,expires_at,used_at').eq('code_hash', codeHash).maybeSingle()
     const installValid = Boolean(install && !install.used_at && new Date(install.expires_at).getTime() > Date.now())
     authLog({ mode: 'install_code_result', found: Boolean(install), used: Boolean(install?.used_at), valid: installValid })
-    if (!installValid) await recordSampledMetric(admin, 'install_code')
+    if (!installValid) {
+      await recordSampledMetric(admin, 'install_code')
+      const invalidLimit = await enforceInvalidAttemptLimit(admin)
+      if (invalidLimit) return invalidLimit
+    }
     if (installValid) {
       const token = randomToken()
       const refresh = randomToken()
