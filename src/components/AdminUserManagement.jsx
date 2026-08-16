@@ -6,8 +6,15 @@ import CodeInput from './auth/CodeInput.jsx'
 function generateTemporaryPassword() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*?'
   const required = ['A', 'a', '7', '!']
-  const bytes = crypto.getRandomValues(new Uint32Array(14))
-  const random = Array.from(bytes, (value) => alphabet[value % alphabet.length])
+  const limit = Math.floor((2 ** 32) / alphabet.length) * alphabet.length
+  const random = []
+  while (random.length < 14) {
+    const bytes = crypto.getRandomValues(new Uint32Array(14 - random.length))
+    for (const value of bytes) {
+      if (value < limit) random.push(alphabet[value % alphabet.length])
+      if (random.length === 14) break
+    }
+  }
   return [...required, ...random]
     .map((character) => ({ character, order: crypto.getRandomValues(new Uint32Array(1))[0] }))
     .sort((a, b) => a.order - b.order)
