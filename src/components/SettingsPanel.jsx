@@ -29,6 +29,7 @@ export default function SettingsPanel({
   const [revokingWidget, setRevokingWidget] = useState(false)
   const [widgetTokens, setWidgetTokens] = useState([])
   const [loadingWidgetStatus, setLoadingWidgetStatus] = useState(true)
+  const [widgetError, setWidgetError] = useState(false)
 
   // A configuracao vem junto dos dados auxiliares. Enquanto ela nao chegou,
   // o select fica bloqueado para nao gravar acidentalmente "Nunca excluir".
@@ -38,9 +39,10 @@ export default function SettingsPanel({
 
   useEffect(() => {
     let active = true
+    setWidgetError(false)
     getWidgetStatus()
       .then((tokens) => { if (active) setWidgetTokens(tokens) })
-      .catch(() => {})
+      .catch(() => { if (active) setWidgetError(true) })
       .finally(() => { if (active) setLoadingWidgetStatus(false) })
     return () => { active = false }
   }, [])
@@ -224,7 +226,7 @@ export default function SettingsPanel({
           </button>
         </div>
         <p className="hint" style={{ marginTop: 12 }}>
-          {loadingWidgetStatus ? 'Consultando integrações...' : `${widgetTokens.filter((token) => !token.revoked_at).length} integração(ões) ativa(s).`}
+          {loadingWidgetStatus ? 'Consultando integrações...' : widgetError ? 'Não foi possível consultar as integrações. Tente novamente.' : `${widgetTokens.filter((token) => !token.revoked_at).length} integração(ões) ativa(s).`}
           {' '}Os valores dos tokens não são exibidos nem recuperáveis; apenas o status pode ser consultado. O botão vermelho revoga todos os widgets desta conta.
         </p>
         {!loadingWidgetStatus && widgetTokens.length > 0 && (
