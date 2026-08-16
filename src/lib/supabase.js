@@ -81,6 +81,9 @@ export function translateAuthError(error) {
   if (!error) return null
   const raw = String(error.message || error).toLowerCase()
 
+  if (raw.includes('reverse_goal_limit_exceeded') || raw.includes('goals_reverse_original_limit') || raw.includes('goals_reverse_remaining_limit') || raw.includes('goals_reverse_corrected_limit')) {
+    return 'O valor da meta reversa excede o limite permitido.'
+  }
   if (raw.includes('invalid login credentials')) return 'E-mail ou senha incorretos.'
   if (raw.includes('email not confirmed')) return 'E-mail ou senha incorretos.'
   if (raw.includes('user already registered') || raw.includes('already been registered')) {

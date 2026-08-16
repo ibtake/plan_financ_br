@@ -15,13 +15,16 @@ import { addMonths, currentMonthKey, formatCurrency, formatDate, monthLabel, tod
 
 /** Fecha o popover ao clicar fora ou apertar Esc */
 function useDismiss(ref, onDismiss, active) {
+  const dismissRef = useRef(onDismiss)
+  dismissRef.current = onDismiss
+
   useEffect(() => {
     if (!active) return
     const onPointer = (event) => {
-      if (ref.current && !ref.current.contains(event.target)) onDismiss()
+      if (ref.current && !ref.current.contains(event.target)) dismissRef.current()
     }
     const onKey = (event) => {
-      if (event.key === 'Escape') onDismiss()
+      if (event.key === 'Escape') dismissRef.current()
     }
     document.addEventListener('mousedown', onPointer)
     document.addEventListener('keydown', onKey)
@@ -29,7 +32,7 @@ function useDismiss(ref, onDismiss, active) {
       document.removeEventListener('mousedown', onPointer)
       document.removeEventListener('keydown', onKey)
     }
-  }, [ref, onDismiss, active])
+  }, [ref, active])
 }
 
 /** Iniciais para o avatar do perfil */

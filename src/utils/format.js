@@ -141,7 +141,6 @@ export function formatDate(isoDate) {
   return `${d}/${m}/${y}`
 }
 
-/** Formata AAAA-MM-DD como "12 mar" */
 /** Quantidade de dias entre hoje e uma data (positivo = futuro) */
 export function daysUntil(isoDate) {
   if (!isoDate) return 0

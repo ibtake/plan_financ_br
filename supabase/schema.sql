@@ -1340,6 +1340,9 @@ alter table public.goals add column if not exists reverse_total_contributed nume
 alter table public.goals add column if not exists reverse_correction_amount numeric(14,2) not null default 0;
 alter table public.goals add column if not exists reverse_progress_percent numeric(6,2) not null default 0;
 alter table public.goals add constraint goals_reverse_summary_check check (reverse_total_contributed >= 0 and reverse_correction_amount >= 0 and reverse_progress_percent between 0 and 100);
+alter table public.goals add constraint goals_reverse_original_limit check (goal_type <> 'reverse' or reverse_original_amount < 1000000000);
+alter table public.goals add constraint goals_reverse_remaining_limit check (goal_type <> 'reverse' or reverse_remaining_amount < 1000000000);
+alter table public.goals add constraint goals_reverse_corrected_limit check (goal_type <> 'reverse' or reverse_corrected_amount < 1000000000);
 create table public.reverse_goal_events (id bigint generated always as identity primary key, goal_id text not null, user_id uuid not null references auth.users(id) on delete cascade, event_type text not null check (event_type in ('created','contribution','recalculated','completed')), occurred_on date not null, details jsonb not null default '{}'::jsonb, created_at timestamptz not null default now(), foreign key (user_id, goal_id) references public.goals(user_id, id) on delete cascade);
 create index reverse_goal_events_goal_date_idx on public.reverse_goal_events(goal_id,occurred_on,id);
 create table public.reverse_goal_retention_settings (user_id uuid primary key references auth.users(id) on delete cascade, completed_goal_retention_months smallint check (completed_goal_retention_months between 1 and 12), updated_at timestamptz not null default now());
@@ -1435,17 +1438,22 @@ begin
   end if;
 end;
 $$;
-create or replace function public.create_reverse_goal(p_name text,p_original_amount numeric,p_initial_contribution numeric,p_start_date date,p_selic_factor numeric,p_icon text default '🎯',p_color text default '#6366f1')
+/* legacy definition superseded by SEC-03 below.
+create or replace function public.legacy_create_reverse_goal(p_name text,p_original_amount numeric,p_initial_contribution numeric,p_start_date date,p_selic_factor numeric,p_icon text default '🎯',p_color text default '#6366f1')
 returns text language plpgsql security definer set search_path=public,pg_temp as $$
 declare u uuid:=auth.uid(); gid text:=gen_random_uuid()::text;
 begin
  if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if;
- if nullif(btrim(p_name),'') is null or char_length(btrim(p_name))>120 or p_original_amount<=0 or p_initial_contribution<0 or p_initial_contribution>p_original_amount or p_start_date is null or p_start_date<current_date-interval '19 years' or p_start_date>current_date or p_selic_factor not between .5 and 1.5 then raise exception 'dados da meta invalidos' using errcode='22023'; end if;
+ if nullif(btrim(p_name),'') is null or char_length(btrim(p_name))>120 or p_original_amount<=0 or p_original_amount>=1000000000 or p_initial_contribution<0 or p_initial_contribution>p_original_amount or p_start_date is null or p_start_date<current_date-interval '19 years' or p_start_date>current_date or p_selic_factor not between .5 and 1.5 then
+   if p_original_amount>=1000000000 then raise exception 'reverse_goal_limit_exceeded' using errcode='22023'; end if;
+   raise exception 'dados da meta invalidos' using errcode='22023';
+ end if;
  insert into public.goals(id,user_id,name,target,current,deadline,icon,color,goal_type,reverse_original_amount,reverse_remaining_amount,reverse_corrected_amount,reverse_start_date,reverse_selic_factor) values(gid,u,btrim(p_name),p_original_amount,0,null,left(coalesce(p_icon,'🎯'),8),coalesce(p_color,'#6366f1'),'reverse',p_original_amount,p_original_amount,p_original_amount,p_start_date,round(p_selic_factor,4));
  insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(gid,u,'created',p_start_date,jsonb_build_object('message','Meta Reversa criada.'));
  if p_initial_contribution>0 then insert into public.reverse_goal_contributions(goal_id,user_id,amount,occurred_on,note) values(gid,u,round(p_initial_contribution,2),p_start_date,null); insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(gid,u,'contribution',p_start_date,jsonb_build_object('amount',round(p_initial_contribution,2))); end if;
  perform public.rebuild_reverse_goal_for_user(gid,u); return gid;
 end; $$;
+*/
 create or replace function public.add_reverse_goal_contribution(p_goal_id text,p_amount numeric,p_occurred_on date,p_note text default null)
 returns void language plpgsql security definer set search_path=public,pg_temp as $$ declare u uuid:=auth.uid(); start_date date; completed_at timestamptz;
 begin
@@ -1458,8 +1466,10 @@ begin
  if p_occurred_on<current_date then insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(p_goal_id,u,'recalculated',current_date,jsonb_build_object('message','Historico recalculado devido a um aporte registrado retroativamente.')); end if;
  perform public.rebuild_reverse_goal_for_user(p_goal_id,u);
 end; $$;
-create or replace function public.rebuild_all_reverse_goals()
-returns integer language plpgsql security definer set search_path=public,pg_temp as $$ declare item record; n integer:=0; begin for item in select id,user_id from public.goals where goal_type='reverse' and reverse_completed_at is null and reverse_remaining_amount>0 loop perform public.rebuild_reverse_goal_for_user(item.id,item.user_id); n:=n+1; end loop; return n; end; $$;
+/* legacy definition superseded by SEC-03 below.
+create or replace function public.legacy_rebuild_all_reverse_goals()
+returns integer language plpgsql security definer set search_path=public,pg_temp as $$ declare item record; n integer:=0; begin for item in select id,user_id from public.goals where goal_type='reverse' and reverse_completed_at is null and reverse_remaining_amount>0 loop begin perform public.rebuild_reverse_goal_for_user(item.id,item.user_id); n:=n+1; exception when others then raise warning 'rebuild_reverse_goal_for_user ignorado para goal_id=% (SQLSTATE %): %',item.id,SQLSTATE,SQLERRM; end; end loop; return n; end; $$;
+*/
 create or replace function public.set_reverse_goal_retention(p_months smallint default null)
 returns void language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_uid uuid := auth.uid();
@@ -1481,10 +1491,24 @@ begin
   return v_deleted;
 end; $$;
 revoke all on function public.set_reverse_goal_retention(smallint) from public,anon; grant execute on function public.set_reverse_goal_retention(smallint) to authenticated; revoke all on function public.cleanup_expired_reverse_goals() from public,anon,authenticated;
-grant execute on function public.create_reverse_goal(text,numeric,numeric,date,numeric,text,text) to authenticated;
 grant execute on function public.add_reverse_goal_contribution(text,numeric,date,text) to authenticated;
-grant execute on function public.rebuild_all_reverse_goals() to service_role;
 grant execute on function public.cleanup_expired_reverse_goals() to service_role;
+
+-- SEC-02 - estado consolidado de permissoes das RPCs de Metas Reversas.
+-- Funcoes internas nao sao pontos de entrada para clientes ou service_role.
+revoke all on function public.rebuild_reverse_goal(text) from public,anon,authenticated,service_role;
+revoke all on function public.cleanup_expired_reverse_goals() from public,anon,authenticated;
+grant execute on function public.cleanup_expired_reverse_goals() to service_role;
+
+-- Novas funcoes, tabelas e sequences exigem grants explicitos.
+alter default privileges for role postgres in schema public revoke all on functions from anon,authenticated;
+alter default privileges for role postgres in schema public revoke all on tables from anon,authenticated;
+alter default privileges for role postgres in schema public revoke all on sequences from anon,authenticated;
+
+revoke all on table public.reverse_goal_contributions,public.reverse_goal_events,public.reverse_goal_history,public.reverse_goal_retention_settings from anon;
+revoke all on table public.reverse_goal_contributions,public.reverse_goal_events,public.reverse_goal_history,public.reverse_goal_retention_settings from authenticated;
+grant select on table public.reverse_goal_contributions,public.reverse_goal_events,public.reverse_goal_history,public.reverse_goal_retention_settings to authenticated;
+revoke all on sequence public.reverse_goal_contributions_id_seq,public.reverse_goal_events_id_seq,public.reverse_goal_history_id_seq from anon,authenticated;
 
 -- BLOCO 19 - Previsao de conclusao da Meta Reversa V1.3.2
 -- A previsao e calculada no banco apos cada reconstrucao, usando a media dos
@@ -1500,7 +1524,6 @@ begin
   months:=case when avg_amount>0 then ceil(remaining/avg_amount) end;
   update public.goals set reverse_monthly_contribution_average=avg_amount,reverse_forecast_completion_date=case when completed_at is not null then completed_at::date when months is null then null else (current_date+(months::text||' months')::interval)::date end where id=p_goal_id and user_id=p_user_id;
 end; $$;
-revoke all on function public.refresh_reverse_goal_forecast(text,uuid) from public,anon,authenticated;
 
 create or replace function public.refresh_reverse_goal_forecast_after_rebuild() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
 begin
@@ -1509,7 +1532,6 @@ begin
   end if;
   return new;
 end; $$;
-revoke all on function public.refresh_reverse_goal_forecast_after_rebuild() from public,anon,authenticated;
 drop trigger if exists reverse_goal_forecast_after_rebuild on public.goals;
 create trigger reverse_goal_forecast_after_rebuild after update of reverse_remaining_amount,reverse_completed_at on public.goals for each row when (new.goal_type='reverse' and (old.reverse_remaining_amount is distinct from new.reverse_remaining_amount or old.reverse_completed_at is distinct from new.reverse_completed_at)) execute function public.refresh_reverse_goal_forecast_after_rebuild();
 begin;
@@ -1523,9 +1545,10 @@ commit;
 
 -- BLOCO 21 - Restauracao segura de Meta Reversa (estado final para instalacao limpa)
 -- Mantem a chave composta (user_id, goal_id) em todos os acessos internos.
-create or replace function public.rebuild_reverse_goal_for_user(p_goal_id text, p_user_id uuid)
+/* legacy definition superseded by SEC-03 below.
+create or replace function public.legacy_rebuild_reverse_goal_for_user(p_goal_id text, p_user_id uuid)
 returns void language plpgsql security definer set search_path=public,pg_temp as $$
-declare g public.goals%rowtype; p date; last_month date := (date_trunc('month',current_date)::date-interval '1 month')::date; rate numeric(10,6); balance numeric(14,2); correction numeric(14,2); contribution numeric(14,2); correction_total numeric(14,2):=0; contributed_total numeric(14,2):=0; completion_date date;
+declare g public.goals%rowtype; p date; last_month date := (date_trunc('month',current_date)::date-interval '1 month')::date; rate numeric(10,6); balance numeric(14,2); correction numeric(14,2); contribution numeric(14,2); correction_total numeric(14,2):=0; contributed_total numeric(14,2):=0; completion_date date; final_target numeric(14,2);
 begin
   select * into g from public.goals where user_id=p_user_id and id=p_goal_id for update;
   if not found or g.goal_type<>'reverse' then raise exception 'meta reversa nao encontrada' using errcode='P0002'; end if;
@@ -1539,11 +1562,12 @@ begin
     if balance=0 then select max(occurred_on) into completion_date from public.reverse_goal_contributions where user_id=p_user_id and goal_id=p_goal_id and occurred_on>=p and occurred_on<(p+interval '1 month')::date; exit; end if; p:=(p+interval '1 month')::date;
   end loop;
   if balance>0 then select coalesce(sum(amount),0)::numeric(14,2) into contribution from public.reverse_goal_contributions where user_id=p_user_id and goal_id=p_goal_id and occurred_on>=p; contributed_total:=contributed_total+contribution; balance:=greatest(0,round(balance-contribution,2)); if balance=0 then select max(occurred_on) into completion_date from public.reverse_goal_contributions where user_id=p_user_id and goal_id=p_goal_id and occurred_on>=p; end if; end if;
-  update public.goals set reverse_remaining_amount=balance,reverse_correction_amount=correction_total,reverse_corrected_amount=round(reverse_original_amount+correction_total,2),reverse_total_contributed=contributed_total,reverse_progress_percent=case when round(reverse_original_amount+correction_total,2)=0 then 0 else round(least(100,(1-balance/round(reverse_original_amount+correction_total,2))*100),2) end,target=round(reverse_original_amount+correction_total,2),current=contributed_total,reverse_completed_at=case when balance=0 then coalesce(reverse_completed_at,coalesce(completion_date,current_date)::timestamptz) else null end,updated_at=now() where user_id=p_user_id and id=p_goal_id;
+  final_target:=round(g.reverse_original_amount+correction_total,2);
+  if final_target>=1000000000 then raise exception 'reverse_goal_limit_exceeded' using errcode='22023'; end if;
+  update public.goals set reverse_remaining_amount=balance,reverse_correction_amount=correction_total,reverse_corrected_amount=final_target,reverse_total_contributed=contributed_total,reverse_progress_percent=case when final_target=0 then 0 else round(least(100,(1-balance/final_target)*100),2) end,target=final_target,current=contributed_total,reverse_completed_at=case when balance=0 then coalesce(reverse_completed_at,coalesce(completion_date,current_date)::timestamptz) else null end,updated_at=now() where user_id=p_user_id and id=p_goal_id;
   if balance=0 and g.reverse_completed_at is null then insert into public.reverse_goal_events(goal_id,user_id,event_type,occurred_on,details) values(p_goal_id,p_user_id,'completed',coalesce(completion_date,current_date),jsonb_build_object('message','A meta foi concluida e nao recebera novas correcoes.')); end if;
 end; $$;
-revoke all on function public.rebuild_reverse_goal_for_user(text,uuid) from public,anon,authenticated;
-
+*/
 create or replace function public.replace_my_data(p_data jsonb)
 returns void language plpgsql security definer set search_path=public,pg_temp as $$
 declare u uuid:=auth.uid(); item record;
@@ -1571,3 +1595,113 @@ begin
 end; $$;
 revoke all on function public.replace_my_data(jsonb) from public,anon;
 grant execute on function public.replace_my_data(jsonb) to authenticated;
+
+-- SEC-03 - estado final dos limites de Meta Reversa.
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'goals_reverse_original_limit' and conrelid = 'public.goals'::regclass) then
+    alter table public.goals add constraint goals_reverse_original_limit check (goal_type <> 'reverse' or reverse_original_amount < 1000000000);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'goals_reverse_remaining_limit' and conrelid = 'public.goals'::regclass) then
+    alter table public.goals add constraint goals_reverse_remaining_limit check (goal_type <> 'reverse' or reverse_remaining_amount < 1000000000);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'goals_reverse_corrected_limit' and conrelid = 'public.goals'::regclass) then
+    alter table public.goals add constraint goals_reverse_corrected_limit check (goal_type <> 'reverse' or reverse_corrected_amount < 1000000000);
+  end if;
+end;
+$$;
+
+create or replace function public.rebuild_reverse_goal_for_user(p_goal_id text, p_user_id uuid)
+returns void language plpgsql security definer set search_path=public,pg_temp as $$
+declare
+  g public.goals%rowtype;
+  p date;
+  last_month date := (date_trunc('month', current_date)::date - interval '1 month')::date;
+  rate numeric(10,6);
+  balance numeric(14,2);
+  correction numeric(14,2);
+  contribution numeric(14,2);
+  correction_total numeric(14,2) := 0;
+  contributed_total numeric(14,2) := 0;
+  completion_date date;
+  final_target numeric(14,2);
+begin
+  select * into g from public.goals where user_id = p_user_id and id = p_goal_id for update;
+  if not found or g.goal_type <> 'reverse' then raise exception 'meta reversa nao encontrada' using errcode = 'P0002'; end if;
+  if g.reverse_completed_at is not null then return; end if;
+  delete from public.reverse_goal_history where user_id = p_user_id and goal_id = p_goal_id;
+  balance := g.reverse_original_amount;
+  p := date_trunc('month', g.reverse_start_date)::date;
+  while p <= last_month loop
+    select rate_percent into rate from public.selic_monthly_rates where reference_month = p;
+    exit when not found;
+    select coalesce(sum(amount), 0)::numeric(14,2) into contribution from public.reverse_goal_contributions where user_id = p_user_id and goal_id = p_goal_id and occurred_on >= p and occurred_on < (p + interval '1 month')::date;
+    contributed_total := contributed_total + contribution;
+    correction := case when balance <= contribution then 0 else round((balance - contribution) * (rate / 100) * g.reverse_selic_factor, 2) end;
+    balance := greatest(0, round(balance - contribution + correction, 2));
+    correction_total := round(correction_total + correction, 2);
+    insert into public.reverse_goal_history (goal_id, user_id, reference_month, applied_on, balance_before, balance_after, selic_rate_percent, selic_factor, correction_amount, contribution_amount)
+    values (p_goal_id, p_user_id, p, (p + interval '1 month')::date, greatest(0, round(balance + contribution - correction, 2)), balance, rate, g.reverse_selic_factor, correction, contribution);
+    if balance = 0 then
+      select max(occurred_on) into completion_date from public.reverse_goal_contributions where user_id = p_user_id and goal_id = p_goal_id and occurred_on >= p and occurred_on < (p + interval '1 month')::date;
+      exit;
+    end if;
+    p := (p + interval '1 month')::date;
+  end loop;
+  if balance > 0 then
+    select coalesce(sum(amount), 0)::numeric(14,2) into contribution from public.reverse_goal_contributions where user_id = p_user_id and goal_id = p_goal_id and occurred_on >= p;
+    contributed_total := contributed_total + contribution;
+    balance := greatest(0, round(balance - contribution, 2));
+    if balance = 0 then select max(occurred_on) into completion_date from public.reverse_goal_contributions where user_id = p_user_id and goal_id = p_goal_id and occurred_on >= p; end if;
+  end if;
+  final_target := round(g.reverse_original_amount + correction_total, 2);
+  if final_target >= 1000000000 then raise exception 'reverse_goal_limit_exceeded' using errcode = '22023'; end if;
+  update public.goals set reverse_remaining_amount = balance, reverse_correction_amount = correction_total, reverse_corrected_amount = final_target, reverse_total_contributed = contributed_total, reverse_progress_percent = case when final_target = 0 then 0 else round(least(100, (1 - balance / final_target) * 100), 2) end, target = final_target, current = contributed_total, reverse_completed_at = case when balance = 0 then coalesce(reverse_completed_at, coalesce(completion_date, current_date)::timestamptz) else null end, updated_at = now() where user_id = p_user_id and id = p_goal_id;
+  if balance = 0 and g.reverse_completed_at is null then insert into public.reverse_goal_events(goal_id, user_id, event_type, occurred_on, details) values (p_goal_id, p_user_id, 'completed', coalesce(completion_date, current_date), jsonb_build_object('message', 'A meta foi concluida e nao recebera novas correcoes.')); end if;
+end;
+$$;
+
+create or replace function public.create_reverse_goal(p_name text, p_original_amount numeric, p_initial_contribution numeric, p_start_date date, p_selic_factor numeric, p_icon text default '🎯', p_color text default '#6366f1')
+returns text language plpgsql security definer set search_path=public,pg_temp as $$
+declare u uuid := auth.uid(); gid text := gen_random_uuid()::text;
+begin
+  if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode = '28000'; end if;
+  if nullif(btrim(p_name), '') is null or char_length(btrim(p_name)) > 120 or p_original_amount <= 0 or p_original_amount >= 1000000000 or p_initial_contribution < 0 or p_initial_contribution > p_original_amount or p_start_date is null or p_start_date < current_date - interval '19 years' or p_start_date > current_date or p_selic_factor not between .5 and 1.5 then
+    if p_original_amount >= 1000000000 then raise exception 'reverse_goal_limit_exceeded' using errcode = '22023'; end if;
+    raise exception 'dados da meta invalidos' using errcode = '22023';
+  end if;
+  insert into public.goals (id, user_id, name, target, current, deadline, icon, color, goal_type, reverse_original_amount, reverse_remaining_amount, reverse_corrected_amount, reverse_start_date, reverse_selic_factor) values (gid, u, btrim(p_name), p_original_amount, 0, null, left(coalesce(p_icon, '🎯'), 8), coalesce(p_color, '#6366f1'), 'reverse', p_original_amount, p_original_amount, p_original_amount, p_start_date, round(p_selic_factor, 4));
+  insert into public.reverse_goal_events(goal_id, user_id, event_type, occurred_on, details) values (gid, u, 'created', p_start_date, jsonb_build_object('message', 'Meta Reversa criada.'));
+  if p_initial_contribution > 0 then
+    insert into public.reverse_goal_contributions(goal_id, user_id, amount, occurred_on, note) values (gid, u, round(p_initial_contribution, 2), p_start_date, null);
+    insert into public.reverse_goal_events(goal_id, user_id, event_type, occurred_on, details) values (gid, u, 'contribution', p_start_date, jsonb_build_object('amount', round(p_initial_contribution, 2)));
+  end if;
+  perform public.rebuild_reverse_goal_for_user(gid, u);
+  return gid;
+end;
+$$;
+
+create or replace function public.rebuild_all_reverse_goals()
+returns integer language plpgsql security definer set search_path=public,pg_temp as $$
+declare item record; n integer := 0;
+begin
+  for item in select id, user_id from public.goals where goal_type = 'reverse' and reverse_completed_at is null and reverse_remaining_amount > 0 loop
+    begin
+      perform public.rebuild_reverse_goal_for_user(item.id, item.user_id);
+      n := n + 1;
+    exception when others then
+      raise warning 'rebuild_reverse_goal_for_user ignorado para goal_id=% (SQLSTATE %): %', item.id, SQLSTATE, SQLERRM;
+    end;
+  end loop;
+  return n;
+end;
+$$;
+
+-- SEC-02/SEC-03 - permissoes devem vir depois das definicoes finais.
+revoke all on function public.create_reverse_goal(text,numeric,numeric,date,numeric,text,text) from public,anon,authenticated,service_role;
+grant execute on function public.create_reverse_goal(text,numeric,numeric,date,numeric,text,text) to authenticated;
+revoke all on function public.rebuild_reverse_goal_for_user(text,uuid) from public,anon,authenticated,service_role;
+revoke all on function public.refresh_reverse_goal_forecast(text,uuid) from public,anon,authenticated,service_role;
+revoke all on function public.refresh_reverse_goal_forecast_after_rebuild() from public,anon,authenticated,service_role;
+revoke all on function public.rebuild_all_reverse_goals() from public,anon,authenticated;
+grant execute on function public.rebuild_all_reverse_goals() to service_role;
