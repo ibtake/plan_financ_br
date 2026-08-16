@@ -42,7 +42,7 @@ function corsHeaders(request: Request) {
   }
 }
 
-function response(request: Request, status: number, body: Record<string, unknown>) {
+function response(request: Request, status: number, body: Record<string, unknown>, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -50,6 +50,7 @@ function response(request: Request, status: number, body: Record<string, unknown
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store, private',
       Pragma: 'no-cache',
+      ...extraHeaders,
     },
   })
 }
@@ -157,7 +158,8 @@ Deno.serve(async (request) => {
       p_action: action,
     })
     if (rateError) return response(request, 503, { error: 'Proteção temporariamente indisponível.' })
-    if (!allowed) return response(request, 429, { error: 'Muitas solicitações. Aguarde um minuto.' })
+    // Janela fixa de 1 minuto na RPC (v42): Retry-After e estatico.
+    if (!allowed) return response(request, 429, { error: 'Muitas solicitações. Aguarde um minuto.' }, { 'Retry-After': '60' })
     if (!isStrongPassword(body.password)) {
       return response(request, 400, { error: 'A nova senha não atende à política de segurança.' })
     }
@@ -196,7 +198,7 @@ Deno.serve(async (request) => {
       p_action: action,
     })
     if (rateError) return response(request, 503, { error: 'Proteção temporariamente indisponível.' })
-    if (!allowed) return response(request, 429, { error: 'Muitas solicitações. Aguarde um minuto.' })
+    if (!allowed) return response(request, 429, { error: 'Muitas solicitações. Aguarde um minuto.' }, { 'Retry-After': '60' })
   }
 
   if (action === 'status') {

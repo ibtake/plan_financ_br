@@ -161,7 +161,7 @@ Deno.serve(async (request) => {
         p_access_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       })
       if (refreshError) return response(503, { error: 'Não foi possível renovar o widget.' })
-      const rotated = Array.isArray(rotatedRows) ? rotated[0] : rotated
+      const rotated = Array.isArray(rotatedRows) ? rotatedRows[0] : rotatedRows
       if (rotated?.user_id) {
         userId = rotated.user_id
         tokenHash = responseTokenHash
