@@ -125,6 +125,14 @@ begin
     return false;
   end if;
 
+  -- v43: troca inicial de senha obrigatoria. Enquanto o flag
+  -- must_change_password estiver presente no app_metadata do token, a
+  -- sessao e invalida para o plano de dados (RLS e RPCs). O valor vem
+  -- serializado como texto ('true') no claim JSON.
+  if coalesce(auth.jwt() -> 'app_metadata' ->> 'must_change_password', 'false') = 'true' then
+    return false;
+  end if;
+
   v_token_iat := coalesce((auth.jwt() ->> 'iat')::bigint, 0);
   if v_token_iat = 0 then
     return false;
@@ -1627,6 +1635,7 @@ returns void language plpgsql security definer set search_path=public,pg_temp as
 declare u uuid:=auth.uid(); item record;
 begin
   if u is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode='28000'; end if;
+  perform pg_advisory_xact_lock(hashtext('replace_my_data:' || u::text));
   if jsonb_typeof(p_data) <> 'object' then raise exception 'backup invalido' using errcode='22023'; end if;
   if exists (select 1 from jsonb_to_recordset(coalesce(p_data->'goals','[]'::jsonb)) x(id text,goal_type text,reverse_completed_at timestamptz) where coalesce(x.goal_type,'standard')='reverse' and x.reverse_completed_at is not null and not exists (select 1 from jsonb_to_recordset(coalesce(p_data->'reverseGoalHistory','[]'::jsonb)) h(goal_id text) where h.goal_id=x.id)) then raise exception 'backup de meta reversa concluida sem historico' using errcode='22023'; end if;
   delete from public.transactions where user_id=u; delete from public.budgets where user_id=u; delete from public.goals where user_id=u; delete from public.categories where user_id=u; delete from public.pgbl_plans where user_id=u; delete from public.reverse_goal_retention_settings where user_id=u;
