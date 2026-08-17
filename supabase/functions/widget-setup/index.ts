@@ -48,6 +48,24 @@ Deno.serve(async (request) => {
   // persistente dos dados com apenas a senha da vitima).
   const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token)
   if (claimsError || !claimsData?.claims) return response(request, 401, { error: 'Sessão inválida.' })
+  const claims = claimsData.claims as Record<string, unknown>
+  // Predicado COMPLETO de is_token_valid() replicado na camada de aplicacao
+  // (service_role nao passa por RLS). Condicao 1: troca inicial de senha
+  // pendente - registro do servidor (fonte da verdade) OU claim do JWT.
+  if (data.user.app_metadata?.must_change_password === true || claims.app_metadata?.must_change_password === 'true') {
+    return response(request, 403, { error: 'Conclua a troca de senha antes de configurar o widget.', code: 'password_change_required' })
+  }
+  // Condicao 2: revogacao por atualizacao do usuario - token emitido antes
+  // da ultima atualizacao (ex.: troca de senha) e invalido, mesmo com
+  // assinatura valida. Mesmo grace de 1s do banco.
+  const tokenIat = Number(claims.iat || 0)
+  const userUpdatedEpoch = Math.floor((Date.parse(data.user.updated_at || '') || 0) / 1000)
+  if (!tokenIat || !userUpdatedEpoch || tokenIat + 1 < userUpdatedEpoch) {
+    return response(request, 401, { error: 'Sessão expirada. Entre novamente.' })
+  }
+  // Condicao 3 (has_required_aal): sessao precisa ser AAL2 SOMENTE quando o
+  // usuario possui fator MFA verificado. Sessao AAL1 com fator verificado
+  // nao emite/gerencia credenciais do widget.
   if (claimsData.claims.aal !== 'aal2') {
     const { data: factors, error: factorsError } = await admin.auth.admin.mfa.listFactors({ userId: data.user.id })
     if (factorsError) return response(request, 503, { error: 'Não foi possível validar a verificação em duas etapas.' })

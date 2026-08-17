@@ -92,6 +92,9 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
 
   const handleSubmit = (event) => {
     event.preventDefault()
+    // Guarda de duplo-clique: durante os ~240ms de animacao de fechamento o
+    // botao segue clicavel; sem isso, dois cliques geram duas transacoes.
+    if (closing) return
     if (!validate()) return
     onSubmit({
       ...form,
@@ -372,7 +375,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
             <button type="button" className="btn" onClick={closeWithAnimation}>
               Cancelar
             </button>
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="btn btn-primary" disabled={closing}>
               {isEditing ? 'Salvar alterações' : 'Adicionar lançamento'}
             </button>
           </div>

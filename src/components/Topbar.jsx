@@ -71,10 +71,42 @@ export default function Topbar({
   const [profileOpen, setProfileOpen] = useState(false)
   const [bellOpen, setBellOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  // Rascunho local da busca: responde a cada tecla SEM re-renderizar a raiz
+  // da arvore; o valor so propaga via onSearch apos a pausa (debounce) ou
+  // Enter. Sem isso, cada tecla re-renderizava sidebar, paineis e lista.
+  const [searchDraft, setSearchDraft] = useState(search)
+  const searchDebounceRef = useRef(null)
 
   const profileRef = useRef(null)
   const bellRef = useRef(null)
   const searchRef = useRef(null)
+
+  const SEARCH_DEBOUNCE_MS = 300
+
+  const commitSearch = (value) => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+    searchDebounceRef.current = null
+    onSearch(value)
+  }
+
+  useEffect(() => () => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+  }, [])
+
+  // O valor autoritativo pode mudar por fora (ex.: limpeza em outro painel);
+  // o rascunho acompanha quando ja nao ha edicao em andamento.
+  useEffect(() => {
+    setSearchDraft(search)
+  }, [search])
+
+  const handleSearchInput = (value) => {
+    setSearchDraft(value)
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+    searchDebounceRef.current = setTimeout(() => {
+      searchDebounceRef.current = null
+      onSearch(value)
+    }, SEARCH_DEBOUNCE_MS)
+  }
 
   useDismiss(profileRef, () => setProfileOpen(false), profileOpen)
   useDismiss(bellRef, () => setBellOpen(false), bellOpen)
@@ -141,8 +173,11 @@ export default function Topbar({
         <input
           ref={searchRef}
           type="search"
-          value={search}
-          onChange={(event) => onSearch(event.target.value)}
+          value={searchDraft}
+          onChange={(event) => handleSearchInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') commitSearch(searchDraft)
+          }}
           placeholder="Buscar lançamentos..."
           aria-label="Buscar lançamentos"
         />

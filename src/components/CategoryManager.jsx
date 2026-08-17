@@ -304,6 +304,8 @@ export default function CategoryManager({
 }) {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
+  // Guarda de duplo-clique no salvamento (criacao de categoria duplica; edicao e idempotente).
+  const saving = useRef(false)
 
   const usage = useMemo(() => {
     const map = {}
@@ -331,10 +333,13 @@ export default function CategoryManager({
   )
 
   const handleSave = (data) => {
+    if (saving.current) return
+    saving.current = true
     if (editing) onUpdate(editing.id, data)
     else onAdd(data)
     setShowForm(false)
     setEditing(null)
+    saving.current = false
   }
 
   const handleDelete = (category) => {

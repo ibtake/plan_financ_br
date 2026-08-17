@@ -100,6 +100,33 @@ function occurrenceDate(tx: Record<string, any>, date: string) {
   return index >= 0 && index % step === 0 && date === `${date.slice(0, 8)}${day}` ? index / step : null
 }
 
+// Pentest 16/08: corpo legitimo do widget tem centenas de bytes; 16 KiB e
+// folga ampla. Teto medido no STREAM (nao no header), entao chunked/ausencia
+// de content-length tambem e limitado - mesmo padrao do admin-users.
+const MAX_BODY_BYTES = 16_384
+
+async function readJsonWithinLimit(request: Request): Promise<Record<string, any>> {
+  const declaredLength = Number(request.headers.get('content-length') || 0)
+  if (declaredLength > MAX_BODY_BYTES) throw new Error('body_too_large')
+  const reader = request.body?.getReader()
+  if (!reader) throw new Error('invalid_body')
+  const chunks: Uint8Array[] = []
+  let size = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > MAX_BODY_BYTES) throw new Error('body_too_large')
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+  const body = JSON.parse(new TextDecoder().decode(bytes))
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('invalid_body')
+  return body as Record<string, any>
+}
+
 Deno.serve(async (request) => {
   if (request.method !== 'POST') return response(405, { error: 'Método não permitido.' })
   const url = Deno.env.get('SUPABASE_URL') || ''
@@ -107,7 +134,10 @@ Deno.serve(async (request) => {
   if (!url || !serviceRole) return response(503, { error: 'Serviço indisponível.' })
 
   let body: Record<string, any>
-  try { body = await request.json() } catch { return response(400, { error: 'Requisição inválida.' }) }
+  try { body = await readJsonWithinLimit(request) } catch (error) {
+    if (error instanceof Error && error.message === 'body_too_large') return response(413, { error: 'Requisição muito grande.' })
+    return response(400, { error: 'Requisição inválida.' })
+  }
   // O widget só pode consultar o dia corrente. A data não vem do cliente.
   const date = saoPauloDate()
   const admin = createClient(url, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } })
@@ -117,6 +147,19 @@ Deno.serve(async (request) => {
   let tokenHash = ''
   let responseToken = ''
   let responseRefreshToken = ''
+
+  // Pentest 16/08: requisicao sem NENHUMA credencial nunca e legitima - o
+  // widget sempre envia token, refresh ou codigo. Consome o teto global de
+  // invalidas antes de qualquer processamento; antes deste gate, POST vazio
+  // era gratuito para flood. Posicionado ANTES dos ramos para nao duplicar a
+  // contagem dos caminhos que ja consomem o contador com credencial invalida.
+  if (!widgetToken && !refreshToken && !body.code) {
+    authLog({ mode: 'none', tokenPresent: false, codePresent: false })
+    const invalidLimit = await enforceInvalidAttemptLimit(admin)
+    if (invalidLimit) return invalidLimit
+    await recordSampledMetric(admin, 'unauthorized')
+    return response(401, { error: 'Widget não autorizado.' })
+  }
 
   if (widgetToken) {
     const presentedToken = widgetToken
@@ -202,9 +245,10 @@ Deno.serve(async (request) => {
       responseRefreshToken = refresh
       authLog({ mode: 'install_code_activated', activated: true })
     }
-  } else {
-    authLog({ mode: 'none', tokenPresent: false, codePresent: false })
   }
+  // Alcancado somente por credencial apresentada e invalida (os fluxos sem
+  // nenhuma credencial retornam no gate inicial). Mantem a metrica e o shape
+  // de resposta originais.
   if (!userId) {
     await recordSampledMetric(admin, 'unauthorized')
     return response(401, { error: 'Widget não autorizado.' })
