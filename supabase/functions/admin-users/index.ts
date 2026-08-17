@@ -131,6 +131,15 @@ Deno.serve(async (request) => {
   if (claimsError || !claimsData?.claims) {
     return response(request, 401, { error: 'Sessão inválida.' })
   }
+  // Revogacao por atualizacao do usuario (mesma condicao do is_token_valid):
+  // token emitido antes da ultima atualizacao - ex.: troca de senha - e
+  // invalido mesmo com assinatura valida. Grace de 1s igual ao banco.
+  const adminClaims = claimsData.claims as Record<string, unknown>
+  const adminTokenIat = Number(adminClaims.iat || 0)
+  const adminUserUpdatedEpoch = Math.floor((Date.parse(user.updated_at || '') || 0) / 1000)
+  if (!adminTokenIat || !adminUserUpdatedEpoch || adminTokenIat + 1 < adminUserUpdatedEpoch) {
+    return response(request, 401, { error: 'Sessão expirada. Entre novamente.' })
+  }
 
   let body: Record<string, unknown>
   try {
@@ -170,11 +179,43 @@ Deno.serve(async (request) => {
     if (error) {
       return response(request, 500, { error: 'Não foi possível concluir a troca de senha.' })
     }
+    // Credencial emitida na janela da senha temporaria morre junto com ela:
+    // revoga widgets ativos e invalida codigos de instalacao nao usados.
+    // Falha nunca e silenciosa - o acesso sobrevivente e o proprio bug.
+    const nowIso = new Date().toISOString()
+    const { data: revokedWidgets, error: revokeError } = await admin
+      .from('widget_tokens')
+      .update({ revoked_at: nowIso })
+      .eq('user_id', user.id)
+      .is('revoked_at', null)
+      .select('id')
+    const { data: voidedCodes, error: codesError } = await admin
+      .from('widget_install_codes')
+      .update({ used_at: nowIso })
+      .eq('user_id', user.id)
+      .is('used_at', null)
+      .select('id')
+    if (revokeError || codesError) {
+      console.error('initial_password_change_widget_revoke_failed', {
+        userId: user.id,
+        revokeError: revokeError?.code || null,
+        codesError: codesError?.code || null,
+      })
+      return response(request, 503, {
+        error: 'A senha foi alterada, mas não foi possível revogar as credenciais do widget.',
+        code: 'widget_revocation_failed',
+        password_changed: true,
+      })
+    }
     const { error: auditError } = await admin.from('security_events').insert({
       user_id: user.id,
       event_type: 'password_changed',
       severity: 'warning',
-      details: { context: 'initial_password_change' },
+      details: {
+        context: 'initial_password_change',
+        widgets_revoked: revokedWidgets?.length || 0,
+        install_codes_voided: voidedCodes?.length || 0,
+      },
       user_agent: 'admin-users',
     })
     if (auditError) {
@@ -186,6 +227,13 @@ Deno.serve(async (request) => {
       })
     }
     return response(request, 200, { ok: true })
+  }
+
+  // Predicado de sessao para todas as demais acoes: troca inicial pendente
+  // (complete-password-change acima e a unica isenta - e o proprio fluxo
+  // de remediacao). Registro do servidor OU claim, como no is_token_valid.
+  if (user.app_metadata?.must_change_password === true || adminClaims.app_metadata?.must_change_password === 'true') {
+    return response(request, 403, { error: 'Conclua a troca de senha antes de continuar.', code: 'password_change_required' })
   }
 
   if (!allowedAdminIds().has(user.id.toLowerCase())) {
@@ -213,6 +261,14 @@ Deno.serve(async (request) => {
   }
 
   if (action === 'list-users') {
+    // Pentest 16/08: diretorio de usuarios e PII — exige o mesmo step-up
+    // de MFA fresco (<=5 min) ja aplicado ao create-user.
+    if (!hasFreshMfa(claimsData.claims as Record<string, unknown>)) {
+      return response(request, 403, {
+        error: 'Confirme novamente seu código MFA antes de listar os usuários.',
+        code: 'fresh_mfa_required',
+      })
+    }
     const users: Array<{ id: string; email: string; fullName: string; createdAt: string }> = []
     for (let page = 1; page <= 10; page += 1) {
       const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 })
@@ -232,6 +288,13 @@ Deno.serve(async (request) => {
   }
 
   if (action === 'widget-metrics') {
+    // Pentest 16/08: metricas de autenticacao do widget — mesmo step-up.
+    if (!hasFreshMfa(claimsData.claims as Record<string, unknown>)) {
+      return response(request, 403, {
+        error: 'Confirme novamente seu código MFA antes de consultar as métricas.',
+        code: 'fresh_mfa_required',
+      })
+    }
     const { data, error } = await admin
       .from('widget_auth_metrics')
       .select('metric_date,failure_type,sampled_count,last_sampled_at')

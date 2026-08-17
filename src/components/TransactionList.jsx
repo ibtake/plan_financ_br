@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import {
   Check,
   Circle,
@@ -26,7 +26,9 @@ const SORTS = [
   { id: 'desc-asc', label: 'Descrição (A–Z)' },
 ]
 
-export function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate, onTogglePaid }) {
+// memo: a lista pode conter centenas de ocorrencias; sem memo, qualquer
+// re-render do pai (filtros, busca, toggle) re-renderiza todos os itens.
+export const TransactionItem = memo(function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate, onTogglePaid }) {
   const cat = getCategory(categories, tx.categoryId)
   const method = getPaymentMethod(tx.method)
   const repeat = recurrenceLabel(tx)
@@ -105,7 +107,7 @@ export function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate,
       </div>
     </div>
   )
-}
+})
 
 export default function TransactionList({
   occurrences,
@@ -193,6 +195,18 @@ export default function TransactionList({
     const ids = new Set(occurrences.map((t) => t.categoryId))
     return categories.filter((c) => ids.has(c.id))
   }, [occurrences, categories])
+
+  // Renderizacao incremental (perf): montar centenas de itens de uma vez
+  // custa 1-3s com 500+ ocorrencias. Corta em PAGE_SIZE e expande sob
+  // demanda. O reset observa apenas os CRITERIOS (busca/filtros/ordenacao)
+  // - nao os dados: marcar um pago nao pode recolher a lista do usuario.
+  const PAGE_SIZE = 100
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const criteriaKey = `${search}|${type}|${categoryId}|${status}|${sort}`
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [criteriaKey])
+  const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount])
 
   if (focusOccurrence) {
     return <div className="card notification-treatment"><div className="card-head"><div><div className="card-title">Tratar lançamento pendente</div><div className="card-sub">Conclua a ação e você retornará à visão geral.</div></div><button type="button" className="btn btn-sm" onClick={onFocusDone}>Voltar ao início</button></div><div className="tx-list"><TransactionItem tx={focusOccurrence} categories={categories} onEdit={onEdit} onDelete={(item) => { onDelete(item); onFocusDone?.() }} onDuplicate={onDuplicate} onTogglePaid={(item) => { onTogglePaid(item); onFocusDone?.() }} /></div></div>
@@ -312,19 +326,31 @@ export default function TransactionList({
           </div>
         </div>
       ) : (
-        <div className="tx-list">
-          {filtered.map((tx) => (
-            <TransactionItem
-              key={tx.id}
-              tx={tx}
-              categories={categories}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onDuplicate={onDuplicate}
-              onTogglePaid={onTogglePaid}
-            />
-          ))}
-        </div>
+        <>
+          <div className="tx-list">
+            {visible.map((tx) => (
+              <TransactionItem
+                key={tx.id}
+                tx={tx}
+                categories={categories}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                onDuplicate={onDuplicate}
+                onTogglePaid={onTogglePaid}
+              />
+            ))}
+          </div>
+          {filtered.length > visible.length && (
+            <button
+              type="button"
+              className="btn btn-sm btn-block"
+              style={{ marginTop: 12 }}
+              onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+            >
+              Carregar mais ({filtered.length - visible.length} restantes)
+            </button>
+          )}
+        </>
       )}
     </div>
   )

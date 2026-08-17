@@ -343,12 +343,26 @@ export function AuthProvider({ children }) {
     if (!supabase) return { error: 'Supabase nao configurado.' }
     const strength = validatePassword(newPassword)
     if (!strength.valid) return { error: 'A nova senha nao atende a politica de seguranca.' }
+    // Troca de senha e sinal de possivel comprometimento: o widget e uma
+    // sessao persistente e morre aqui. A revogacao vem ANTES da troca -
+    // depois dela o updated_at invalida o proprio token e o revoke falharia.
+    // Falha do revoke nao bloqueia a troca (seguranca da conta primeiro);
+    // retorna aviso para o usuario revogar manualmente nas configuracoes.
+    let widgetWarning = null
+    try {
+      const { error: revokeError } = await supabase.functions.invoke('widget-setup', { body: { action: 'revoke' } })
+      if (revokeError) widgetWarning = 'nao foi possivel revogar o widget'
+    } catch {
+      widgetWarning = 'nao foi possivel revogar o widget'
+    }
     const { error } = await supabase.auth.updateUser({ password: newPassword })
     if (error) return { error: translateAuthError(error), code: error.code || null }
     await logAuthEvent(AUTH_EVENTS.PASSWORD_CHANGED, 'warning', {})
     const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' })
     if (signOutError) return { error: translateAuthError(signOutError) }
-    return { ok: true }
+    return widgetWarning
+      ? { ok: true, warning: `Senha alterada, mas ${widgetWarning}. Revogue o widget nas configurações e reinstale.` }
+      : { ok: true }
   }, [])
 
   const exchangeRecoveryCode = useCallback(async (code) => {

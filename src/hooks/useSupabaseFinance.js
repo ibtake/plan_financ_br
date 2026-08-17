@@ -117,6 +117,9 @@ export function useSupabaseFinance() {
   const [goalDeletionPhase, setGoalDeletionPhase] = useState('')
   const latestLoadRequest = useRef(0)
   const deleteGoalInFlight = useRef(false)
+  // Guardas de duplo-clique: inserir duas vezes no mesmo instante duplicaria a linha
+  const transactionInsertInFlight = useRef(false)
+  const categoryInsertInFlight = useRef(false)
   const transactionFormFieldsQueue = useRef(Promise.resolve())
   const confirmedTransactionFormFields = useRef(DEFAULT_TRANSACTION_FORM_FIELDS)
   const transactionFormFieldsVersion = useRef(0)
@@ -230,10 +233,21 @@ export function useSupabaseFinance() {
   }, [load, reportError])
 
   const addTransaction = useCallback((input) => {
-    const tx = normalizeTransaction(input)
-    setTransactions((prev) => [tx, ...prev])
-    void persist(() => supabase.from('transactions').insert(toTxRow(tx, user.id)), { table: 'transactions', action: 'insert' })
-    return tx
+    // Segunda camada contra duplo-clique (a primeira e o disabled do form):
+    // ignorar segunda chamada no mesmo instante evita insert duplicado, pois
+    // cada chamada gera id proprio e o banco nao tem unique de negocio.
+    if (transactionInsertInFlight.current) return null
+    transactionInsertInFlight.current = true
+    try {
+      const tx = normalizeTransaction(input)
+      setTransactions((prev) => [tx, ...prev])
+      void persist(() => supabase.from('transactions').insert(toTxRow(tx, user.id)), { table: 'transactions', action: 'insert' })
+        .finally(() => { transactionInsertInFlight.current = false })
+      return tx
+    } catch (error) {
+      transactionInsertInFlight.current = false
+      throw error
+    }
   }, [persist, user])
 
   const updateTransaction = useCallback((id, input, occurrenceIndex = 0) => {
@@ -281,10 +295,19 @@ export function useSupabaseFinance() {
   }, [persist])
 
   const addCategory = useCallback((input) => {
-    const base = String(input.name || 'cat').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-    const cat = { id: input.id || `${base}-${Math.random().toString(36).slice(2, 5)}`, name: String(input.name || 'Nova categoria').trim(), type: normalizeType(input.type), color: input.color || '#6366f1', icon: input.icon || '📁', targetPercentage: Math.max(0, Math.min(100, Number(input.targetPercentage) || 0)), custom: true }
-    setCategories((prev) => [...prev, cat])
-    void persist(() => supabase.from('categories').insert(toCategory(cat, user.id)), { table: 'categories', action: 'insert' })
+    // Mesma guarda de duplo-clique do addTransaction (id aleatorio a cada chamada).
+    if (categoryInsertInFlight.current) return
+    categoryInsertInFlight.current = true
+    try {
+      const base = String(input.name || 'cat').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      const cat = { id: input.id || `${base}-${Math.random().toString(36).slice(2, 5)}`, name: String(input.name || 'Nova categoria').trim(), type: normalizeType(input.type), color: input.color || '#6366f1', icon: input.icon || '📁', targetPercentage: Math.max(0, Math.min(100, Number(input.targetPercentage) || 0)), custom: true }
+      setCategories((prev) => [...prev, cat])
+      void persist(() => supabase.from('categories').insert(toCategory(cat, user.id)), { table: 'categories', action: 'insert' })
+        .finally(() => { categoryInsertInFlight.current = false })
+    } catch (error) {
+      categoryInsertInFlight.current = false
+      throw error
+    }
   }, [persist, user])
 
   const updateCategory = useCallback((id, patch) => {
@@ -369,7 +392,7 @@ export function useSupabaseFinance() {
       p_occurred_on: input.occurredOn,
     }), 'add_standard_contribution')
     if (!ok) return false
-    await load()
+    await load({ preserveLoading: true })
     return true
   }, [callGoalRpc, load])
 
@@ -380,7 +403,7 @@ export function useSupabaseFinance() {
       p_occurred_on: input.occurredOn,
     }), 'update_standard_contribution')
     if (!ok) return false
-    await load()
+    await load({ preserveLoading: true })
     return true
   }, [callGoalRpc, load])
 
@@ -395,7 +418,7 @@ export function useSupabaseFinance() {
       p_color: input.color || '#6366f1',
     }), 'create_reverse')
     if (!ok) return false
-    await load()
+    await load({ preserveLoading: true })
     return true
   }, [callGoalRpc, load])
 
@@ -407,7 +430,7 @@ export function useSupabaseFinance() {
       p_note: String(input.note || '').trim() || null,
     }), 'add_reverse_contribution')
     if (!ok) return false
-    await load()
+    await load({ preserveLoading: true })
     return true
   }, [callGoalRpc, load])
 
@@ -418,7 +441,7 @@ export function useSupabaseFinance() {
       p_occurred_on: input.occurredOn,
     }), 'update_reverse_contribution')
     if (!ok) return false
-    await load()
+    await load({ preserveLoading: true })
     return true
   }, [callGoalRpc, load])
 
@@ -426,7 +449,7 @@ export function useSupabaseFinance() {
     const value = months === null || months === '' ? null : Number(months)
     const ok = await callGoalRpc(() => supabase.rpc('set_reverse_goal_retention', { p_months: value }), 'set_reverse_retention')
     if (!ok) return false
-    await load()
+    await load({ preserveLoading: true })
     return true
   }, [callGoalRpc, load])
 
@@ -440,7 +463,7 @@ export function useSupabaseFinance() {
       p_color: patch.color || '#6366f1',
     }), 'update_standard_metadata')
     if (!ok) return false
-    await load()
+    await load({ preserveLoading: true })
     return true
   }, [callGoalRpc, load])
 
@@ -457,7 +480,7 @@ export function useSupabaseFinance() {
       { table: 'goals', action: 'update_reverse_metadata' },
     )
     if (!ok) return false
-    await load()
+    await load({ preserveLoading: true })
     return true
   }, [load, persist, user])
 
