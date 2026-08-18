@@ -95,6 +95,16 @@ Deno.serve(async (request) => {
     const { error: revokeError } = await admin.from('widget_tokens').update({ revoked_at: new Date().toISOString() }).eq('user_id', data.user.id).is('revoked_at', null)
     return revokeError ? response(request, 503, { error: 'Não foi possível revogar o widget.' }) : response(request, 200, { ok: true })
   }
+  // Purga dos codigos do usuario que ja venceram ou foram usados, ANTES de
+  // emitir um novo. So saem os vencidos/usados; ativos e nao usados ficam
+  // (o fluxo legitimo precisa de apenas um, mas a convivencia nao atrapalha;
+  // um segundo dispositivo pode estar configurando enquanto o antigo ainda
+  // vigora). Best-effort: falha da limpeza nao bloqueia a emissao.
+  await admin
+    .from('widget_install_codes')
+    .delete()
+    .eq('user_id', data.user.id)
+    .or(`expires_at.lt.${new Date().toISOString()},used_at.not.is.null`)
   const { error: insertError } = await admin.from('widget_install_codes').insert({ user_id: data.user.id, code_hash: await hash(code), expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() })
   if (insertError) return response(request, 503, { error: 'Não foi possível iniciar a configuração.' })
   return response(request, 200, { code, expiresIn: 600 })

@@ -135,10 +135,9 @@ function AuthenticatedApp() {
   // de qualquer painel.
   const [search, setSearch] = useState('')
   const monthly = useMonthlyData(finance.transactions, monthKey)
-  const chartMonthKey = finance.transactions.reduce((latest, transaction) => {
-    const candidate = String(transaction.date || '').slice(0, 7)
-    return candidate > latest ? candidate : latest
-  }, '') || currentMonthKey()
+  // "Posicao atual" ancora no mes real de hoje; lancamentos de meses futuros
+  // so entram quando o usuario avanca o seletor para alem do mes atual.
+  const chartMonthKey = monthKey > currentMonthKey() ? monthKey : currentMonthKey()
   const chartMonthly = useMonthlyData(finance.transactions, chartMonthKey)
   const theme = finance.theme === 'dark' || finance.theme === 'light' ? finance.theme : systemTheme
 
