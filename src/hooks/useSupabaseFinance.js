@@ -532,37 +532,64 @@ export function useSupabaseFinance() {
       reportError({ message: 'Backup inválido.' })
       return false
     }
-    const txs = Array.isArray(data.transactions) ? data.transactions.map(normalizeTransaction) : transactions
-    const cats = Array.isArray(data.categories) && data.categories.length ? data.categories : categories
-    const nextBudgets = data.budgets && typeof data.budgets === 'object' ? data.budgets : budgets
-    const nextStandardGoalContributions = Array.isArray(data.standardGoalContributions) ? data.standardGoalContributions : []
-    const nextGoals = Array.isArray(data.goals) ? data.goals.map((goal) => ({ ...goal, id: goal.id || uid(), name: String(goal.name || 'Meta'), target: Math.abs(Number(goal.target) || 0), current: Math.abs(Number(goal.current) || 0), deadline: goal.deadline || '', icon: goal.icon || '🎯', color: goal.color || '#6366f1' })) : goals
-
-    // REQ 9 (auditoria V-05, Opcao B): uma unica RPC transacional substitui o
-    // antigo delete_my_data + Promise.all. Se qualquer insert falhar, o Postgres
-    // faz rollback e os dados antigos permanecem intactos.
-    const payload = {
-      categories: cats.map((cat) => ({
-        id: cat.id,
-        name: cat.name,
-        icon: cat.icon || '📁',
-        color: cat.color || '#6366f1',
-        type: normalizeType(cat.type),
-        target_percentage: Math.max(0, Math.min(100, Number(cat.targetPercentage) || 0)),
-      })),
-      transactions: txs.map((tx) => toTxRow(tx, user.id)),
-      // A RPC le budgets como recordset {category_id, limit_amount}; o estado
-      // guarda um mapa {categoryId: valor}, entao convertemos para array.
-      budgets: Object.entries(nextBudgets).map(([categoryId, amount]) => ({
-        category_id: categoryId,
-        limit_amount: Number(amount) || 0,
-      })),
-      goals: nextGoals.map((goal) => ({ ...toGoal(goal, user.id), goal_type: goal.goalType || goal.goal_type || 'standard', reverse_original_amount: goal.reverseOriginalAmount ?? goal.reverse_original_amount, reverse_remaining_amount: goal.reverseRemainingAmount ?? goal.reverse_remaining_amount, reverse_corrected_amount: goal.reverseCorrectedAmount ?? goal.reverse_corrected_amount, reverse_start_date: goal.reverseStartDate ?? goal.reverse_start_date, reverse_selic_factor: goal.reverseSelicFactor ?? goal.reverse_selic_factor, reverse_completed_at: goal.reverseCompletedAt ?? goal.reverse_completed_at, reverse_total_contributed: goal.reverseTotalContributed ?? goal.reverse_total_contributed, reverse_correction_amount: goal.reverseCorrectionAmount ?? goal.reverse_correction_amount, reverse_progress_percent: goal.reverseProgressPercent ?? goal.reverse_progress_percent, reverse_monthly_contribution_average: goal.reverseMonthlyContributionAverage ?? goal.reverse_monthly_contribution_average, reverse_forecast_completion_date: goal.reverseForecastCompletionDate ?? goal.reverse_forecast_completion_date })),
-      standardGoalContributions: nextStandardGoalContributions, reverseGoalContributions: data.reverseGoalContributions || [], reverseGoalHistory: data.reverseGoalHistory || [], reverseGoalEvents: data.reverseGoalEvents || [], reverseGoalRetentionMonths: data.reverseGoalRetentionMonths ?? null,
-      pgblPlans: Array.isArray(pgblPlans) ? pgblPlans : [],
+    if (!supabase || !user) {
+      reportError({ message: 'Sessão expirada. Entre novamente para importar o backup.' })
+      return false
     }
 
+    // O try cobre tambem a montagem do payload, nao so a chamada da RPC: o
+    // validador de importJSON confere o tipo de cada colecao, nao o de cada
+    // item, entao um `null` dentro de qualquer lista lancaria aqui e travaria a
+    // tela no estado "importando" sem nenhuma mensagem.
     try {
+      const txs = Array.isArray(data.transactions) ? data.transactions.map(normalizeTransaction) : transactions
+      const cats = Array.isArray(data.categories) && data.categories.length ? data.categories : categories
+      const nextBudgets = data.budgets && typeof data.budgets === 'object' ? data.budgets : budgets
+      // Campo ausente vira `undefined` para que a chave saia do JSON: a RPC
+      // replace_my_data tem fallback proprio (reconstroi os aportes a partir de
+      // goals.current). Enviar [] apagaria o historico de backups antigos.
+      const nextStandardGoalContributions = Array.isArray(data.standardGoalContributions) ? data.standardGoalContributions : undefined
+      const nextGoals = Array.isArray(data.goals) ? data.goals.map((goal) => ({ ...goal, id: goal.id || uid(), name: String(goal.name || 'Meta'), target: Math.abs(Number(goal.target) || 0), current: Math.abs(Number(goal.current) || 0), deadline: goal.deadline || '', icon: goal.icon || '🎯', color: goal.color || '#6366f1' })) : goals
+
+      // REQ 9 (auditoria V-05, Opcao B): uma unica RPC transacional substitui o
+      // antigo delete_my_data + Promise.all. Se qualquer insert falhar, o Postgres
+      // faz rollback e os dados antigos permanecem intactos.
+      const payload = {
+        categories: cats.map((cat) => ({
+          id: cat.id,
+          name: cat.name,
+          icon: cat.icon || '📁',
+          color: cat.color || '#6366f1',
+          type: normalizeType(cat.type),
+          target_percentage: Math.max(0, Math.min(100, Number(cat.targetPercentage) || 0)),
+        })),
+        transactions: txs.map((tx) => toTxRow(tx, user.id)),
+        // A RPC le budgets como recordset {category_id, limit_amount}; o estado
+        // guarda um mapa {categoryId: valor}, entao convertemos para array.
+        budgets: Object.entries(nextBudgets).map(([categoryId, amount]) => ({
+          category_id: categoryId,
+          limit_amount: Number(amount) || 0,
+        })),
+        goals: nextGoals.map((goal) => ({ ...toGoal(goal, user.id), goal_type: goal.goalType || goal.goal_type || 'standard', reverse_original_amount: goal.reverseOriginalAmount ?? goal.reverse_original_amount, reverse_remaining_amount: goal.reverseRemainingAmount ?? goal.reverse_remaining_amount, reverse_corrected_amount: goal.reverseCorrectedAmount ?? goal.reverse_corrected_amount, reverse_start_date: goal.reverseStartDate ?? goal.reverse_start_date, reverse_selic_factor: goal.reverseSelicFactor ?? goal.reverse_selic_factor, reverse_completed_at: goal.reverseCompletedAt ?? goal.reverse_completed_at, reverse_total_contributed: goal.reverseTotalContributed ?? goal.reverse_total_contributed, reverse_correction_amount: goal.reverseCorrectionAmount ?? goal.reverse_correction_amount, reverse_progress_percent: goal.reverseProgressPercent ?? goal.reverse_progress_percent, reverse_monthly_contribution_average: goal.reverseMonthlyContributionAverage ?? goal.reverse_monthly_contribution_average, reverse_forecast_completion_date: goal.reverseForecastCompletionDate ?? goal.reverse_forecast_completion_date })),
+        // Colecao ausente no arquivo significa "manter o que ja existe". A RPC
+        // reinsere as colecoes reversas com JOIN em goals, entao referencias a
+        // metas que nao vieram no backup sao descartadas sem erro.
+        standardGoalContributions: nextStandardGoalContributions,
+        reverseGoalContributions: Array.isArray(data.reverseGoalContributions) ? data.reverseGoalContributions : reverseGoalContributions,
+        reverseGoalHistory: Array.isArray(data.reverseGoalHistory) ? data.reverseGoalHistory : reverseGoalHistory,
+        reverseGoalEvents: Array.isArray(data.reverseGoalEvents) ? data.reverseGoalEvents : reverseGoalEvents,
+        reverseGoalRetentionMonths: data.reverseGoalRetentionMonths ?? reverseGoalRetentionMonths,
+        // O app carrega o plano com a chave `params` (usePGBL.fromRow) e a RPC le
+        // `fiscal_params`, coluna NOT NULL: sem a traducao o insert viola a
+        // constraint e o restore inteiro sofre rollback.
+        pgblPlans: (Array.isArray(pgblPlans) ? pgblPlans : []).map((plan) => ({
+          year: Number(plan.year),
+          months: plan.months || [],
+          premise: plan.premise || {},
+          fiscal_params: plan.fiscal_params ?? plan.params ?? {},
+        })),
+      }
+
       const { error: rpcError } = await guarded(
         () => supabase.rpc('replace_my_data', { p_data: payload }),
         { table: 'user_data', action: 'import' },
@@ -571,14 +598,16 @@ export function useSupabaseFinance() {
         reportError(rpcError)
         return false
       }
+      await logEvent(EVENTS.DATA_IMPORTED, 'warning', { transactions: txs.length, goals: nextGoals.length })
     } catch (error) {
       reportError(error)
       return false
     }
-    await logEvent(EVENTS.DATA_IMPORTED, 'warning', { transactions: txs.length, goals: nextGoals.length })
-    await load()
+    // Como as outras dez recargas do hook: sem preserveLoading, setLoading(true)
+    // desmonta a arvore inteira e o SettingsPanel remonta sem a mensagem de resultado.
+    await load({ preserveLoading: true })
     return true
-  }, [budgets, categories, goals, load, reportError, transactions, user])
+  }, [budgets, categories, goals, load, reportError, reverseGoalContributions, reverseGoalEvents, reverseGoalHistory, reverseGoalRetentionMonths, transactions, user])
 
   const clearAll = useCallback(async () => {
     if (!supabase || !user) return false

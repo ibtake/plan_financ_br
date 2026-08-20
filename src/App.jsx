@@ -112,7 +112,10 @@ export default function App() {
   }
 
   if (!auth.session || auth.mfaStage === 'required') return <AuthScreen />
-  if (auth.user?.app_metadata?.must_change_password === true) return <RequiredPasswordChange />
+  // Lido da sessao, nao de `auth.user`: a identidade de `user` e estabilizada no
+  // AuthContext, e esta claim precisa do objeto fresco de cada renovacao para que
+  // a troca obrigatoria marcada por um admin chegue sem recarregar a pagina.
+  if (auth.session?.user?.app_metadata?.must_change_password === true) return <RequiredPasswordChange />
 
   return <AuthenticatedApp />
 }
@@ -210,7 +213,9 @@ function AuthenticatedApp() {
   }
   const exportAllData = () => ({ ...finance.exportData(), pgblPlans: Object.values(pgbl.plans) })
   const importAllData = async (data) => {
-    const ok = await finance.importData(data, data?.pgblPlans)
+    // Sem pgblPlans no arquivo (backup anterior ao PGBL ou dados de exemplo),
+    // reenvia os planos atuais: a RPC faz replace total e os apagaria.
+    const ok = await finance.importData(data, data?.pgblPlans ?? Object.values(pgbl.plans))
     if (ok) await pgbl.reload()
     return ok
   }
@@ -355,7 +360,7 @@ function AuthenticatedApp() {
               isDeleting={finance.isDeletingGoal}
             />
           )}
-          {activeTab === 'pgbl' && <PGBLPanel />}
+          {activeTab === 'pgbl' && <PGBLPanel pgbl={pgbl} />}
           {activeTab === 'categories' && (
             <CategoryManager categories={finance.categories} transactions={finance.transactions} onAdd={finance.addCategory} onUpdate={finance.updateCategory} onDelete={finance.deleteCategory} />
           )}
@@ -370,7 +375,7 @@ function AuthenticatedApp() {
               onToggleTheme={toggleTheme}
               onExportJSON={() => exportJSON(exportAllData())}
               onImport={importAllData}
-              onLoadSample={() => finance.importData(buildSampleData())}
+              onLoadSample={() => importAllData(buildSampleData())}
               onClearAll={finance.clearAll}
               reverseGoalRetentionMonths={finance.reverseGoalRetentionMonths}
               reverseGoalRetentionLoaded={finance.reverseGoalRetentionLoaded}

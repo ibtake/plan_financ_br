@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BookOpen, Calculator, CircleAlert, CircleCheck, Settings2, Table2 } from 'lucide-react'
-import { usePGBL } from '../hooks/usePGBL.js'
 import { amountToInput, formatAmountInput, parseAmount } from '../utils/format.js'
 
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
@@ -79,9 +78,12 @@ function PGBLAmountInput({ value, label, onChange }) {
   return <input className="input pgbl-cell" type="text" inputMode="numeric" value={draft} onFocus={() => setEditing(true)} onChange={(event) => { const masked = formatAmountInput(event.target.value); setDraft(masked); onChange(parseAmount(masked)) }} onBlur={() => { setEditing(false); setDraft(value === '' || value == null ? '' : amountToInput(value)) }} aria-label={label} />
 }
 
-export default function PGBLPanel() {
+export default function PGBLPanel({ pgbl }) {
   const year = new Date().getFullYear()
-  const { plans, loading, error: pgblError, savePlan, deletePlan } = usePGBL()
+  // Instancia unica, vinda do App. Uma segunda chamada de usePGBL() aqui criaria
+  // um estado paralelo: o backup exportaria (e o import reescreveria) os planos
+  // como estavam no login, descartando o que foi editado na sessao.
+  const { plans, loading, error: pgblError, savePlan, deletePlan } = pgbl
   const [selectedYear, setSelectedYear] = useState(year)
   const [view, setView] = useState('resumo')
   const years = plans
