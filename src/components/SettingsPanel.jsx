@@ -70,29 +70,53 @@ export default function SettingsPanel({
     if (saved) setMessage({ tone: 'success', text: normalized === null ? 'Retenção desativada: metas concluídas não serão excluídas automaticamente.' : 'Configuração de retenção aplicada.' })
   }
 
-  const handleFile = async (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
+  // Sucesso so pode aparecer se a operacao concluiu de fato. Os dois caminhos de
+  // falha sao distintos: importData e clearAll sinalizam erro por retorno `false`
+  // (nao lancam, porque ja reportaram no estado do hook), e o catch cobre o
+  // oposto - uma rejeicao vinda da recarga posterior, fora do try daquelas.
+  const runAction = async (action, successText, errorText) => {
     try {
-      const data = await importJSON(file)
-      await onImport(data)
-      setMessage({ tone: 'success', text: 'Backup importado com sucesso.' })
+      const ok = await action()
+      setMessage(ok === false ? { tone: 'danger', text: errorText } : { tone: 'success', text: successText })
     } catch (error) {
       setMessage({ tone: 'danger', text: error.message })
     }
   }
 
+  const handleFile = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    // A leitura entra na propria acao: importJSON lanca com mensagem pronta para
+    // a tela, e o catch de runAction ja a exibe.
+    await runAction(
+      async () => onImport(await importJSON(file)),
+      'Backup importado com sucesso.',
+      'Não foi possível importar o backup. Nenhum dado foi alterado.',
+    )
+  }
+
   const loadSample = async () => {
-    if (transactionCount && !window.confirm('Os dados atuais serão substituídos pelos dados de exemplo. Continuar?')) return
-    await onLoadSample()
-    setMessage({ tone: 'success', text: 'Dados de exemplo carregados.' })
+    // Confirmacao incondicional: `transactionCount` sozinho liberava sem aviso a
+    // conta com 0 lancamentos e metas/orcamentos preenchidos, e somar `categoryCount`
+    // nao resolveria - o trigger handle_new_user semeia as categorias padrao em toda
+    // conta, entao a condicao seria sempre verdadeira. Categorias e planos PGBL nao
+    // entram na troca: buildSampleData nao os traz e importData mantem os atuais.
+    if (!window.confirm('Lançamentos, orçamentos e metas serão substituídos pelos dados de exemplo. Categorias e planos do Aporte Certo são preservados. Continuar?')) return
+    await runAction(
+      onLoadSample,
+      'Dados de exemplo carregados.',
+      'Não foi possível carregar os dados de exemplo. Nenhum dado foi alterado.',
+    )
   }
 
   const clear = async () => {
     if (!window.confirm('Apagar lançamentos, orçamentos, metas e restaurar as categorias padrão? Esta ação não pode ser desfeita.')) return
-    await onClearAll()
-    setMessage({ tone: 'success', text: 'Dados da conta removidos.' })
+    await runAction(
+      onClearAll,
+      'Dados da conta removidos.',
+      'Não foi possível remover os dados. Nada foi apagado.',
+    )
   }
 
   const setupWidget = async () => {

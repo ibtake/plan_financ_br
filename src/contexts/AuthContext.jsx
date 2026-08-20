@@ -147,7 +147,16 @@ export function AuthProvider({ children }) {
       }
       if (!active || version !== sessionVersion) return
       setSession(nextSession || null)
-      setUser(nextSession?.user || null)
+      // A referencia de `user` so troca quando a conta realmente muda. O GoTrue
+      // entrega um objeto novo a cada TOKEN_REFRESHED, e trocar a referencia
+      // recria o `load` de useSupabaseFinance e usePGBL: onze consultas e a UI de
+      // volta ao esqueleto, apagando o lancamento em preenchimento. `updated_at`
+      // no comparador mantem alteracoes reais da conta chegando (metadata, e-mail).
+      setUser((current) => (
+        current?.id === nextSession?.user?.id && current?.updated_at === nextSession?.user?.updated_at
+          ? current
+          : nextSession?.user || null
+      ))
       setLoading(false)
     }
 
@@ -176,13 +185,18 @@ export function AuthProvider({ children }) {
       refreshInFlight.current = (async () => {
         const { data: current } = await supabase.auth.getSession()
         if (!current.session) {
-          await applySession(null)
+          const version = ++sessionVersion
+          await applySession(null, version)
           return
         }
         if (isIdleSession(current.session)) {
           clearUserActivity()
           await supabase.auth.signOut()
-          await applySession(null)
+          // Versao capturada depois do signOut: o evento SIGNED_OUT que ele emite
+          // incrementa sessionVersion, e uma versao capturada antes cairia no
+          // guard de applySession sem limpar nada.
+          const version = ++sessionVersion
+          await applySession(null, version)
           return
         }
 
@@ -192,7 +206,10 @@ export function AuthProvider({ children }) {
         if (expiresAt && expiresAt - Date.now() > SESSION_REFRESH_SKEW_MS) return
 
         const { data, error } = await supabase.auth.refreshSession()
-        if (error || !data.session) await applySession(null)
+        if (error || !data.session) {
+          const version = ++sessionVersion
+          await applySession(null, version)
+        }
       })()
 
       try {
