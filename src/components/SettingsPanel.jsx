@@ -56,20 +56,6 @@ export default function SettingsPanel({
     ['paid', 'Status pago/recebido'],
   ]
 
-  const applyRetention = async () => {
-    const normalized = retentionMonths === '' ? null : Number(retentionMonths)
-    if (normalized !== null && (!Number.isInteger(normalized) || normalized < 1 || normalized > 12)) {
-      setMessage({ tone: 'danger', text: 'Escolha de 1 a 12 meses ou deixe o campo vazio.' })
-      return
-    }
-    const description = normalized === null ? 'Nunca excluir metas reversas concluídas?' : `Excluir permanentemente metas reversas concluídas após ${normalized} mês(es)?`
-    if (!window.confirm(`${description} Metas em andamento e metas comuns nunca serão excluídas.`)) return
-    setSavingRetention(true)
-    const saved = await onSetReverseGoalRetention(normalized)
-    setSavingRetention(false)
-    if (saved) setMessage({ tone: 'success', text: normalized === null ? 'Retenção desativada: metas concluídas não serão excluídas automaticamente.' : 'Configuração de retenção aplicada.' })
-  }
-
   // Sucesso so pode aparecer se a operacao concluiu de fato. Os dois caminhos de
   // falha sao distintos: importData e clearAll sinalizam erro por retorno `false`
   // (nao lancam, porque ja reportaram no estado do hook), e o catch cobre o
@@ -81,6 +67,31 @@ export default function SettingsPanel({
     } catch (error) {
       setMessage({ tone: 'danger', text: error.message })
     }
+  }
+
+  const applyRetention = async () => {
+    const normalized = retentionMonths === '' ? null : Number(retentionMonths)
+    // Inalcancavel pelo <select> atual, que so produz '' ou 1..12. Fica como
+    // barreira caso o controle volte a ser campo livre.
+    if (normalized !== null && (!Number.isInteger(normalized) || normalized < 1 || normalized > 12)) {
+      setMessage({ tone: 'danger', text: 'Escolha de 1 a 12 meses ou deixe o campo vazio.' })
+      return
+    }
+    const description = normalized === null ? 'Nunca excluir metas reversas concluídas?' : `Excluir permanentemente metas reversas concluídas após ${normalized} mês(es)?`
+    if (!window.confirm(`${description} Metas em andamento e metas comuns nunca serão excluídas.`)) return
+    // O par savingRetention fica fora do runAction, que nunca rejeita - tem catch
+    // proprio -, e por isso o setSavingRetention(false) abaixo sempre roda.
+    setSavingRetention(true)
+    await runAction(
+      () => onSetReverseGoalRetention(normalized),
+      normalized === null
+        ? 'Retenção desativada: metas concluídas não serão excluídas automaticamente.'
+        : 'Configuração de retenção aplicada.',
+      // "Nada foi alterado" e exato: setReverseGoalRetention so devolve false
+      // quando a RPC set_reverse_goal_retention falha, e nada foi gravado ali.
+      'Não foi possível aplicar a configuração de retenção. Nada foi alterado.',
+    )
+    setSavingRetention(false)
   }
 
   const handleFile = async (event) => {
@@ -149,7 +160,7 @@ export default function SettingsPanel({
 
   return (
     <div className="stack">
-      {message && <div className={`notice ${message.tone}`}>{message.text}</div>}
+      {message && <div className={`notice ${message.tone}`} role={message.tone === 'danger' ? 'alert' : 'status'}>{message.text}</div>}
 
       <AdminUserManagement />
 
@@ -310,6 +321,13 @@ export default function SettingsPanel({
           </div>
           <button className="btn btn-primary" onClick={applyRetention} disabled={!reverseGoalRetentionLoaded || savingRetention}>{savingRetention ? 'Aplicando...' : 'Aplicar configuração'}</button>
         </div>
+        {/* O select e o botao ficam desabilitados enquanto a configuracao atual
+            nao chegou. Sem esta linha, uma falha nas leituras de apoio
+            (useSupabaseFinance.js:193) deixava o painel morto e sem explicacao. A
+            frase serve aos dois estados de proposito: `loading` vira false antes
+            do pacote de apoio resolver, entao nao ha como distinguir "carregando"
+            de "falhou" sem um estado novo - e a providencia do usuario e a mesma. */}
+        {!reverseGoalRetentionLoaded && <p className="hint" style={{ marginTop: 12 }}>A configuração atual ainda não foi lida. Se esta mensagem persistir, recarregue a página.</p>}
         <p className="hint" style={{ marginTop: 12 }}>Quando ativada, esta opção removerá permanentemente do banco de dados as Metas Reversas concluídas após o período definido. Metas em andamento nunca serão excluídas.</p>
       </section>
 

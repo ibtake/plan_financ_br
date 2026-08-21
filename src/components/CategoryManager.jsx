@@ -122,7 +122,7 @@ function IconPicker({ value, onChange }) {
         </span>
       </div>
 
-      {error && <div className="notice danger">{error}</div>}
+      {error && <div className="notice danger" role="alert">{error}</div>}
     </div>
   )
 }

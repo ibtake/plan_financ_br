@@ -14,7 +14,15 @@ function authLog(fields: Record<string, unknown>) {
 async function recordSampledMetric(admin: ReturnType<typeof createClient>, failureType: 'token' | 'refresh' | 'install_code' | 'unauthorized') {
   // ponytail: amostragem de 10%; trocar por janela global se o volume exigir contagem exata.
   if (Math.random() >= 0.1) return
-  await admin.rpc('record_widget_auth_metric', { p_failure_type: failureType }).catch(() => {})
+  // try/catch, nao .catch(): o retorno de .rpc() e um PostgrestFilterBuilder, que
+  // e PromiseLike (so tem `then`) e nao Promise. `.catch` aqui lancava TypeError
+  // de forma sincrona - antes mesmo de o `then` disparar a requisicao -, entao a
+  // metrica nunca chegou ao banco e a excecao subia pelos seis chamadores, todos
+  // em caminho de credencial invalida, virando 500 onde a resposta e 401. O
+  // `await` funciona em PromiseLike, so o metodo e que nao existia.
+  try {
+    await admin.rpc('record_widget_auth_metric', { p_failure_type: failureType })
+  } catch { /* metrica e best-effort: nunca derruba a requisicao */ }
 }
 
 async function hash(value: string) {
@@ -78,15 +86,27 @@ function monthDiff(from: string, to: string) {
   return (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 + Number(to.slice(5, 7)) - Number(from.slice(5, 7))
 }
 
+// Mesmo clamp de isoDateInMonth (src/utils/format.js:160-164). Sem ele, a conta
+// do dia 31 cai em 28/02 no app e a comparacao exata de string a fazia
+// desaparecer daqui - o mesmo valia para parcelamento e para recorrencia anual
+// iniciada em 29/02. O clamp nao altera o indice, so a comparacao de data, entao
+// paid_occurrences[index] segue alinhado com o frontend. Duplicado de proposito:
+// importar de src/ arriscaria o bundle do deploy; a consolidacao em _shared/ e o B34.
+function isoDateInMonth(monthKey: string, day: number) {
+  const [year, month] = monthKey.split('-').map(Number)
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return `${monthKey}-${String(Math.min(Math.max(1, day || 1), lastDay)).padStart(2, '0')}`
+}
+
 function occurrenceDate(tx: Record<string, any>, date: string) {
   const start = String(tx.date).slice(0, 10)
   if (date < start || (tx.recurrence_end && date > String(tx.recurrence_end).slice(0, 10))) return null
-  const day = String(start).slice(8, 10)
+  const day = Number(start.slice(8, 10))
   const installments = Number(tx.installments) || 1
   const recurrence = tx.recurrence || 'none'
   if (installments > 1) {
     const index = monthDiff(start, date)
-    return index >= 0 && index < installments && date === `${date.slice(0, 8)}${day}` ? index : null
+    return index >= 0 && index < installments && date === isoDateInMonth(date.slice(0, 7), day) ? index : null
   }
   if (recurrence === 'none') return date === start ? 0 : null
   if (recurrence === 'weekly') {
@@ -97,7 +117,7 @@ function occurrenceDate(tx: Record<string, any>, date: string) {
   const step = steps[recurrence]
   if (!step) return null
   const index = monthDiff(start, date)
-  return index >= 0 && index % step === 0 && date === `${date.slice(0, 8)}${day}` ? index / step : null
+  return index >= 0 && index % step === 0 && date === isoDateInMonth(date.slice(0, 7), day) ? index / step : null
 }
 
 // Pentest 16/08: corpo legitimo do widget tem centenas de bytes; 16 KiB e

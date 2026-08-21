@@ -114,7 +114,7 @@ export default function PGBLPanel({ pgbl }) {
   return <div className="pgbl-tool">
     {view === 'mensal' && <StableTransposedPGBLTable data={data} result={result} onChange={updateMonth} onYearChange={(value) => update({ year: Number(value) || year })} />}
     {view === 'config' && <ConfigYearSelector years={years} selectedYear={selectedYear} onChange={changeYear} onDelete={removeYear} />}
-    {pgblError && <div className="notice danger">{pgblError}</div>}
+    {pgblError && <div className="notice danger" role="alert">{pgblError}</div>}
     <div className="pgbl-tabs" role="tablist" aria-label="Aporte Certo">
       {[['resumo', Calculator, 'Resumo anual'], ['mensal', Table2, 'Lançamentos'], ['config', Settings2, 'Parâmetros'], ['sobre', BookOpen, 'Como funciona']].map(([id, Icon, label]) => <button key={id} type="button" role="tab" aria-selected={view === id} className={`pgbl-tab${view === id ? ' active' : ''}`} onClick={() => setView(id)}><Icon size={16} />{label}</button>)}
     </div>

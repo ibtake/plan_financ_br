@@ -131,93 +131,108 @@ export function useSupabaseFinance() {
 
   const load = useCallback(async ({ preserveError = false, preserveLoading = false } = {}) => {
     const requestId = ++latestLoadRequest.current
-    if (!user || !supabase) {
+    try {
+      if (!user || !supabase) {
+        if (requestId === latestLoadRequest.current) setLoading(false)
+        return false
+      }
+      if (!preserveLoading) setLoading(true)
+      if (!preserveError) setError('')
+      // Preferencias de interface nao podem impedir o acesso aos dados financeiros.
+      // A leitura permanece paralela, mas e tratada separadamente para manter a
+      // compatibilidade caso o frontend seja publicado antes da migracao.
+      const profileRequest = guarded(
+        () => supabase.from('profiles').select('transaction_form_fields').maybeSingle(),
+        { table: 'profiles', action: 'select_transaction_form_fields' },
+      )
+      // O resumo principal nao depende dos historicos de metas. Eles continuam
+      // sendo buscados em paralelo, mas nao devem segurar a primeira tela apos
+      // login, especialmente em redes moveis.
+      const supportingDataRequest = Promise.all([
+        guarded(() => supabase.from('reverse_goal_history').select('*').order('reference_month', { ascending: false }), { table: 'reverse_goal_history', action: 'select' }),
+        guarded(() => supabase.from('reverse_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_contributions', action: 'select' }),
+        guarded(() => supabase.from('standard_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'standard_goal_contributions', action: 'select' }),
+        guarded(() => supabase.from('reverse_goal_events').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_events', action: 'select' }),
+        guarded(() => supabase.from('reverse_goal_retention_settings').select('completed_goal_retention_months').maybeSingle(), { table: 'reverse_goal_retention_settings', action: 'select' }),
+      ])
+      const [txResult, catResult, budgetResult, goalResult] = await Promise.all([
+        guarded(() => supabase.from('transactions').select('*').order('created_at', { ascending: false }), { table: 'transactions', action: 'select' }),
+        guarded(() => supabase.from('categories').select('*').order('created_at'), { table: 'categories', action: 'select' }),
+        guarded(() => supabase.from('budgets').select('*'), { table: 'budgets', action: 'select' }),
+        guarded(() => supabase.from('goals').select('*').order('created_at'), { table: 'goals', action: 'select' }),
+      ])
+      // Uma carga iniciada antes de uma mutacao nao pode restaurar um snapshot
+      // antigo sobre os dados que acabaram de ser confirmados pelo servidor.
+      if (requestId !== latestLoadRequest.current) return false
+      const firstError = [txResult, catResult, budgetResult, goalResult].find((r) => r.error)?.error
+      if (firstError) {
+        const code = String(firstError.code || '')
+        const message = String(firstError.message || '').toLowerCase()
+        if (code === 'PGRST301' || message.includes('jwt expired') || message.includes('token is expired')) {
+          await signOut('session_expired')
+          return false
+        }
+        reportError(firstError)
+        // Uma falha de leitura não pode transformar a interface em uma
+        // Dashboard aparentemente válida, mas zerada. Os últimos dados são
+        // preservados até uma carga posterior bem-sucedida.
+        setLoading(false)
+        return false
+      }
+      setTransactions((txResult.data || []).map(fromTxRow))
+      setCategories((catResult.data || []).map(fromCategory))
+      setBudgets(Object.fromEntries((budgetResult.data || []).map((row) => [row.category_id, Number(row.limit_amount)])))
+      setGoals((goalResult.data || []).map(fromGoal))
+      setLoading(false)
+
+      // As duas leituras secundarias abaixo sao disparadas antes do await acima e
+      // recebem handler apenas agora: sem o catch no fim de cada uma, uma rejeicao
+      // nessa janela fica sem tratamento e o navegador emite unhandledrejection.
+      void supportingDataRequest.then(async ([reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult]) => {
+        if (requestId !== latestLoadRequest.current) return
+        const supportingError = [reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult].find((result) => result.error)?.error
+        if (supportingError) {
+          const code = String(supportingError.code || '')
+          const message = String(supportingError.message || '').toLowerCase()
+          if (code === 'PGRST301' || message.includes('jwt expired') || message.includes('token is expired')) {
+            await signOut('session_expired')
+            return
+          }
+          reportError(supportingError)
+          return
+        }
+        setReverseGoalHistory(reverseHistoryResult.data || [])
+        setReverseGoalContributions(reverseContributionsResult.data || [])
+        setStandardGoalContributions(standardContributionsResult.data || [])
+        setReverseGoalEvents(reverseEventsResult.data || [])
+        setReverseGoalRetentionMonths(retentionResult.data?.completed_goal_retention_months ?? null)
+        setReverseGoalRetentionLoaded(true)
+      }).catch(reportError)
+
+      void profileRequest.then((profileResult) => {
+        if (requestId !== latestLoadRequest.current) return
+        if (profileResult.error) {
+          setTransactionFormFieldsState(DEFAULT_TRANSACTION_FORM_FIELDS)
+          return
+        }
+        const confirmedFields = normalizeTransactionFormFields(profileResult.data?.transaction_form_fields)
+        confirmedTransactionFormFields.current = confirmedFields
+        setTransactionFormFieldsState(confirmedFields)
+      }).catch(reportError)
+      return true
+    } catch (error) {
+      // `load` nunca rejeita: os doze chamadores tratam o retorno booleano, e uma
+      // rejeicao aqui deixaria `loading` em true para sempre - tela presa no
+      // esqueleto de App.jsx:263, sem retry possivel a nao ser recarregar a pagina.
+      // O caminho alcancavel e o `await signOut()` das linhas de sessao expirada.
+      reportError(error)
       if (requestId === latestLoadRequest.current) setLoading(false)
       return false
     }
-    if (!preserveLoading) setLoading(true)
-    if (!preserveError) setError('')
-    // Preferencias de interface nao podem impedir o acesso aos dados financeiros.
-    // A leitura permanece paralela, mas e tratada separadamente para manter a
-    // compatibilidade caso o frontend seja publicado antes da migracao.
-    const profileRequest = guarded(
-      () => supabase.from('profiles').select('transaction_form_fields').maybeSingle(),
-      { table: 'profiles', action: 'select_transaction_form_fields' },
-    )
-    // O resumo principal nao depende dos historicos de metas. Eles continuam
-    // sendo buscados em paralelo, mas nao devem segurar a primeira tela apos
-    // login, especialmente em redes moveis.
-    const supportingDataRequest = Promise.all([
-      guarded(() => supabase.from('reverse_goal_history').select('*').order('reference_month', { ascending: false }), { table: 'reverse_goal_history', action: 'select' }),
-      guarded(() => supabase.from('reverse_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_contributions', action: 'select' }),
-      guarded(() => supabase.from('standard_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'standard_goal_contributions', action: 'select' }),
-      guarded(() => supabase.from('reverse_goal_events').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_events', action: 'select' }),
-      guarded(() => supabase.from('reverse_goal_retention_settings').select('completed_goal_retention_months').maybeSingle(), { table: 'reverse_goal_retention_settings', action: 'select' }),
-    ])
-    const [txResult, catResult, budgetResult, goalResult] = await Promise.all([
-      guarded(() => supabase.from('transactions').select('*').order('created_at', { ascending: false }), { table: 'transactions', action: 'select' }),
-      guarded(() => supabase.from('categories').select('*').order('created_at'), { table: 'categories', action: 'select' }),
-      guarded(() => supabase.from('budgets').select('*'), { table: 'budgets', action: 'select' }),
-      guarded(() => supabase.from('goals').select('*').order('created_at'), { table: 'goals', action: 'select' }),
-    ])
-    // Uma carga iniciada antes de uma mutacao nao pode restaurar um snapshot
-    // antigo sobre os dados que acabaram de ser confirmados pelo servidor.
-    if (requestId !== latestLoadRequest.current) return false
-    const firstError = [txResult, catResult, budgetResult, goalResult].find((r) => r.error)?.error
-    if (firstError) {
-      const code = String(firstError.code || '')
-      const message = String(firstError.message || '').toLowerCase()
-      if (code === 'PGRST301' || message.includes('jwt expired') || message.includes('token is expired')) {
-        await signOut('session_expired')
-        return false
-      }
-      reportError(firstError)
-      // Uma falha de leitura não pode transformar a interface em uma
-      // Dashboard aparentemente válida, mas zerada. Os últimos dados são
-      // preservados até uma carga posterior bem-sucedida.
-      setLoading(false)
-      return false
-    }
-    setTransactions((txResult.data || []).map(fromTxRow))
-    setCategories((catResult.data || []).map(fromCategory))
-    setBudgets(Object.fromEntries((budgetResult.data || []).map((row) => [row.category_id, Number(row.limit_amount)])))
-    setGoals((goalResult.data || []).map(fromGoal))
-    setLoading(false)
-
-    void supportingDataRequest.then(async ([reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult]) => {
-      if (requestId !== latestLoadRequest.current) return
-      const supportingError = [reverseHistoryResult, reverseContributionsResult, standardContributionsResult, reverseEventsResult, retentionResult].find((result) => result.error)?.error
-      if (supportingError) {
-        const code = String(supportingError.code || '')
-        const message = String(supportingError.message || '').toLowerCase()
-        if (code === 'PGRST301' || message.includes('jwt expired') || message.includes('token is expired')) {
-          await signOut('session_expired')
-          return
-        }
-        reportError(supportingError)
-        return
-      }
-      setReverseGoalHistory(reverseHistoryResult.data || [])
-      setReverseGoalContributions(reverseContributionsResult.data || [])
-      setStandardGoalContributions(standardContributionsResult.data || [])
-      setReverseGoalEvents(reverseEventsResult.data || [])
-      setReverseGoalRetentionMonths(retentionResult.data?.completed_goal_retention_months ?? null)
-      setReverseGoalRetentionLoaded(true)
-    })
-
-    void profileRequest.then((profileResult) => {
-      if (requestId !== latestLoadRequest.current) return
-      if (profileResult.error) {
-        setTransactionFormFieldsState(DEFAULT_TRANSACTION_FORM_FIELDS)
-        return
-      }
-      const confirmedFields = normalizeTransactionFormFields(profileResult.data?.transaction_form_fields)
-      confirmedTransactionFormFields.current = confirmedFields
-      setTransactionFormFieldsState(confirmedFields)
-    })
-    return true
-  // A troca do access token nao muda o usuario nem os dados. Deixar a sessao
-  // fora das dependencias evita uma nova carga completa a cada TOKEN_REFRESHED.
+  // `session` fora das dependencias nao basta por si: quem sustenta a garantia e a
+  // estabilizacao da identidade de `user` no AuthContext (comparacao por id e
+  // updated_at). Sem ela, TOKEN_REFRESHED entrega um objeto novo, recria este
+  // callback e dispara a carga completa a cada renovacao de token.
   }, [reportError, signOut, user])
 
   useEffect(() => { load() }, [load])
@@ -226,7 +241,11 @@ export function useSupabaseFinance() {
     const result = await guarded(operation, context)
     if (result.error) {
       reportError(result.error)
-      await load({ preserveError: true })
+      // preserveLoading pelo mesmo motivo das outras onze recargas, e aqui com um
+      // agravante: sem ele, setLoading(true) desmonta a arvore em App.jsx:263 e o
+      // esqueleto tapa a mensagem que a linha acima acabou de gravar. Vale para as
+      // doze escritas otimistas que passam por aqui.
+      await load({ preserveError: true, preserveLoading: true })
       return false
     }
     return true
@@ -603,7 +622,7 @@ export function useSupabaseFinance() {
       reportError(error)
       return false
     }
-    // Como as outras dez recargas do hook: sem preserveLoading, setLoading(true)
+    // Como as outras onze recargas do hook: sem preserveLoading, setLoading(true)
     // desmonta a arvore inteira e o SettingsPanel remonta sem a mensagem de resultado.
     await load({ preserveLoading: true })
     return true
