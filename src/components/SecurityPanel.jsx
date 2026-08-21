@@ -137,7 +137,7 @@ export default function SecurityPanel() {
 
   return (
     <div className="stack">
-      {message && <div className={`notice ${message.tone}`}>{message.text}</div>}
+      {message && <div className={`notice ${message.tone}`} role={message.tone === 'danger' ? 'alert' : 'status'}>{message.text}</div>}
       <section className="card">
         <div className="card-head">
           <div>

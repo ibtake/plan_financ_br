@@ -97,8 +97,30 @@ export function exportCSV(rows, categories, filename = `dindin-10-${stamp()}.csv
 const MAX_FILE_BYTES = 8 * 1024 * 1024
 
 /** Teto por colecao, alinhado ao uso real da aplicacao */
-const MAX_ITEMS = { transactions: 20000, categories: 500, goals: 500, budgets: 500 }
+const MAX_ITEMS = {
+  transactions: 20000, categories: 500, goals: 500, budgets: 500,
+  standardGoalContributions: 20000, reverseGoalContributions: 20000,
+  reverseGoalHistory: 20000, reverseGoalEvents: 20000, pgblPlans: 100,
+}
 const MAX_NESTING_DEPTH = 50
+
+/**
+ * Colecoes de metas/PGBL que ficaram de fora da barreira original (achado 3.12).
+ *
+ * Nao entram num laco unico sobre MAX_ITEMS porque `budgets` nao e lista, e um
+ * mapa {categoryId: valor} - vale o bloco proprio e a contagem por Object.keys.
+ *
+ * Tipo errado nas quatro primeiras hoje nao chega ao banco: `importData` cai no
+ * fallback e mantem o estado atual. O caso grave e `pgblPlans`, que chega por
+ * argumento (App.jsx) atraves de um `??` que so filtra null/undefined: ali o
+ * fallback e `[]` e a RPC faz replace total, entao um arquivo corrompido apagava
+ * em silencio todos os planos do Aporte Certo e a tela dizia "importado com
+ * sucesso". Recusar o arquivo aqui e o unico ponto que evita isso.
+ */
+const GOAL_COLLECTIONS = [
+  'standardGoalContributions', 'reverseGoalContributions',
+  'reverseGoalHistory', 'reverseGoalEvents', 'pgblPlans',
+]
 
 /**
  * CORRECAO 5: Sanitizacao recursiva contra Prototype Pollution
@@ -192,6 +214,31 @@ export function importJSON(file) {
 
         if (oversized) {
           reject(new Error(`Arquivo inválido: quantidade de registros acima do limite permitido.`))
+          return
+        }
+
+        // Chave ausente segue ausente de proposito: enviar `[]` no lugar apagaria
+        // o historico de um backup antigo, e a RPC tem fallback proprio (achado 1.2).
+        for (const key of GOAL_COLLECTIONS) {
+          if (data[key] === undefined) continue
+          if (!Array.isArray(data[key])) {
+            const rotulo = key === 'pgblPlans' ? 'os planos do Aporte Certo' : 'os dados de metas'
+            reject(new Error(`Arquivo inválido: ${rotulo} estão corrompidos.`))
+            return
+          }
+          if (data[key].length > MAX_ITEMS[key]) {
+            reject(new Error(`Arquivo inválido: quantidade de registros acima do limite permitido.`))
+            return
+          }
+        }
+
+        // A RPC faz (p_data->>'reverseGoalRetentionMonths')::smallint numa coluna
+        // com check between 1 and 12 (schema.sql:1656). Um texto ou um numero fora
+        // da faixa nao corrompe nada, mas derruba o restore inteiro em rollback com
+        // erro cru de Postgres - a recusa limpa e aqui.
+        const retention = data.reverseGoalRetentionMonths
+        if (retention !== undefined && retention !== null && !(Number.isInteger(retention) && retention >= 1 && retention <= 12)) {
+          reject(new Error('Arquivo inválido: o período de retenção de metas concluídas está fora da faixa de 1 a 12 meses.'))
           return
         }
 

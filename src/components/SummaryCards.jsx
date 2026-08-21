@@ -53,8 +53,8 @@ function KPI({ icon: Icon, label, value, accentColor, accentSoft, children }) {
  * Grid de KPIs: receitas, despesas, saldo, patrimônio e taxa de poupança.
  *
  * Recebe dados consolidados do mês (`summary`), as variações em relação
- * ao mês anterior (`change`) e o patrimônio acumulado nos últimos meses
- * (`accumulatedPatrimony`, somatório das despesas reinvestidas).
+ * ao mês anterior (`change`) e o patrimônio do ano do mês selecionado
+ * (`accumulatedPatrimony`, despesas reinvestidas de janeiro até ele).
  */
 export default function SummaryCards({ summary, change, accumulatedPatrimony = 0, reinvestmentTargetPercentage = 0 }) {
   const { income, expense, balance, savingsRate, pendingExpense } = summary
@@ -103,7 +103,7 @@ export default function SummaryCards({ summary, change, accumulatedPatrimony = 0
       {/* REQ 3: o reinvestimento sai da liquidez, mas fica acumulado aqui */}
       <KPI
         icon={Landmark}
-        label="Patrimônio acumulado"
+        label="Patrimônio do ano"
         value={formatCurrency(accumulatedPatrimony)}
         accentColor="var(--reinvest)"
         accentSoft="var(--reinvest-soft)"

@@ -300,7 +300,7 @@ function AuthenticatedApp() {
 
         <main className="container main-content">
           {finance.error && (
-            <div className="notice danger" style={{ marginBottom: 20 }}>
+            <div className="notice danger" role="alert" style={{ marginBottom: 20 }}>
               {finance.error} Os dados foram recarregados do servidor.
             </div>
           )}

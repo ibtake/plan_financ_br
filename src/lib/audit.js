@@ -70,6 +70,16 @@ const FORBIDDEN_KEYS = [
 ]
 
 /**
+ * Chaves de diagnostico do proprio app, isentas do filtro por substring.
+ * `db_code` contem 'code' - palavra que barra codigo TOTP e de recuperacao -
+ * mas um SQLSTATE nao e segredo, e sem ele o log de violacao de RLS nao
+ * distingue 42501 (a politica negou) de PGRST301 (token expirado, rotina).
+ * Isencao pontual de proposito: a comparacao exata na lista proibida deixaria
+ * passar `recovery_code`, `otp_code` e todo segredo em camelCase.
+ */
+const ALLOWED_KEYS = ['db_code']
+
+/**
  * Remove qualquer campo sensivel do objeto de detalhes.
  * Rede de seguranca contra vazamento acidental no log.
  */
@@ -78,7 +88,7 @@ function sanitize(details) {
   const safe = {}
   for (const [key, value] of Object.entries(details)) {
     const lower = key.toLowerCase()
-    if (FORBIDDEN_KEYS.some((f) => lower.includes(f))) continue
+    if (!ALLOWED_KEYS.includes(lower) && FORBIDDEN_KEYS.some((f) => lower.includes(f))) continue
     if (typeof value === 'string') safe[key] = value.slice(0, 200)
     else if (typeof value === 'number' || typeof value === 'boolean') safe[key] = value
     // objetos aninhados sao descartados: mantem o log simples e auditavel

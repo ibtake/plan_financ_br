@@ -58,12 +58,21 @@ export function useMonthlyData(transactions, monthKey, monthsBack = 12) {
     const history = historyKeys.map((k) => ({ key: k, ...summarize(expandMonth(transactions, k)) }))
 
     let cumulative = 0
-    let cumulativePatrimony = 0
     const trend = history.map((h) => {
       cumulative += h.balance
-      cumulativePatrimony += h.patrimony || 0
-      return { ...h, cumulative, cumulativePatrimony }
+      return { ...h, cumulative }
     })
+
+    // Patrimonio do ano do mes selecionado, de janeiro ate ele. Nao reaproveita
+    // historyKeys de proposito: aquela janela e rolante de 12 meses e alimenta o
+    // grafico. O card somava dentro dela, entao cada mes novo empurrava o mais
+    // antigo para fora e o total encolhia sozinho (achado 1.15). key.slice(0,4)
+    // faz o card acompanhar o seletor: trocar de ano traz o total daquele ano,
+    // sem ficar preso no anterior. O corte em `key` exclui os meses futuros do
+    // ano - patrimonio e estoque, nao projecao.
+    const yearPatrimony = lastMonths(`${key.slice(0, 4)}-12`, 12)
+      .filter((month) => firstDataMonth && month >= firstDataMonth && month <= key)
+      .reduce((sum, k) => sum + summarize(expandMonth(transactions, k)).patrimony, 0)
 
     return {
       monthKey: key,
@@ -80,7 +89,7 @@ export function useMonthlyData(transactions, monthKey, monthsBack = 12) {
       byCategoryIncome: totalsByCategory(occurrences, 'income'),
       byCategoryReinvested: totalsByCategory(occurrences, 'reinvested'),
       previousByCategory: totalsByCategory(previous, 'expense'),
-      accumulatedPatrimony: trend.find((h) => h.key === key)?.cumulativePatrimony ?? current.patrimony,
+      accumulatedPatrimony: yearPatrimony,
       history,
       trend,
     }
