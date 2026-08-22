@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState, useTransition } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { Plus } from 'lucide-react'
 import Sidebar from './components/Sidebar.jsx'
 import BottomNav from './components/BottomNav.jsx'
@@ -115,7 +115,9 @@ export default function App() {
   // Lido da sessao, nao de `auth.user`: a identidade de `user` e estabilizada no
   // AuthContext, e esta claim precisa do objeto fresco de cada renovacao para que
   // a troca obrigatoria marcada por um admin chegue sem recarregar a pagina.
-  if (auth.session?.user?.app_metadata?.must_change_password === true) return <RequiredPasswordChange />
+  // String() para o mesmo critério do banco e das Edge Functions (schema.sql:132
+  // le o claim com `->>`, que casa boolean true e string 'true').
+  if (String(auth.session?.user?.app_metadata?.must_change_password) === 'true') return <RequiredPasswordChange />
 
   return <AuthenticatedApp />
 }
@@ -165,7 +167,13 @@ function AuthenticatedApp() {
     setPrivacyVisible(next)
   }
   const openNew = () => { setEditing(null); setFormOpen(true) }
-  const openEdit = (occurrence) => { setEditing(occurrence); setFormOpen(true) }
+  // openEdit e deleteTransaction sao as unicas duas props de funcao instaveis que
+  // chegam ao memo de TransactionItem (TransactionList.jsx:31) - togglePaid e
+  // duplicateTransaction ja saem estaveis do hook. Sem useCallback, o memo compara
+  // arrow nova a cada render e re-renderiza as centenas de linhas a cada tecla da
+  // busca do topo ou ao abrir o modal. openNew fica fora de proposito: nenhum
+  // consumidor dele e memoizado, entao ali seria cerimonia.
+  const openEdit = useCallback((occurrence) => { setEditing(occurrence); setFormOpen(true) }, [])
 
   const saveTransaction = (data) => {
     if (editing) finance.updateTransaction(editing.sourceId || editing.id, data, editing.occurrenceIndex)
@@ -176,14 +184,14 @@ function AuthenticatedApp() {
     }
   }
 
-  const deleteTransaction = (occurrence) => {
+  const deleteTransaction = useCallback((occurrence) => {
     const scope = occurrence.sourceId || String(occurrence.id).includes('#')
       ? ' Esta ação exclui toda a série ou todas as parcelas.'
       : ''
     if (window.confirm(`Excluir “${occurrence.description}”?${scope}`)) {
       finance.deleteTransaction(occurrence.sourceId || occurrence.id)
     }
-  }
+  }, [finance.deleteTransaction])
 
   const pending = useMemo(
     () => monthly.occurrences.filter((item) => !item.paid),
@@ -220,6 +228,13 @@ function AuthenticatedApp() {
     return ok
   }
 
+  // Meta de reinvestimento exibida no KPI de poupanca (SummaryCards).
+  // Sem useMemo de proposito: sao ~22 categorias e o valor e um numero que
+  // alimenta um componente nao memoizado - o hook nao pouparia render nenhum.
+  const reinvestmentTargetPercentage = finance.categories
+    .filter((category) => category.type === 'reinvested')
+    .reduce((sum, category) => sum + (Number(category.targetPercentage) || 0), 0)
+
   const overview = (
     <div className="stack">
       <Suspense fallback={<ChartFallback height={220} />}>
@@ -234,7 +249,7 @@ function AuthenticatedApp() {
         summary={monthly.summary}
         change={monthly.change}
         accumulatedPatrimony={monthly.accumulatedPatrimony}
-        reinvestmentTargetPercentage={finance.categories.filter((category) => category.type === 'reinvested').reduce((sum, category) => sum + (Number(category.targetPercentage) || 0), 0)}
+        reinvestmentTargetPercentage={reinvestmentTargetPercentage}
       />
       <div className="dashboard-category-row">
         <Suspense fallback={<ChartFallback height={240} />}>
@@ -375,7 +390,7 @@ function AuthenticatedApp() {
               onToggleTheme={toggleTheme}
               onExportJSON={() => exportJSON(exportAllData())}
               onImport={importAllData}
-              onLoadSample={() => importAllData(buildSampleData())}
+              onLoadSample={() => importAllData(buildSampleData(finance.categories))}
               onClearAll={finance.clearAll}
               reverseGoalRetentionMonths={finance.reverseGoalRetentionMonths}
               reverseGoalRetentionLoaded={finance.reverseGoalRetentionLoaded}

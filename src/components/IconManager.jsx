@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { SearchX } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { useIcons } from '../contexts/IconContext.jsx'
@@ -65,11 +65,19 @@ export default function IconManager() {
   const [onlyPending, setOnlyPending] = useState(false)
   const [message, setMessage] = useState(null)
   const [busy, setBusy] = useState(false)
+  const messageTimer = useRef(0)
 
   const notify = (text, kind = 'ok') => {
     setMessage({ text, kind })
-    window.setTimeout(() => setMessage(null), 4000)
+    // Cancela o timer anterior, senao o dele apaga esta mensagem antes dos 4 s:
+    // trocar dois icones em sequencia encurta a segunda confirmacao, e um
+    // `notify(error.message, 'danger')` logo depois de um sucesso podia aparecer
+    // por milissegundos. Serve tambem de limpeza no unmount, no efeito abaixo.
+    window.clearTimeout(messageTimer.current)
+    messageTimer.current = window.setTimeout(() => setMessage(null), 4000)
   }
+
+  useEffect(() => () => window.clearTimeout(messageTimer.current), [])
 
   const handleUpload = async (emoji, file) => {
     setBusy(true)

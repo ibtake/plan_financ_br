@@ -87,7 +87,7 @@ Deno.serve(async (request) => {
       .order('reverse_start_date', { ascending: true })
       .limit(1)
       .maybeSingle()
-    if (goalError) throw new Error('goals_query_failed')
+    if (goalError) throw new Error('goals_query_failed', { cause: goalError })
     if (!oldestGoal?.reverse_start_date) return response(200, { ok: true, inserted: 0, rebuilt: 0 })
 
     const requestedStartDate = String(oldestGoal.reverse_start_date).slice(0, 10)
@@ -110,9 +110,11 @@ Deno.serve(async (request) => {
     } finally {
       clearTimeout(timeout)
     }
-    if (!upstream.ok) throw new Error('bcb_unavailable')
+    if (!upstream.ok) throw new Error('bcb_unavailable', { cause: { status: upstream.status } })
     const payload: unknown = await upstream.json()
-    if (!Array.isArray(payload) || payload.length > MAX_MONTHS_FROM_BCB) throw new Error('invalid_bcb_payload')
+    if (!Array.isArray(payload) || payload.length > MAX_MONTHS_FROM_BCB) {
+      throw new Error('invalid_bcb_payload', { cause: { code: Array.isArray(payload) ? `length_${payload.length}` : 'not_array' } })
+    }
 
     const completedMonth = currentMonth()
     const rates = new Map<string, { reference_month: string; rate_percent: number; source_observed_on: string }>()
@@ -135,7 +137,7 @@ Deno.serve(async (request) => {
       .from('selic_monthly_rates')
       .select('reference_month')
       .in('reference_month', months)
-    if (existingError) throw new Error('rates_query_failed')
+    if (existingError) throw new Error('rates_query_failed', { cause: existingError })
     const existingMonths = new Set((existing || []).map((row) => String(row.reference_month)))
     const missingRates = [...rates.values()].filter((row) => !existingMonths.has(row.reference_month))
     if (!missingRates.length) return response(200, { ok: true, inserted: 0, rebuilt: 0 })
@@ -143,13 +145,23 @@ Deno.serve(async (request) => {
     const { error: insertError } = await admin
       .from('selic_monthly_rates')
       .upsert(missingRates, { onConflict: 'reference_month', ignoreDuplicates: true })
-    if (insertError) throw new Error('rates_insert_failed')
+    if (insertError) throw new Error('rates_insert_failed', { cause: insertError })
 
     const { data: rebuilt, error: rebuildError } = await admin.rpc('rebuild_all_reverse_goals')
-    if (rebuildError) throw new Error('rebuild_failed')
+    if (rebuildError) throw new Error('rebuild_failed', { cause: rebuildError })
     return response(200, { ok: true, inserted: missingRates.length, rebuilt: Number(rebuilt) || 0 })
-  } catch {
-    // Nao devolve detalhes de infraestrutura, resposta externa ou banco ao chamador.
+  } catch (error) {
+    // Resposta e log sao canais diferentes: o corpo segue generico e o motivo
+    // vai para os logs do projeto no formato do admin-users:199 (campos
+    // escolhidos, nunca o objeto inteiro). `stage` sai da mensagem dos throws
+    // acima e `detail` do `cause` deles - sem o cause o log diria em que etapa
+    // parou, nunca por que. Dentro do catch de proposito: secret errado morre
+    // no 401 la em cima, fora do try, e nao enche o log de quem chuta segredo.
+    const cause = (error instanceof Error ? error.cause : null) as { code?: unknown; status?: unknown } | null
+    console.error('selic_sync_failed', {
+      stage: error instanceof Error ? error.message : 'unknown',
+      detail: String(cause?.code ?? cause?.status ?? 'unknown'),
+    })
     return response(503, { error: 'Sincronização temporariamente indisponível.' })
   }
 })

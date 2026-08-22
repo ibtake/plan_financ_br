@@ -123,11 +123,21 @@ export function useSupabaseFinance() {
   const transactionFormFieldsQueue = useRef(Promise.resolve())
   const confirmedTransactionFormFields = useRef(DEFAULT_TRANSACTION_FORM_FIELDS)
   const transactionFormFieldsVersion = useRef(0)
+  const errorTimer = useRef(0)
 
   const reportError = useCallback((dbError) => {
     setError(translateAuthError(dbError))
-    window.setTimeout(() => setError(''), 6000)
+    // Cancela o timer anterior. O callback faz `setError('')` sem saber qual erro
+    // esta na tela: com 16 chamadores e janela de 6 s, dois erros dentro da janela
+    // faziam o timer do primeiro apagar a mensagem do segundo (offline com duas
+    // escritas seguidas e o caso comum). O ref tambem serve de limpeza no unmount,
+    // logo abaixo - mas o unmount e a parte inofensiva: o React 18 descarta
+    // `setState` em componente desmontado sem aviso.
+    window.clearTimeout(errorTimer.current)
+    errorTimer.current = window.setTimeout(() => setError(''), 6000)
   }, [])
+
+  useEffect(() => () => window.clearTimeout(errorTimer.current), [])
 
   const load = useCallback(async ({ preserveError = false, preserveLoading = false } = {}) => {
     const requestId = ++latestLoadRequest.current
@@ -274,17 +284,25 @@ export function useSupabaseFinance() {
     const patch = Number(occurrenceIndex) > 0
       ? Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'date' && key !== 'paid'))
       : input
-    let updated
-    setTransactions((prev) => prev.map((tx) => {
-      if (tx.id !== rootId) return tx
-      updated = normalizeTransaction({ ...tx, ...patch, id: rootId })
-      return updated
-    }))
-    if (updated) void persist(
+    // O lancamento e resolvido aqui fora, e nao dentro do updater. Antes o
+    // `updated` era atribuido dentro do `setTransactions` e lido na linha
+    // seguinte: isso so funciona porque o React, quando o fiber esta limpo,
+    // executa o updater na hora para decidir se pode dispensar o re-render -
+    // otimizacao interna, nao contrato de API. Com atualizacao pendente no
+    // fiber o updater roda so na renderizacao, `updated` fica `undefined` e a
+    // escrita nao saia: a edicao aparecia na tela e desaparecia na recarga. Hoje
+    // o unico chamador (App.jsx:177) e a primeira instrucao do submit, o que
+    // mantinha o fiber limpo por acaso. `transactions` nas deps nao custa
+    // render: nenhum consumidor memoizado recebe esta funcao (App.jsx:168-173).
+    const current = transactions.find((tx) => tx.id === rootId)
+    if (!current) return
+    const updated = normalizeTransaction({ ...current, ...patch, id: rootId })
+    setTransactions((prev) => prev.map((tx) => (tx.id === rootId ? updated : tx)))
+    void persist(
       () => supabase.from('transactions').update(toTxRow(updated, user.id)).eq('id', rootId).eq('user_id', user.id),
       { table: 'transactions', action: 'update' },
     )
-  }, [persist, user])
+  }, [persist, transactions, user])
 
   const deleteTransaction = useCallback((id) => {
     const rootId = String(id).split('#')[0]

@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { CircleHelp, Pencil, Plus, Trash2, Trophy, X } from 'lucide-react'
+import { AlertTriangle, CircleHelp, Pencil, Plus, Trash2, Trophy, X } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
-import { amountToInput, formatAmountInput, formatCurrency, formatDate, formatPercent, parseAmount, todayISO } from '../utils/format.js'
+import { amountToInput, formatAmountInput, formatCurrency, formatDate, formatPercent, monthLabelShort, monthsBehind, parseAmount, todayISO } from '../utils/format.js'
 
 const ICONS = ['🎯', '✈️', '🏠', '🚗', '💻', '🎓', '💍', '🏖️', '📱', '🎁']
 const COLORS = ['#6366f1', '#22c55e', '#0ea5e9', '#f97316', '#ec4899', '#8b5cf6']
@@ -71,6 +71,11 @@ function ContributionModal({ goal, onSave, onClose, title = 'Registrar aporte', 
   const closeWithAnimation = () => {
     if (closing) return
     setClosing(true)
+    // Sem ref nem limpeza no unmount, de proposito: aqui o modal desmonta mesmo,
+    // mas o callback do timer e o `onClose` do pai (`() => setModal(false)`), que
+    // continua montado e recebe o valor que ja tem - o React descarta. E reabrir
+    // dentro dos 240 ms nao alcanca o timer velho, porque o backdrop segue cobrindo
+    // a tela (`.reverse-modal-backdrop.is-closing` nao desliga `pointer-events`).
     window.setTimeout(onClose, 240)
   }
   const submit = async (event) => { event.preventDefault(); if (await onSave(goal.id, { amount: parseAmount(amount), occurredOn })) closeWithAnimation() }
@@ -88,6 +93,7 @@ function EditContributionModal({ item, minDate, onSave, onClose }) {
   const closeWithAnimation = () => {
     if (saving || closing) return
     setClosing(true)
+    // Mesmo caso do ContributionModal acima; ver o comentario de la.
     window.setTimeout(onClose, 240)
   }
 
@@ -120,6 +126,19 @@ function ReverseCard({ goal, onAporte, onEdit, onDelete, history = [], contribut
   const [editingItem, setEditingItem] = useState(null)
   const progress = Math.min(100, Math.max(0, Number(goal.reverseProgressPercent) || 0))
   const completed = Boolean(goal.reverseCompletedAt || goal.reverseRemainingAmount <= 0)
+  // Selic congelada nao inventa valor: rebuild_reverse_goal_for_user faz
+  // `exit when not found` no primeiro mes sem taxa (schema.sql:1699) e depois
+  // segue abatendo os aportes sem correcao nenhuma (:1714), entao o restante
+  // aparece MENOR que o real - erro a favor da sensacao de progresso, o tipo
+  // que ninguem estranha. Sem leitura nova: o historico da meta ja esta em
+  // memoria (useSupabaseFinance.js:162). Sem correcao nenhuma a referencia e o
+  // mes de inicio, senao tabela vazia (cron que nunca rodou) passaria batido.
+  // Corte em 2 meses porque a serie 4390 do BCB publica o mes fechado com
+  // alguns dias de atraso; 1 mes acusaria todo comeco de mes.
+  const lastCorrected = history.length
+    ? history.map((item) => String(item.reference_month)).sort().at(-1)
+    : String(goal.reverseStartDate || '')
+  const correctionLag = completed ? 0 : monthsBehind(lastCorrected)
   const items = [...history.map((item) => ({ ...item, t: 'Correção mensal', d: item.applied_on, v: item.correction_amount })), ...contributions.map((item) => ({ ...item, t: 'Aporte', d: item.occurred_on, v: item.amount }))].sort((a, b) => String(b.d).localeCompare(String(a.d)))
   const editContribution = (item) => setEditingItem({ id: item.id, amount: item.v, occurredOn: item.d })
   const toggleFromCard = (event) => { if (!event.target.closest('button, input, select, textarea, form, .reverse-modal-backdrop')) setOpen((current) => !current) }
@@ -128,6 +147,7 @@ function ReverseCard({ goal, onAporte, onEdit, onDelete, history = [], contribut
     <div className="row-between"><button className="reverse-card-main" onClick={() => setOpen(!open)} disabled={isDeleting}><span className="goal-icon" style={{ background: `${goal.color}22`, color: goal.color }}><AppIcon emoji={goal.icon} /></span><span><strong>{goal.name}</strong><small className="goal-badge reverse-badge">Meta Reversa</small></span></button><div className="row"><button className="icon-btn" aria-label="Editar meta reversa" onClick={() => onEdit(goal)} disabled={isDeleting}><Pencil size={15} /></button><button className="icon-btn danger" aria-label="Excluir meta" disabled={isDeleting} onClick={async () => { if (window.confirm('Excluir esta meta e seu histórico?')) await onDelete(goal.id) }}><Trash2 size={15} /></button></div></div>
     <div className="progress"><div className="progress-bar" style={{ width: `${progress}%`, background: goal.color }} /></div>
     <div className="completion-status text-xs"><span>{formatPercent(progress, 1)} concluído</span>{completed && <span className="completion-trophy" role="img" aria-label="Meta concluída">🏆</span>}</div>
+    {correctionLag >= 2 && <div className="notice warning text-xs"><AlertTriangle size={13} strokeWidth={2.2} /> Correção pela Selic sem atualização desde {monthLabelShort(lastCorrected)}. O valor restante está menor que o real até a próxima sincronização.</div>}
     {open && <><div className="reverse-summary"><span>Original<strong>{formatCurrency(goal.reverseOriginalAmount)}</strong></span><span>Aportado<strong>{formatCurrency(goal.reverseTotalContributed)}</strong></span><span>Correção<strong>{formatCurrency(goal.reverseCorrectionAmount)}</strong></span><span>Restante<strong>{formatCurrency(goal.reverseRemainingAmount)}</strong></span></div><p className="muted">{goal.reverseForecastCompletionDate ? `Previsão de conclusão: ${formatDate(goal.reverseForecastCompletionDate)} (média mensal: ${formatCurrency(goal.reverseMonthlyContributionAverage)})` : 'A previsão aparecerá após os aportes criarem uma média mensal.'}</p>{goal.reverseRemainingAmount > 0 && <button className="btn btn-primary" onClick={() => setModal(true)} disabled={isDeleting}>Fazer aporte</button>}<button className="btn btn-sm" type="button" onClick={() => setDetails(true)} disabled={isDeleting}>Mais detalhes</button></>}
     {modal && <ContributionModal goal={goal} title="Fazer aporte" amountName="reverse-contribution-amount" dateName="reverse-contribution-date" dateLabel="Data real" minDate={goal.reverseStartDate} onSave={onAporte} onClose={() => setModal(false)} />}
     {editingItem && <EditContributionModal item={editingItem} minDate={goal.reverseStartDate} onSave={onUpdateContribution} onClose={() => setEditingItem(null)} />}
