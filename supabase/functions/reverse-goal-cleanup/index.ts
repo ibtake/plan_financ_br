@@ -35,10 +35,18 @@ Deno.serve(async (request) => {
   try {
     const admin = createClient(url, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } })
     const { data, error } = await admin.rpc('cleanup_expired_reverse_goals')
-    if (error) throw new Error('cleanup_failed')
+    if (error) throw new Error('cleanup_failed', { cause: error })
     return response(200, { ok: true, deleted: Number(data) || 0 })
-  } catch {
-    // Nao divulga detalhes de banco, configuracao ou dados eliminados.
+  } catch (error) {
+    // Mesmo formato do selic-sync:151 (e do admin-users:199): resposta generica
+    // ao chamador, motivo nos logs do projeto. Aqui a causa importa porque o
+    // grant da RPC ja foi mexido tres vezes (schema.sql:1553, :1560, :1561) -
+    // um 42501 no log e a diferenca entre "permissao caiu" e "banco fora".
+    const cause = (error instanceof Error ? error.cause : null) as { code?: unknown } | null
+    console.error('reverse_goal_cleanup_failed', {
+      stage: error instanceof Error ? error.message : 'unknown',
+      detail: String(cause?.code ?? 'unknown'),
+    })
     return response(503, { error: 'Limpeza temporariamente indisponível.' })
   }
 })

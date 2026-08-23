@@ -304,8 +304,6 @@ export default function CategoryManager({
 }) {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
-  // Guarda de duplo-clique no salvamento (criacao de categoria duplica; edicao e idempotente).
-  const saving = useRef(false)
 
   const usage = useMemo(() => {
     const map = {}
@@ -332,14 +330,20 @@ export default function CategoryManager({
     [categories, editing],
   )
 
+  // Sem guarda local de duplo-clique, de proposito. `setShowForm(false)` roda dentro
+  // do evento de clique (lane sincrona): o formulario desmonta antes de o navegador
+  // despachar o clique seguinte, e `addCategory` ainda segura
+  // `categoryInsertInFlight` durante a escrita inteira
+  // (useSupabaseFinance.js:316-330). A janela so abre se o CategoryForm ganhar
+  // animacao de saida como o TransactionForm - la o botao segue clicavel por ~240ms
+  // e o guard local e obrigatorio (TransactionForm.jsx:93-97). Nesse caso volte um
+  // guard aqui, resetado DEPOIS da escrita; resetar no mesmo tick foi o defeito do
+  // trecho removido em 21/08/2026, que nunca bloqueou nada.
   const handleSave = (data) => {
-    if (saving.current) return
-    saving.current = true
     if (editing) onUpdate(editing.id, data)
     else onAdd(data)
     setShowForm(false)
     setEditing(null)
-    saving.current = false
   }
 
   const handleDelete = (category) => {

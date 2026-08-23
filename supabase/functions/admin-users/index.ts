@@ -157,7 +157,12 @@ Deno.serve(async (request) => {
   })
 
   if (action === 'complete-password-change') {
-    if (user.app_metadata?.must_change_password !== true) {
+    // String() para ler o flag como o banco le: schema.sql:132 usa `->>`, que
+    // serializa qualquer tipo JSONB em texto. Aqui a leitura frouxa e o que
+    // evita trancamento - este e o portao do proprio remedio, e um valor
+    // string 'true' negaria a troca enquanto is_token_valid (que casa a
+    // string) negaria todo o plano de dados.
+    if (String(user.app_metadata?.must_change_password) !== 'true') {
       return response(request, 403, { error: 'A troca inicial de senha não está pendente.' })
     }
     // v42: unica acao mutante atendida antes da checagem administrativa
@@ -232,7 +237,11 @@ Deno.serve(async (request) => {
   // Predicado de sessao para todas as demais acoes: troca inicial pendente
   // (complete-password-change acima e a unica isenta - e o proprio fluxo
   // de remediacao). Registro do servidor OU claim, como no is_token_valid.
-  if (user.app_metadata?.must_change_password === true || adminClaims.app_metadata?.must_change_password === 'true') {
+  // O `=== 'true'` no claim era ramo morto: o unico escritor do campo grava
+  // boolean (:328) e getClaims() nao tipa o valor, entao a comparacao nem
+  // compilava (TS2339). String() cobre os dois formatos, igual ao `->>`.
+  const adminClaimFlag = (adminClaims.app_metadata as { must_change_password?: unknown } | undefined)?.must_change_password
+  if (String(user.app_metadata?.must_change_password) === 'true' || String(adminClaimFlag) === 'true') {
     return response(request, 403, { error: 'Conclua a troca de senha antes de continuar.', code: 'password_change_required' })
   }
 

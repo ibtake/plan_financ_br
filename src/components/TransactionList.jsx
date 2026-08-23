@@ -26,8 +26,14 @@ const SORTS = [
   { id: 'desc-asc', label: 'Descrição (A–Z)' },
 ]
 
-// memo: a lista pode conter centenas de ocorrencias; sem memo, qualquer
-// re-render do pai (filtros, busca, toggle) re-renderiza todos os itens.
+// memo: a lista pode conter centenas de ocorrencias; sem memo, qualquer re-render do
+// pai (cada tecla da busca do topo, abrir o modal, o olho da privacidade) re-renderiza
+// todos os itens. So funciona porque as SEIS props abaixo sao estaveis: tx e categories
+// vem de useMemo/estado, onTogglePaid e onDuplicate saem com useCallback do hook, e
+// onEdit/onDelete dependem do useCallback em App.jsx:174 e :185 - remover um deles
+// desliga este memo em silencio, sem teste que acuse. Marcar como pago NAO e coberto:
+// setTransactions refaz occurrences e todo tx nasce novo, entao a comparacao por
+// referencia falha de proposito. Isso e o achado 4.2 / B22, nao um defeito daqui.
 export const TransactionItem = memo(function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate, onTogglePaid }) {
   const cat = getCategory(categories, tx.categoryId)
   const method = getPaymentMethod(tx.method)

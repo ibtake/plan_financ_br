@@ -38,6 +38,11 @@ async function load() {
   const firstInstall = !token && !refreshToken
   let installAttempted = firstInstall
   let response = await requestData(token, refreshToken, firstInstall)
+  // Este bloco e o de depois do refresh sao o MESMO teste em dois momentos da
+  // corrida de rotacao: as instancias do widget rodam este script em paralelo,
+  // com o mesmo codigo de install de uso unico, e compartilham o Keychain.
+  // Apagar um dos dois reabre um furo; unificar embrulhando requestData tambem
+  // nao serve - as chamadas iniciais diferem (install aqui, sem token la).
   if (response.status === 401) {
     const latest = readTokens()
     if (latest.token && latest.token !== token) {
@@ -47,6 +52,8 @@ async function load() {
     }
   }
   if (response.status === 401 && refreshToken) response = await requestData(null, refreshToken)
+  // Segunda metade da corrida (ver o bloco acima): o irmao rotacionou o mesmo
+  // refresh e gravou o token novo durante a ida e volta da linha anterior.
   if (response.status === 401) {
     const latest = readTokens()
     if (latest.token && latest.token !== token) {
@@ -146,9 +153,24 @@ async function load() {
 await load()`
 }
 
+// invoke() nao distingue 429 de falha real: `error.message` e sempre generico e
+// o corpo da resposta fica em `error.context` (a Response). Sem ler dali, o
+// "aguarde um instante" do teto de emissao apareceria como "nao foi possivel"
+// e o usuario tentaria de novo - justamente o que acabou de ser recusado. Vale
+// tambem para o 403 de troca de senha pendente e o 413 de corpo grande.
+async function setupErrorMessage(error) {
+  const fallback = 'Não foi possível iniciar a configuração do widget.'
+  try {
+    const body = await error?.context?.json?.()
+    return typeof body?.error === 'string' && body.error ? body.error : fallback
+  } catch {
+    return fallback
+  }
+}
+
 export async function createWidgetSetup() {
   const { data, error } = await supabase.functions.invoke('widget-setup', { body: {} })
-  if (error || !data?.code) throw new Error('Não foi possível iniciar a configuração do widget.')
+  if (error || !data?.code) throw new Error(await setupErrorMessage(error))
   return scriptFor(data.code)
 }
 

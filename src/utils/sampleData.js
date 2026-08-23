@@ -1,8 +1,16 @@
 // Dados de exemplo para o usuario testar o app rapidamente
 
 import { currentMonthKey, addMonths, isoDateInMonth, uid } from './format.js'
+import { DEFAULT_CATEGORIES } from './categories.js'
 
-export function buildSampleData() {
+/**
+ * Dados de exemplo prontos para importar.
+ *
+ * @param {Array} [currentCategories] categorias que o usuario tem agora. Sem
+ *   elas nao ha como saber o que falta, e a chave `categories` fica fora do
+ *   retorno (comportamento anterior: o exemplo nao mexe nas categorias).
+ */
+export function buildSampleData(currentCategories) {
   const m0 = currentMonthKey()
   const m1 = addMonths(m0, -1)
   const m2 = addMonths(m0, -2)
@@ -127,5 +135,24 @@ export function buildSampleData() {
     },
   ]
 
+  // Os 23 lancamentos e os 7 orcamentos acima apontam para ids fixos de
+  // categoria e nada garante que existam: nao ha FK em transactions.category_id
+  // nem em budgets.category_id (schema.sql:674, :814), entao a RPC aceita o
+  // insert e quem excluiu uma categoria padrao recebe dado orfao - "Sem
+  // categoria" na lista, no grafico e no orcamento (achado 1.25 / B64).
+  // Uniao, nao substituicao: importData troca as categorias quando o payload as
+  // traz (useSupabaseFinance.js:583) e o confirm do painel promete que as
+  // personalizadas ficam. Nada faltando -> a chave sai do objeto e o exemplo
+  // segue sem escrever em categories, como antes deste item.
+  // O conjunto sai dos proprios dados: acrescentar lancamento aqui nao exige
+  // manter lista paralela. Id fora de DEFAULT_CATEGORIES nao seria recriado -
+  // ha teste de invariante em test/sampleData.test.js.
+  const current = Array.isArray(currentCategories) ? currentCategories : null
+  const used = new Set([...transactions.map((t) => t.categoryId), ...Object.keys(budgets)])
+  const missing = current
+    ? DEFAULT_CATEGORIES.filter((cat) => used.has(cat.id) && !current.some((c) => c.id === cat.id))
+    : []
+
+  if (missing.length) return { transactions, budgets, goals, categories: [...current, ...missing] }
   return { transactions, budgets, goals }
 }

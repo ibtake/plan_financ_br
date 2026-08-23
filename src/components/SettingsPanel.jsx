@@ -111,9 +111,11 @@ export default function SettingsPanel({
     // Confirmacao incondicional: `transactionCount` sozinho liberava sem aviso a
     // conta com 0 lancamentos e metas/orcamentos preenchidos, e somar `categoryCount`
     // nao resolveria - o trigger handle_new_user semeia as categorias padrao em toda
-    // conta, entao a condicao seria sempre verdadeira. Categorias e planos PGBL nao
-    // entram na troca: buildSampleData nao os traz e importData mantem os atuais.
-    if (!window.confirm('Lançamentos, orçamentos e metas serão substituídos pelos dados de exemplo. Categorias e planos do Aporte Certo são preservados. Continuar?')) return
+    // conta, entao a condicao seria sempre verdadeira. Categorias personalizadas e
+    // planos PGBL nao entram na troca: importData mantem os atuais. A excecao e o
+    // B64 - buildSampleData recria a categoria padrao que o exemplo usa e o usuario
+    // excluiu, senao os lancamentos entram orfaos (nao ha FK em category_id).
+    if (!window.confirm('Lançamentos, orçamentos e metas serão substituídos pelos dados de exemplo. Suas categorias e os planos do Aporte Certo são preservados; categorias padrão que você excluiu e que o exemplo usa serão recriadas. Continuar?')) return
     await runAction(
       onLoadSample,
       'Dados de exemplo carregados.',

@@ -20,8 +20,12 @@ function normalize(value) {
     .trim()
 }
 
+function tokensOf(normalized) {
+  return normalized.split(/\s+/).filter((token) => token.length > 2)
+}
+
 function tokens(value) {
-  return normalize(value).split(/\s+/).filter((token) => token.length > 2)
+  return tokensOf(normalize(value))
 }
 
 function dateForDay(day, baseDate) {
@@ -39,30 +43,48 @@ function inferCategory(description, type, categories, transactions) {
   const normalizedDescription = normalize(description)
   const words = new Set(tokens(description))
   const options = categories.filter((category) => category.type === type)
-  const historicalMatch = transactions.find((transaction) => (
-    transaction.type === type
-    && normalize(transaction.description) === normalizedDescription
-    && options.some((category) => category.id === transaction.categoryId)
-  ))
-  if (historicalMatch) return historicalMatch.categoryId
+  const optionIds = new Set(options.map((category) => category.id))
+
+  // Uma passada sobre o historico, nao uma por categoria. Antes eram tres
+  // normalizacoes por lancamento - uma no `find` que existia aqui e duas no laco
+  // interno (`normalize` mais `tokens`, que normaliza de novo) - mais C x T
+  // comparacoes de guarda. O `continue` daquele laco filtrava por categoryId,
+  // entao cada lancamento ja era pontuado uma vez so: o que sai daqui e a
+  // repeticao do normalize, nao um fator C.
+  // O maximo por categoria e obrigatorio. Somar os acertos, como sugere o achado
+  // 4.10, faria uma categoria com muitos matches fracos (4 pontos cada) vencer um
+  // match exato de substring (20) e mudaria a categoria sugerida - ha teste em
+  // test/quickTransaction.test.js justamente para isso.
+  let historical = ''
+  const historicalScore = new Map()
+  for (const transaction of transactions) {
+    if (transaction.type !== type || !optionIds.has(transaction.categoryId)) continue
+    const historicalDescription = normalize(transaction.description)
+    // Mesmo primeiro-match-e-retorna do `find` original
+    if (historicalDescription === normalizedDescription) {
+      historical = transaction.categoryId
+      break
+    }
+    const value = normalizedDescription
+      && (historicalDescription.includes(normalizedDescription) || normalizedDescription.includes(historicalDescription))
+      ? 20
+      : tokensOf(historicalDescription).filter((word) => words.has(word)).length * 4
+    if (value > (historicalScore.get(transaction.categoryId) || 0)) {
+      historicalScore.set(transaction.categoryId, value)
+    }
+  }
+  if (historical) return historical
 
   let best = null
   let bestScore = 0
 
   for (const category of options) {
     const aliases = CATEGORY_ALIASES[category.id] || []
-    let score = tokens(category.name).reduce((sum, word) => sum + (words.has(word) ? 5 : 0), 0)
-      + aliases.reduce((sum, alias) => sum + (normalizedDescription.includes(normalize(alias)) ? 6 : 0), 0)
-    for (const transaction of transactions) {
-      if (transaction.type !== type || transaction.categoryId !== category.id) continue
-      const historicalDescription = normalize(transaction.description)
-      const match = tokens(transaction.description).filter((word) => words.has(word)).length
-      if (normalizedDescription && (historicalDescription.includes(normalizedDescription) || normalizedDescription.includes(historicalDescription))) {
-        score = Math.max(score, 20)
-      } else {
-        score = Math.max(score, match * 4)
-      }
-    }
+    const score = Math.max(
+      tokens(category.name).reduce((sum, word) => sum + (words.has(word) ? 5 : 0), 0)
+        + aliases.reduce((sum, alias) => sum + (normalizedDescription.includes(normalize(alias)) ? 6 : 0), 0),
+      historicalScore.get(category.id) || 0,
+    )
     if (score > bestScore) {
       best = category
       bestScore = score

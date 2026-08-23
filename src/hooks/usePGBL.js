@@ -43,28 +43,70 @@ export function usePGBL() {
 
   useEffect(() => { void load() }, [load])
 
-  useEffect(() => () => {
-    for (const timer of pending.current.values()) window.clearTimeout(timer)
-    pending.current.clear()
+  /** Grava um plano. Compartilhada pelo debounce e pelo flush de saida. */
+  const writePlan = useCallback(async (payload) => {
+    const result = await guarded(() => supabase.from('pgbl_plans').upsert(payload).select().single(), { table: 'pgbl_plans', action: 'upsert' })
+    if (result.error) setError(translateAuthError(result.error))
   }, [])
+
+  // Descarrega o debounce quando a aba vai para segundo plano: e o unico momento
+  // com sinal de saida E sessao ainda valida. Cobre trocar de aba do navegador,
+  // minimizar e o app em segundo plano no celular; os navegadores atuais disparam
+  // `hidden` antes de `pagehide`, entao pega tambem a maior parte dos fechamentos.
+  // Num fechamento seco o fetch em voo ainda pode ser abortado - garantir exigiria
+  // `keepalive`, que o supabase-js nao expoe por requisicao (so embrulhando
+  // `global.fetch` em lib/supabase.js). AuthContext.jsx:224-227 ja escuta este
+  // evento na direcao oposta, `visible`.
+  //
+  // O cleanup abaixo NAO grava, de proposito. Ele roda em logout, sessao expirada
+  // e MFA exigido, e nesses tres a politica de `pgbl_plans` ja recusa: o
+  // AuthContext chama `supabase.auth.signOut()` antes de derrubar a sessao, e
+  // `with check (auth.uid()=user_id and is_token_valid() and has_required_aal())`
+  // (schema.sql:1019) devolve 42501 sem token. Gravar ali seria requisicao
+  // recusada em todo logout com edicao pendente.
+  useEffect(() => {
+    const flush = () => {
+      if (document.visibilityState !== 'hidden') return
+      const entries = [...pending.current.values()]
+      pending.current.clear()
+      for (const { timer, payload } of entries) {
+        window.clearTimeout(timer)
+        void writePlan(payload)
+      }
+    }
+    document.addEventListener('visibilitychange', flush)
+    return () => {
+      document.removeEventListener('visibilitychange', flush)
+      for (const { timer } of pending.current.values()) window.clearTimeout(timer)
+      pending.current.clear()
+    }
+  }, [writePlan])
 
   const savePlan = useCallback((plan) => {
     setPlans((current) => ({ ...current, [plan.year]: plan }))
     if (!user || !supabase) return
-    const oldTimer = pending.current.get(plan.year)
-    if (oldTimer) window.clearTimeout(oldTimer)
-    const timer = window.setTimeout(async () => {
-      const result = await guarded(() => supabase.from('pgbl_plans').upsert({ user_id: user.id, year: plan.year, months: plan.months, premise: plan.premise, fiscal_params: plan.params }).select().single(), { table: 'pgbl_plans', action: 'upsert' })
-      if (result.error) setError(translateAuthError(result.error))
+    const previous = pending.current.get(plan.year)
+    if (previous) window.clearTimeout(previous.timer)
+    const payload = { user_id: user.id, year: plan.year, months: plan.months, premise: plan.premise, fiscal_params: plan.params }
+    const timer = window.setTimeout(() => {
+      // Sai do mapa ANTES da escrita: com o delete depois do await, uma entrada
+      // de timer ja disparado seguiria visivel para o flush, que repetiria o
+      // mesmo upsert enquanto o primeiro estivesse em voo.
       pending.current.delete(plan.year)
+      void writePlan(payload)
     }, 450)
-    pending.current.set(plan.year, timer)
-  }, [user])
+    pending.current.set(plan.year, { timer, payload })
+  }, [user, writePlan])
 
   const deletePlan = useCallback(async (year) => {
     if (!user || !supabase) return false
-    const timer = pending.current.get(year)
-    if (timer) window.clearTimeout(timer)
+    // Sai do mapa, nao basta cancelar o timer: uma entrada orfa com payload seria
+    // regravada pelo flush de saida e ressuscitaria o plano recem-excluido.
+    const entry = pending.current.get(year)
+    if (entry) {
+      window.clearTimeout(entry.timer)
+      pending.current.delete(year)
+    }
     const previous = plans[year]
     setPlans((current) => {
       const next = { ...current }

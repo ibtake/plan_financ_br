@@ -29,6 +29,8 @@ const AuthContext = createContext(null)
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000
 const LAST_ACTIVITY_KEY = 'planejador:last-activity-at'
 const SESSION_REFRESH_SKEW_MS = 60 * 1000
+/** Janela minima entre dois resets do timer de inatividade (ver `reset`) */
+const ACTIVITY_THROTTLE_MS = 1000
 
 function getStoredLastActivityAt() {
   try {
@@ -272,7 +274,17 @@ export function AuthProvider({ children }) {
       }, remaining)
     }
 
+    // Throttle: `scroll` dispara a cada quadro no mobile, e cada evento custava um
+    // setItem + um getItem sincronos (getLastActivityAt), tres operacoes de timer e,
+    // com outra aba aberta, o mesmo trabalho la via evento `storage`. `passive` nao
+    // protege - o handler roda na main thread de todo jeito. Adiar o reset por <=1s e
+    // seguro porque o callback do timer acima reagenda quando a sessao nao esta
+    // ociosa: o prazo se corrige sozinho e o pior caso e encerrar em 4min59s.
+    let lastReset = 0
     const reset = () => {
+      const now = Date.now()
+      if (now - lastReset < ACTIVITY_THROTTLE_MS) return
+      lastReset = now
       clearTimer()
       schedule()
     }

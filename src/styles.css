@@ -306,6 +306,7 @@ canvas {
   gap: 4px;
   padding: 20px 12px;
   position: relative;
+  background: var(--surface);
   background: linear-gradient(105deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface) 74%, transparent));
   backdrop-filter: saturate(180%) blur(22px);
   -webkit-backdrop-filter: saturate(180%) blur(22px);
@@ -471,6 +472,7 @@ canvas {
   gap: 12px;
   padding: 10px 32px;
   padding-top: max(10px, env(safe-area-inset-top));
+  background: var(--surface);
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface) 76%, transparent));
   backdrop-filter: saturate(180%) blur(16px);
   -webkit-backdrop-filter: saturate(180%) blur(16px);
@@ -693,6 +695,7 @@ canvas {
    mesma sensação de profundidade e movimento do menu "Mais" mobile. */
 .glass-popover {
   background: color-mix(in srgb, var(--surface) 91%, transparent);
+  border: 1px solid var(--border-strong);
   border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
   border-radius: 22px;
   box-shadow: 0 16px 40px color-mix(in srgb, var(--text) 18%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 32%, transparent);
@@ -805,6 +808,7 @@ canvas {
   margin: 0 auto;
   padding: 5px;
   pointer-events: auto;
+  border: 1px solid var(--border-strong);
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: 28px;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
@@ -918,6 +922,7 @@ body:has(.modal-backdrop) .fab {
   bottom: calc(100% + 12px);
   width: min(250px, calc(100vw - 24px));
   padding: 8px;
+  border: 1px solid var(--border-strong);
   border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
   border-radius: 22px;
   background: color-mix(in srgb, var(--surface) 91%, transparent);
@@ -2901,6 +2906,7 @@ body:has(.modal-backdrop) .fab {
 .skeleton {
   display: block;
   border-radius: 8px;
+  background: var(--surface-2);
   background: linear-gradient(100deg, var(--surface-2) 35%, color-mix(in srgb, var(--surface-2) 58%, var(--surface)) 50%, var(--surface-2) 65%);
   background-size: 220% 100%;
   animation: skeleton-shimmer 1.25s ease-in-out infinite;
@@ -3540,6 +3546,7 @@ body:has(.modal-backdrop) .fab {
     left: 12px;
     z-index: 55;
     padding: 8px;
+    border: 1px solid var(--border-strong);
     border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
     border-radius: 22px;
     background: color-mix(in srgb, var(--surface) 91%, transparent);
@@ -4205,6 +4212,21 @@ body:has(.modal-backdrop) .fab {
   --shadow-md: 0 14px 40px rgb(0 0 0 / 0.42);
   --glass-surface: color-mix(in srgb, var(--surface) 76%, transparent);
   --glass-border: color-mix(in srgb, #fff 16%, transparent);
+}
+
+/* color-mix() e Safari < 16.2: a declaração direta é recusada no parser e a
+   cascata volta para a linha sólida anterior — o idioma usado nos pontos
+   críticos deste arquivo. Dentro de variável isso não funciona: a custom
+   property aceita qualquer texto, vence a cascata, e a falha só aparece ao
+   substituir `var(--glass-surface)`, que ali vale `unset` (fundo transparente,
+   sem borda) sem resgatar a declaração anterior. Daí o @supports para as duas
+   variáveis de vidro. Precisa ficar DEPOIS da paleta escura: mesma
+   especificidade, quem vence é a ordem. Ver validacoes.md § 8.1. */
+@supports not (color: color-mix(in srgb, red, red)) {
+  :root {
+    --glass-surface: var(--surface);
+    --glass-border: var(--border-strong);
+  }
 }
 
 .bottom-nav,

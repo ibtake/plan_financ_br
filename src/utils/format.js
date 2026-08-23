@@ -114,6 +114,14 @@ export function addMonths(key, delta) {
   return makeMonthKey(d.getFullYear(), d.getMonth())
 }
 
+/** Quantos meses a chave "AAAA-MM" (ou data ISO) esta atras do mes atual; 0 se futura ou invalida */
+export function monthsBehind(key) {
+  const { year, month } = parseMonthKey(key)
+  if (Number.isNaN(year) || Number.isNaN(month)) return 0
+  const now = new Date()
+  return Math.max(0, (now.getFullYear() - year) * 12 + (now.getMonth() - month))
+}
+
 /** Lista de N chaves de mes terminando em `key` (inclusive) */
 export function lastMonths(key, count) {
   const out = []

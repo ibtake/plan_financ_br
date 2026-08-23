@@ -13,7 +13,12 @@ function download(filename, content, mime) {
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
-  URL.revokeObjectURL(url)
+  // Revoke adiado de proposito. A spec atual resolve a blob URL na analise do
+  // `href`, dentro do proprio `click()`, entao revogar aqui nao cancelaria o
+  // download - mas navegadores antigos abortavam a transferencia, e adiar custa
+  // 1 s de blob retido. Nao remova por parecer inutil: `test/exportJSON.test.js`
+  // falha se o revoke voltar a ser sincrono, e tambem se ele deixar de acontecer.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function stamp() {

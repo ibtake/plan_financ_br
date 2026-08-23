@@ -70,6 +70,12 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
   const closeWithAnimation = () => {
     if (closing) return
     setClosing(true)
+    // Sem ref nem limpeza no unmount, de proposito: o `if (!open) return null` no
+    // topo mantem este componente montado o tempo todo, entao fechar nao desmonta
+    // nada - ele so cai junto com o AuthenticatedApp, quando o dono do `onClose`
+    // tambem se foi. E reabrir dentro dos 240 ms nao alcanca o timer velho porque o
+    // backdrop segue cobrindo a tela (`.modal-backdrop.is-closing` nao desliga
+    // `pointer-events`). O efeito de `open` zera o `closing` na reabertura.
     window.setTimeout(onClose, 240)
   }
 

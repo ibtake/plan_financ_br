@@ -108,13 +108,46 @@ function makeOccurrence(tx, index, date, extra = {}) {
   }
 }
 
+// Um render chama expandMonth 50 vezes, mas para 12 meses distintos (medido por
+// instrumentacao). As tres fontes de repeticao: `yearPatrimony` reexpande meses
+// que `history` acabou de expandir - a janela [jan..key] e sempre subconjunto dos
+// 12 meses terminando em key -; o segundo `useMonthlyData` de `App.jsx:144` repete
+// o primeiro inteiro sempre que o mes selecionado e o atual ou futuro (`:143`); e
+// `MonthlyChart.jsx:56` pede 3-6 meses que ja estao na janela de history. Medido
+// com 2 000 lancamentos: 33 ms -> 9,7 ms por render. Reexpandir um mes custa
+// ~580 µs; os 38 hits que este memo economiza custam 6 µs somados.
+//
+// A chave e a IDENTIDADE do array. Isso e seguro porque `useSupabaseFinance` nunca
+// altera `transactions` no lugar - toda escrita cria um array novo (`[tx, ...prev]`
+// em :262, `prev.map` em :278/:310/:359, `prev.filter` em :291, um `.map` novo em
+// :182) -, entao o WeakMap perde a entrada e o cache esfria junto com o dado. Se
+// algum dia alguem mutar o array existente, este cache passa a servir dado velho:
+// e o unico invariante que ele exige.
+const monthCache = new WeakMap()
+
 /** Todas as ocorrencias de todos os lancamentos em um mes */
 export function expandMonth(transactions, monthKey) {
+  let byMonth = monthCache.get(transactions)
+  if (!byMonth) {
+    byMonth = new Map()
+    monthCache.set(transactions, byMonth)
+  }
+
+  // `slice` em vez do array guardado: cada chamador recebe o seu, entao um
+  // `.sort()` no resultado nao reordena o de outro consumidor. Nenhum faz isso
+  // hoje (todos ordenam um `.filter()`), mas custa µs contra ~600 µs de
+  // reexpansao e dispensa o invariante. Os objetos de ocorrencia seguem
+  // compartilhados - nao escreva neles.
+  const cached = byMonth.get(monthKey)
+  if (cached) return cached.slice()
+
   const out = []
   for (const tx of transactions) {
     out.push(...occurrencesInMonth(tx, monthKey))
   }
-  return out.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+  out.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+  byMonth.set(monthKey, out)
+  return out.slice()
 }
 
 /** Ocorrencias agregadas de varios meses (para graficos de evolucao) */
