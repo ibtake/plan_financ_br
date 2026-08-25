@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SearchX } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
-import { useIcons } from '../contexts/IconContext.jsx'
+import { useIcons, STORAGE_FULL_MESSAGE } from '../contexts/IconContext.jsx'
 import { ICON_CATALOG, ICON_GROUPS, TOTAL_ICONS } from '../utils/iconRegistry.js'
 import { estimateStorageBytes, readIconFile } from '../utils/iconUpload.js'
 
@@ -59,7 +59,7 @@ function IconRow({ item, replaced, onUpload, onClear, busy }) {
 }
 
 export default function IconManager() {
-  const { overrides, setOverride, clearOverride, clearAll, overrideCount } = useIcons()
+  const { overrides, setOverride, clearOverride, clearAll, overrideCount, storedCount } = useIcons()
   const [group, setGroup] = useState('all')
   const [search, setSearch] = useState('')
   const [onlyPending, setOnlyPending] = useState(false)
@@ -83,8 +83,11 @@ export default function IconManager() {
     setBusy(true)
     try {
       const dataUrl = await readIconFile(file)
-      setOverride(emoji, dataUrl)
-      notify('Ícone aplicado. A mudança já aparece em todas as telas.')
+      if (setOverride(emoji, dataUrl)) {
+        notify('Ícone aplicado. A mudança já aparece em todas as telas.')
+      } else {
+        notify(STORAGE_FULL_MESSAGE, 'danger')
+      }
     } catch (error) {
       notify(error.message, 'danger')
     } finally {
@@ -98,8 +101,8 @@ export default function IconManager() {
   }
 
   const handleClearAll = () => {
-    if (!overrideCount) return
-    if (window.confirm(`Restaurar os ${overrideCount} ícones personalizados para os emojis originais?`)) {
+    if (!storedCount) return
+    if (window.confirm(`Restaurar os ${storedCount} ícones personalizados para os emojis originais?`)) {
       clearAll()
       notify('Todos os ícones voltaram ao padrão.')
     }
@@ -142,7 +145,7 @@ export default function IconManager() {
               aplicação e ficam salvas neste navegador.
             </div>
           </div>
-          {overrideCount > 0 && (
+          {storedCount > 0 && (
             <button type="button" className="btn btn-sm btn-ghost" onClick={handleClearAll}>
               Restaurar tudo
             </button>

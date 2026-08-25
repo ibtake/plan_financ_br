@@ -41,6 +41,17 @@ function dayDiff(fromDate, toDate) {
 }
 
 /**
+ * A ocorrencia nesta data cai depois do fim da repeticao?
+ *
+ * Comparacao por DATA, espelhando o gate de widget-data/index.ts:110. Decidido no
+ * B57: das duas semanticas de recurrenceEnd que divergiam, vale a do widget (por
+ * data), nao a do app antigo (por mes). O slice(0,10) corta timestamp do banco.
+ */
+function afterRecurrenceEnd(tx, isoDate) {
+  return Boolean(tx.recurrenceEnd && isoDate > String(tx.recurrenceEnd).slice(0, 10))
+}
+
+/**
  * Ocorrencias de um lancamento dentro de um mes especifico.
  * Retorna [] se o lancamento nao acontece nesse mes.
  */
@@ -55,20 +66,15 @@ function occurrencesInMonth(tx, monthKey) {
   if (installments > 1) {
     const index = monthDiff(startKey, monthKey)
     if (index < 0 || index >= installments) return []
-    return [
-      makeOccurrence(tx, index, isoDateInMonth(monthKey, dayOf(tx.date)), {
-        installmentLabel: `${index + 1}/${installments}`,
-      }),
-    ]
+    const occ = isoDateInMonth(monthKey, dayOf(tx.date))
+    if (afterRecurrenceEnd(tx, occ)) return []
+    return [makeOccurrence(tx, index, occ, { installmentLabel: `${index + 1}/${installments}` })]
   }
 
   // Sem recorrencia: so aparece no proprio mes
   if (recurrence === 'none') {
     return monthKey === startKey ? [makeOccurrence(tx, 0, tx.date)] : []
   }
-
-  // Recorrencia encerrada?
-  if (tx.recurrenceEnd && monthKey > monthKeyFromDate(tx.recurrenceEnd)) return []
 
   // Semanal: varias ocorrencias dentro do mesmo mes
   if (recurrence === 'weekly') {
@@ -77,7 +83,7 @@ function occurrencesInMonth(tx, monthKey) {
     let index = firstIndex
     let cursor = addDays(tx.date, index * 7)
     while (monthKeyFromDate(cursor) === monthKey) {
-      if (tx.recurrenceEnd && cursor > tx.recurrenceEnd) break
+      if (afterRecurrenceEnd(tx, cursor)) break
       out.push(makeOccurrence(tx, index, cursor))
       cursor = addDays(cursor, 7)
       index++
@@ -90,8 +96,10 @@ function occurrencesInMonth(tx, monthKey) {
   if (!step) return []
   const diff = monthDiff(startKey, monthKey)
   if (diff < 0 || diff % step !== 0) return []
+  const occ = isoDateInMonth(monthKey, dayOf(tx.date))
+  if (afterRecurrenceEnd(tx, occ)) return []
   const index = diff / step
-  return [makeOccurrence(tx, index, isoDateInMonth(monthKey, dayOf(tx.date)))]
+  return [makeOccurrence(tx, index, occ)]
 }
 
 function makeOccurrence(tx, index, date, extra = {}) {
@@ -111,17 +119,18 @@ function makeOccurrence(tx, index, date, extra = {}) {
 // Um render chama expandMonth 50 vezes, mas para 12 meses distintos (medido por
 // instrumentacao). As tres fontes de repeticao: `yearPatrimony` reexpande meses
 // que `history` acabou de expandir - a janela [jan..key] e sempre subconjunto dos
-// 12 meses terminando em key -; o segundo `useMonthlyData` de `App.jsx:144` repete
-// o primeiro inteiro sempre que o mes selecionado e o atual ou futuro (`:143`); e
-// `MonthlyChart.jsx:56` pede 3-6 meses que ja estao na janela de history. Medido
-// com 2 000 lancamentos: 33 ms -> 9,7 ms por render. Reexpandir um mes custa
-// ~580 µs; os 38 hits que este memo economiza custam 6 µs somados.
+// 12 meses terminando em key -; o segundo `useMonthlyData` de `App.jsx` (`chartMonthly`)
+// repete o primeiro inteiro sempre que o mes selecionado e o atual ou futuro
+// (`chartMonthKey`); e `MonthlyChart.jsx` pede 3-6 meses que ja estao na janela de
+// history. Medido com 2 000 lancamentos: 33 ms -> 9,7 ms por render. Reexpandir um
+// mes custa ~580 µs; os 38 hits que este memo economiza custam 6 µs somados.
 //
 // A chave e a IDENTIDADE do array. Isso e seguro porque `useSupabaseFinance` nunca
 // altera `transactions` no lugar - toda escrita cria um array novo (`[tx, ...prev]`
-// em :262, `prev.map` em :278/:310/:359, `prev.filter` em :291, um `.map` novo em
-// :182) -, entao o WeakMap perde a entrada e o cache esfria junto com o dado. Se
-// algum dia alguem mutar o array existente, este cache passa a servir dado velho:
+// em addTransaction, `prev.map` em updateTransaction/togglePaid/deleteCategory,
+// `prev.filter` em deleteTransaction, um `.map` novo na carga inicial) -, entao o
+// WeakMap perde a entrada e o cache esfria junto com o dado. Se algum dia alguem
+// mutar o array existente, este cache passa a servir dado velho:
 // e o unico invariante que ele exige.
 const monthCache = new WeakMap()
 
@@ -171,7 +180,43 @@ export function recurrenceLabel(tx) {
   }
 }
 
-/** Um lancamento se repete (recorrente ou parcelado)? */
+/**
+ * Um lancamento se repete (recorrente ou parcelado)?
+ *
+ * O Boolean() nao e decoracao: sem ele o `&&` final vazava o operando e a
+ * funcao devolvia `undefined` quando `recurrence` era ausente (o formulario
+ * omite o campo no avulso). Os dois consumidores tratam por truthiness e nao
+ * mudam de comportamento - o filtro de FixedExpenses.jsx:12 e o confirm de
+ * App.jsx:194 -, mas a JSDoc pergunta sim/nao e agora e sim/nao (B46).
+ */
 export function isRecurring(tx) {
-  return (Number(tx.installments) || 1) > 1 || (tx.recurrence && tx.recurrence !== 'none')
+  return Boolean((Number(tx.installments) || 1) > 1 || (tx.recurrence && tx.recurrence !== 'none'))
 }
+
+/**
+ * Fim de repeticao anterior a data do lancamento?
+ *
+ * A regra e BARRAR, decidida pelo usuario em 24/08/2026 - nao descartar o fim
+ * nem corrigi-lo para a data de inicio. Motivo: `occurrencesInMonth` descarta
+ * (via `afterRecurrenceEnd`) toda ocorrencia posterior ao fim, e a propria data
+ * de inicio ja e posterior a um fim invertido, entao a serie zera em TODOS os
+ * meses, inclusive o proprio. O lancamento
+ * era gravado sem erro e nao aparecia em lista nenhuma; como FixedExpenses:12,
+ * Insights:82 e TransactionList:155 consomem `occurrences`, nao havia nem como
+ * apaga-lo pela interface. O banco tambem nao segura: `transactions_date_range`
+ * (schema.sql:696) so limita 1970-2200 e nada cruza os dois campos.
+ *
+ * Vive aqui, e nao no formulario, porque dois caminhos aplicam a mesma regra -
+ * `TransactionForm.jsx:96` no submit e `useSupabaseFinance.js:625` no import de
+ * backup - e duas copias divergiriam. Campo vazio de um dos lados nao e
+ * invalido: sem inicio a comparacao nao significa nada e `occurrencesInMonth`
+ * ja devolve [] por `!startKey`; sem fim a serie e infinita, que e valido (B41).
+ */
+export function recurrenceEndBeforeStart(tx) {
+  const inicio = String(tx?.date || '').slice(0, 10)
+  const fim = String(tx?.recurrenceEnd || '').slice(0, 10)
+  return Boolean(inicio && fim && fim < inicio)
+}
+
+/** Mensagem unica da regra acima - formulario e import dizem a mesma coisa. */
+export const RECURRENCE_END_ERROR = 'A data de repetição não pode ser inferior à data do lançamento.'

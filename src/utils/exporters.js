@@ -81,7 +81,7 @@ export function exportCSV(rows, categories, filename = `dindin-10-${stamp()}.csv
   })
 
   // BOM para o Excel reconhecer os acentos
-  download(filename, `\uFEFF${[header.map(csvCell).join(';'), ...lines].join('\n')}`, 'text/csv')
+  download(filename, `\uFEFF${[header.map(csvCell).join(';'), ...lines].join('\r\n')}`, 'text/csv')
 }
 
 /**

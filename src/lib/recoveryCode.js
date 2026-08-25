@@ -26,11 +26,3 @@ const implicitToken = hashParams.get('access_token')
  * Usado como fallback manual em ResetPasswordScreen.
  */
 export const recoveryCode = pkceCode || implicitToken
-
-/**
- * Metadados para debug.
- */
-export const recoveryCodeMeta = {
-  source: pkceCode ? 'pkce' : implicitToken ? 'implicit' : 'none',
-  hasCode: !!recoveryCode,
-}

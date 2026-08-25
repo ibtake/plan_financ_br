@@ -254,11 +254,6 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!session) return
 
-    const clearTimer = () => {
-      markUserActivity()
-      if (idleTimer.current) clearTimeout(idleTimer.current)
-    }
-
     const schedule = () => {
       if (idleTimer.current) clearTimeout(idleTimer.current)
       const elapsed = Date.now() - getLastActivityAt(session)
@@ -275,7 +270,7 @@ export function AuthProvider({ children }) {
     }
 
     // Throttle: `scroll` dispara a cada quadro no mobile, e cada evento custava um
-    // setItem + um getItem sincronos (getLastActivityAt), tres operacoes de timer e,
+    // setItem + um getItem sincronos (getLastActivityAt), duas operacoes de timer e,
     // com outra aba aberta, o mesmo trabalho la via evento `storage`. `passive` nao
     // protege - o handler roda na main thread de todo jeito. Adiar o reset por <=1s e
     // seguro porque o callback do timer acima reagenda quando a sessao nao esta
@@ -285,7 +280,7 @@ export function AuthProvider({ children }) {
       const now = Date.now()
       if (now - lastReset < ACTIVITY_THROTTLE_MS) return
       lastReset = now
-      clearTimer()
+      markUserActivity()
       schedule()
     }
 

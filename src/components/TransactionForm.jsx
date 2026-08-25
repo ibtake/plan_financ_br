@@ -6,6 +6,7 @@ import {
   categoriesByType,
 } from '../utils/categories.js'
 import { amountToInput, formatAmountInput, parseAmount, todayISO } from '../utils/format.js'
+import { RECURRENCE_END_ERROR, recurrenceEndBeforeStart } from '../utils/recurrence.js'
 import { normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
 import { parseQuickTransaction } from '../utils/quickTransaction.js'
 
@@ -92,6 +93,16 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
     if (parseAmount(form.amount) <= 0) e.amount = 'Informe um valor maior que zero.'
     if (!form.date) e.date = 'Informe a data.'
     if (!form.categoryId) e.categoryId = 'Escolha uma categoria.'
+    // Fim de repeticao anterior ao lancamento barra o salvamento, por decisao do
+    // usuario em 24/08/2026. O `min={form.date}` do campo (`:334`) ja e a barreira
+    // nativa, mas a mensagem dele e do navegador e generica; esta aqui diz o motivo
+    // em portugues. Condicionado a `recurrence !== 'none'` porque o campo some com
+    // repeticao nenhuma e um erro em campo invisivel travaria o formulario sem
+    // explicacao - o valor velho sobrevive no state quando se volta para 'none'.
+    // A comparacao mora em recurrence.js para o import aplicar a mesma regra.
+    if (form.recurrence !== 'none' && recurrenceEndBeforeStart(form)) {
+      e.recurrenceEnd = RECURRENCE_END_ERROR
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -200,6 +211,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                   className={`input${errors.description ? ' input-invalid' : ''}`}
                   value={form.description}
                   onChange={(e) => set({ description: e.target.value })}
+                  maxLength={200}
                   placeholder="Ex.: Supermercado, Salário, Aluguel..."
                 />
                 {errors.description && <span className="field-error">{errors.description}</span>}
@@ -326,10 +338,12 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                   <input
                     id="tx-rec-end"
                     type="date"
-                    className="input"
+                    className={`input${errors.recurrenceEnd ? ' input-invalid' : ''}`}
                     value={form.recurrenceEnd}
                     onChange={(e) => set({ recurrenceEnd: e.target.value })}
+                    min={form.date}
                   />
+                  {errors.recurrenceEnd && <span className="field-error">{errors.recurrenceEnd}</span>}
                   <span className="hint">Em branco = repete indefinidamente.</span>
                 </div>
               )}
@@ -356,6 +370,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                   className="textarea"
                   value={form.note}
                   onChange={(e) => set({ note: e.target.value })}
+                  maxLength={1000}
                   placeholder="Anotações extras sobre este lançamento..."
                 />
               </div>}

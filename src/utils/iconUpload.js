@@ -79,7 +79,18 @@ export function readIconFile(file) {
   })
 }
 
-/** Estimativa do espaco ocupado pelos overrides, para avisar sobre a cota */
+/**
+ * Estimativa do espaco ocupado pelos overrides, para avisar sobre a cota.
+ *
+ * O x2 nao e folga de seguranca: `String.length` conta unidades de codigo
+ * UTF-16, e o localStorage - unico destino destes data URLs, ver
+ * writeOverrides em IconContext.jsx - guarda 2 bytes por unidade. Sem ele o
+ * contador de KB de IconManager mostrava METADE do real (medido: 59 KB para
+ * 117 KB ocupados), e o usuario chegava na cota achando que tinha folga. Ignora as
+ * chaves e a pontuacao do JSON de proposito: com data URLs de dezenas de KB
+ * elas pesam 0,04%, e somar o `JSON.stringify` inteiro por isso custaria uma
+ * serializacao a cada render (B45).
+ */
 export function estimateStorageBytes(overrides) {
-  return Object.values(overrides).reduce((total, dataUrl) => total + dataUrl.length, 0)
+  return Object.values(overrides).reduce((total, dataUrl) => total + dataUrl.length * 2, 0)
 }

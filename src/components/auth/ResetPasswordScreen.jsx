@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth, validatePassword } from '../../contexts/AuthContext.jsx'
-import { supabase } from '../../lib/supabase.js'
 import { recoveryCode } from '../../lib/recoveryCode.js'
 import CodeInput from './CodeInput.jsx'
 
@@ -104,9 +103,11 @@ export default function ResetPasswordScreen() {
     return () => {
       active = false
     }
-  }, [auth, auth.loading]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth, auth.loading])
   // Depende de auth e auth.loading para garantir que re-executa
-  // quando loading muda (primitivo) e quando auth muda (objeto)
+  // quando loading muda (primitivo) e quando auth muda (objeto).
+  // O eslint-disable que ficava nesta linha saiu no B36: com o linter
+  // instalado, ele mesmo reportou que a diretiva nao suprimia nada.
 
   // Auto-submit do codigo MFA quando atinge 6 digitos (colagem ou autofill)
   // Mesmo comportamento do AuthScreen.jsx

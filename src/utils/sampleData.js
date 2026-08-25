@@ -67,6 +67,17 @@ export function buildSampleData(currentCategories) {
       method: 'credito',
     }),
 
+    // Reinvestimento recorrente (B67). Sem nenhum lancamento deste tipo,
+    // `reinvested` fica 0 em useFinance.js:19 e leva com ele o card "Patrimonio
+    // do ano" (SummaryCards.jsx:106), a taxa de poupanca (:28) e a fatia de
+    // reinvestidas por categoria (:90) - o exemplo nao demonstrava o REQ 3, que
+    // e o mecanismo proprio do app. Mensal, para render as 4 ocorrencias dos
+    // meses cobertos: ~12% dos 6500 de salario.
+    tx(isoDateInMonth(m3, 6), 'reinvested', 'Aporte mensal', 'aportes', 800, {
+      recurrence: 'monthly',
+      method: 'transferencia',
+    }),
+
     // Mes -2
     tx(isoDateInMonth(m2, 6), 'expense', 'Compras do mês', 'mercado', 780.4),
     tx(isoDateInMonth(m2, 14), 'expense', 'Restaurante', 'alimentacao', 156.8),

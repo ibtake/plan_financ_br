@@ -324,11 +324,14 @@ export default function SettingsPanel({
           <button className="btn btn-primary" onClick={applyRetention} disabled={!reverseGoalRetentionLoaded || savingRetention}>{savingRetention ? 'Aplicando...' : 'Aplicar configuração'}</button>
         </div>
         {/* O select e o botao ficam desabilitados enquanto a configuracao atual
-            nao chegou. Sem esta linha, uma falha nas leituras de apoio
-            (useSupabaseFinance.js:193) deixava o painel morto e sem explicacao. A
-            frase serve aos dois estados de proposito: `loading` vira false antes
-            do pacote de apoio resolver, entao nao ha como distinguir "carregando"
-            de "falhou" sem um estado novo - e a providencia do usuario e a mesma. */}
+            nao chegou. Sem esta linha, uma falha de leitura deixava o painel morto
+            e sem explicacao. Desde o B77 e apenas a leitura da PROPRIA retencao: o
+            supportingDataRequest de useSupabaseFinance.js aplica cada uma das cinco
+            leituras de apoio separadamente, e antes qualquer delas derrubava este
+            painel. A frase serve aos dois estados de proposito: `loading` vira
+            false antes do pacote de apoio resolver, entao nao ha como distinguir
+            "carregando" de "falhou" sem um estado novo - e a providencia do usuario
+            e a mesma. */}
         {!reverseGoalRetentionLoaded && <p className="hint" style={{ marginTop: 12 }}>A configuração atual ainda não foi lida. Se esta mensagem persistir, recarregue a página.</p>}
         <p className="hint" style={{ marginTop: 12 }}>Quando ativada, esta opção removerá permanentemente do banco de dados as Metas Reversas concluídas após o período definido. Metas em andamento nunca serão excluídas.</p>
       </section>

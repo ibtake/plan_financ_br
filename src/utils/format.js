@@ -13,7 +13,6 @@ const brlCompact = new Intl.NumberFormat('pt-BR', {
 })
 
 const PRIVATE_CURRENCY = 'R$ •••••'
-const PRIVATE_NUMBER = '•••••'
 const PRIVATE_PERCENT = '•••%'
 
 function formatBrl(value, formatter) {
@@ -171,7 +170,20 @@ export function isoDateInMonth(monthKey, day) {
   return `${monthKey}-${String(d).padStart(2, '0')}`
 }
 
-/** Variacao percentual entre dois valores */
+/**
+ * Variacao percentual entre dois valores.
+ *
+ * @returns {number|null} `null` quando a base e zero e o atual nao - variacao
+ *   a partir de zero e infinita, e devolver Infinity ou 100 mentiria. Base e
+ *   atual ambos zero devolvem 0: nao houve variacao. **O consumidor tem de
+ *   tratar o null**, porque ele atravessa formatacao sem reclamar - o cenario
+ *   real e mes sem lancamento (usuario novo, ou categoria que nao existia no
+ *   mes anterior). Os quatro consumidores tratam hoje: TrendChart.jsx:18 e o
+ *   Delta de SummaryCards.jsx:10 comparam com null explicitamente (o Delta
+ *   mostra "novo"), e Insights.jsx:67 e :126 filtram por base > 0 antes de
+ *   chamar. Base negativa NAO devolve null - divide por Math.abs, entao -100
+ *   para 50 da +150% (B48).
+ */
 export function percentChange(current, previous) {
   const c = Number(current) || 0
   const p = Number(previous) || 0
@@ -179,18 +191,34 @@ export function percentChange(current, previous) {
   return ((c - p) / Math.abs(p)) * 100
 }
 
-/** Gera id unico simples */
+/**
+ * Gera id unico.
+ *
+ * Era `Date.now().toString(36)` + `Math.random().toString(36).slice(2, 8)`: 6
+ * chars base36 = 31 bits de aleatoriedade nao criptografica atras de um
+ * timestamp de milissegundo, o que exigia duas chamadas no mesmo ms para
+ * colidir. randomUUID e 122 bits de CSPRNG e cobre os cinco targets de
+ * vite.config.js:17; exige contexto seguro, que Vercel (HTTPS) e o dev
+ * (localhost) atendem. `id` e text sem constraint de formato nas duas tabelas
+ * (schema.sql), entao id antigo segue valido e nao houve migracao (B51).
+ */
 export function uid() {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+  return crypto.randomUUID()
 }
 
-/** Converte string digitada em numero (aceita "1.234,56" e "1234.56") */
+/** Converte string digitada em numero (aceita "1.234,56", "1.234" e "1234.56") */
 export function parseAmount(input) {
   if (typeof input === 'number') return input
   if (!input) return 0
   let s = String(input).trim().replace(/[R$\s]/g, '')
   if (s.includes(',')) {
     s = s.replace(/\./g, '').replace(',', '.')
+  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) {
+    // Sem virgula e com grupos de exatamente 3 digitos e milhar pt-BR: "1.234"
+    // sao mil duzentos e trinta e quatro, nao um real e vinte e tres. Padrao
+    // estreito de proposito - "1234.56", "12.5" e "0.5" seguem decimais, que e
+    // como numero sai serializado em JSON.
+    s = s.replace(/\./g, '')
   }
   const n = parseFloat(s)
   return Number.isFinite(n) ? n : 0

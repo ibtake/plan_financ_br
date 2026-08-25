@@ -34,7 +34,7 @@ const SORTS = [
 // desliga este memo em silencio, sem teste que acuse. Marcar como pago NAO e coberto:
 // setTransactions refaz occurrences e todo tx nasce novo, entao a comparacao por
 // referencia falha de proposito. Isso e o achado 4.2 / B22, nao um defeito daqui.
-export const TransactionItem = memo(function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate, onTogglePaid }) {
+const TransactionItem = memo(function TransactionItem({ tx, categories, onEdit, onDelete, onDuplicate, onTogglePaid }) {
   const cat = getCategory(categories, tx.categoryId)
   const method = getPaymentMethod(tx.method)
   const repeat = recurrenceLabel(tx)

@@ -42,7 +42,7 @@ export function totalsByCategory(occurrences, type = 'expense') {
 }
 
 /** Hook derivado: tudo que a interface precisa para o mes selecionado */
-export function useMonthlyData(transactions, monthKey, monthsBack = 12) {
+export function useMonthlyData(transactions, monthKey) {
   return useMemo(() => {
     const key = monthKey || currentMonthKey()
     const occurrences = expandMonth(transactions, key)
@@ -53,8 +53,31 @@ export function useMonthlyData(transactions, monthKey, monthsBack = 12) {
       .map((transaction) => monthKeyFromDate(transaction.date))
       .filter(Boolean)
       .sort()[0]
-    const historyKeys = lastMonths(key, Math.min(Number(monthsBack) || 12, 12))
+    // Este bloco - historyKeys, history e trend - existe SO para o grafico, que e
+    // a SEGUNDA instancia deste hook: App.jsx chama useMonthlyData duas vezes
+    // (`:143` monthly, `:147` chartMonthly) e as leituras nao se cruzam - monthly
+    // le os outros nove campos e nunca `trend`, chartMonthly le `trend` e nada
+    // mais (`:254`, `:255`). Cada instancia calcula dez campos e usa um lote.
+    //
+    // Medido no B79 e deixado assim de proposito. Separar em dois hooks levaria as
+    // 44 chamadas de expandMonth e de summarize por render para 22, e as 6 de
+    // totalsByCategory para 3 - as mesmas 44 que a instrumentacao do B22 contou -,
+    // mas o memo de recurrence.js:135 ja tinha comido o caro. Em base de peso
+    // equivalente a daquela medicao (256 ocorrencias no mes) o ganho na navegacao
+    // de mes fica entre -0,004 e +0,041 ms: troca de sinal entre execucoes, ou
+    // seja, ruido. Com base 7x mais pesada (1 079 ocorrencias) sao 0,09-0,13 ms. E
+    // navegar entre meses passados nem recalcula chartMonthly - chartMonthKey fica
+    // preso em currentMonthKey() (App.jsx:146). Reabrir se o delta passar de um
+    // frame, ou se aparecer consumidor que queira `trend` sem os outros nove.
+    //
+    // 12 fixo: era o parametro `monthsBack`, que nenhuma chamada passava - as
+    // duas de App.jsx (`:143`, `:147`) e as cinco de test/useFinance.test.js - e
+    // que o Math.min(..., 12) so deixava encurtar a janela, nunca esticar: API
+    // prometendo alcance que nao entregava (B59).
+    const historyKeys = lastMonths(key, 12)
       .filter((month) => firstDataMonth && month >= firstDataMonth)
+    // Local, nao devolvido: `trend` mapeia sobre ele logo abaixo, entao o
+    // calculo continua obrigatorio - o que saiu do retorno foi so a chave.
     const history = historyKeys.map((k) => ({ key: k, ...summarize(expandMonth(transactions, k)) }))
 
     let cumulative = 0
@@ -82,16 +105,12 @@ export function useMonthlyData(transactions, monthKey, monthsBack = 12) {
       change: {
         income: percentChange(current.income, prev.income),
         expense: percentChange(current.expense, prev.expense),
-        balance: percentChange(current.balance, prev.balance),
-        savingsRate: percentChange(current.savingsRate, prev.savingsRate),
       },
       byCategory: totalsByCategory(occurrences, 'expense'),
-      byCategoryIncome: totalsByCategory(occurrences, 'income'),
       byCategoryReinvested: totalsByCategory(occurrences, 'reinvested'),
       previousByCategory: totalsByCategory(previous, 'expense'),
       accumulatedPatrimony: yearPatrimony,
-      history,
       trend,
     }
-  }, [transactions, monthKey, monthsBack])
+  }, [transactions, monthKey])
 }

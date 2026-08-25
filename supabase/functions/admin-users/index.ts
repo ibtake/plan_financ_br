@@ -4,6 +4,10 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 const MAX_BODY_BYTES = 16_384
 const MFA_FRESHNESS_SECONDS = 5 * 60
 
+// Copia literal de widget-setup/index.ts; a terceira esta em widget-data, que
+// checa content-length dentro da funcao. Aqui a checagem fica no handler, antes
+// da autenticacao (:112). As tres seguem copiadas: `_shared/` exige deploy por
+// CLI, e o desta app e colagem no painel do Supabase (backlog B34).
 async function readJsonWithinLimit(request: Request): Promise<Record<string, unknown>> {
   const reader = request.body?.getReader()
   if (!reader) throw new Error('invalid_body')

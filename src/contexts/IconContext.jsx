@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useState } from 'react'
+import { countCatalogOverrides } from '../utils/iconRegistry.js'
 
 const IconContext = createContext()
 
@@ -21,6 +22,28 @@ function sanitizeOverrides(raw) {
   return clean
 }
 
+const STORAGE_KEY = 'planejador:icon-overrides'
+
+/** Mensagem unica dos dois pontos que enviam PNG: IconManager e o IconPicker de CategoryManager */
+export const STORAGE_FULL_MESSAGE =
+  'Armazenamento deste navegador cheio. Remova alguns ícones personalizados e tente de novo.'
+
+/**
+ * Grava os overrides no localStorage e devolve false quando a cota estourou,
+ * para quem chamou reverter e avisar (B74). Antes o setItem vivia num efeito com
+ * `catch` mudo: o icone entrava no state, nao persistia, e o usuario so descobria
+ * no reload, achando que o app tinha desfeito a personalizacao. A escrita e
+ * sincrona com a acao de proposito, para o resultado voltar a quem chamou.
+ */
+function writeOverrides(next) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
  * Contexto global para gerenciar os overrides de emoji → PNG.
  * Cada override e uma entrada { '🏠': 'data:image/png;base64,...', ... }
@@ -29,7 +52,7 @@ function sanitizeOverrides(raw) {
 export function IconProvider({ children }) {
   const [overrides, setOverrides] = useState(() => {
     try {
-      const raw = window.localStorage.getItem('planejador:icon-overrides')
+      const raw = window.localStorage.getItem(STORAGE_KEY)
       if (!raw) return {}
       return sanitizeOverrides(JSON.parse(raw))
     } catch {
@@ -37,36 +60,38 @@ export function IconProvider({ children }) {
     }
   })
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem('planejador:icon-overrides', JSON.stringify(overrides))
-    } catch {
-      // quota cheia: ignora
-    }
-  }, [overrides])
-
   const setOverride = useCallback((emoji, dataUrl) => {
     if (!isSafeIconDataUrl(dataUrl)) return false
-    setOverrides((prev) => ({ ...prev, [emoji]: dataUrl }))
+    const next = { ...overrides, [emoji]: dataUrl }
+    // B74: so aplica se persistiu. Cota cheia -> nao entra no state (nada de
+    // icone que aparece e some no reload) e o chamador avisa (STORAGE_FULL_MESSAGE).
+    if (!writeOverrides(next)) return false
+    setOverrides(next)
     return true
-  }, [])
+  }, [overrides])
 
   const clearOverride = useCallback((emoji) => {
-    setOverrides((prev) => {
-      const next = { ...prev }
-      delete next[emoji]
-      return next
-    })
-  }, [])
+    const next = { ...overrides }
+    delete next[emoji]
+    writeOverrides(next)
+    setOverrides(next)
+  }, [overrides])
 
-  const clearAll = useCallback(() => setOverrides({}), [])
+  const clearAll = useCallback(() => {
+    writeOverrides({})
+    setOverrides({})
+  }, [])
 
   const getOverride = useCallback((emoji) => overrides[emoji], [overrides])
   const hasOverride = useCallback((emoji) => Boolean(overrides[emoji]), [overrides])
-  const overrideCount = Object.keys(overrides).length
+  // Progresso conta so o catalogo (B71). `storedCount` e o total gravado, orfaos
+  // incluidos, porque e o "Restaurar tudo" do IconManager que precisa enxerga-los
+  // para poder limpa-los - filtrar aqui esconderia o botao e prenderia o orfao.
+  const overrideCount = countCatalogOverrides(overrides)
+  const storedCount = Object.keys(overrides).length
 
   return (
-    <IconContext.Provider value={{ overrides, setOverride, clearOverride, clearAll, getOverride, hasOverride, overrideCount }}>
+    <IconContext.Provider value={{ overrides, setOverride, clearOverride, clearAll, getOverride, hasOverride, overrideCount, storedCount }}>
       {children}
     </IconContext.Provider>
   )

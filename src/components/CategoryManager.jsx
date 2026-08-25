@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { Pencil, Plus, Trash2, Upload } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
-import { useIcons } from '../contexts/IconContext.jsx'
+import { useIcons, STORAGE_FULL_MESSAGE } from '../contexts/IconContext.jsx'
 import { CHART_PALETTE, TYPE_META, categoriesByType } from '../utils/categories.js'
 import { ICON_CATALOG, ICON_GROUPS } from '../utils/iconRegistry.js'
 import { readIconFile } from '../utils/iconUpload.js'
@@ -41,7 +41,7 @@ function IconPicker({ value, onChange }) {
     setError('')
     try {
       const dataUrl = await readIconFile(file)
-      setOverride(value, dataUrl)
+      if (!setOverride(value, dataUrl)) setError(STORAGE_FULL_MESSAGE)
     } catch (uploadError) {
       setError(uploadError.message)
     } finally {
@@ -252,8 +252,11 @@ function CategoryForm({ initial, onSave, onCancel, otherTargetTotal }) {
 function CategoryRow({ category, usage, onEdit, onDelete }) {
   const meta = TYPE_META[category.type] || TYPE_META.expense
   const target = Number(category.targetPercentage) || 0
-  // Categorias padrão do sistema não são excluíveis (o backend recusa). Sem
-  // isso o botão falhava em silêncio, que era a queixa do REQ 4.
+  // Toda categoria e excluivel, as 22 padrao inclusive: a policy `own categories
+  // delete` (schema.sql:650-654) so checa o dono, nao ha trigger de delete e
+  // `custom` (schema.sql:611) e informativo. deleteCategory realoca os lancamentos
+  // antes de excluir (useSupabaseFinance.js:398-413), e handleDelete (:352) pede
+  // confirmacao dizendo quantos serao movidos - nao ha nada a bloquear aqui.
 
   return (
     <div className="tx" style={{ padding: '10px 4px' }}>
