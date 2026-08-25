@@ -18,11 +18,17 @@
 
 import { supabase } from './supabase.js'
 
-/** Tipos aceitos pela constraint da tabela security_events */
+/**
+ * Tipos que o frontend emite. Subconjunto da constraint da tabela: o banco
+ * tambem aceita 'suspicious_activity' (sem emissor em lugar nenhum do projeto)
+ * e 'rate_limited' (emitido pelo proprio banco, ver EVENT_LABELS abaixo).
+ */
 export const EVENTS = {
   LOGIN_SUCCESS: 'login_success',
   LOGIN_FAILED: 'login_failed',
   LOGOUT: 'logout',
+  // Nunca emitido, e correto: config.toml:4 tem enable_signup = false, logo nao
+  // existe cadastro publico - a conta nasce pela function admin-users.
   SIGNUP: 'signup',
   MFA_ENROLLED: 'mfa_enrolled',
   MFA_REMOVED: 'mfa_removed',
@@ -30,10 +36,15 @@ export const EVENTS = {
   MFA_FAILED: 'mfa_challenge_failed',
   PASSWORD_RESET: 'password_reset_requested',
   PASSWORD_CHANGED: 'password_changed',
+  // Quem emite nao e o frontend: delete_my_data grava bulk_delete na mesma
+  // transacao do delete (schema.sql:1282-1283), e reset_my_data_with_defaults
+  // chama essa funcao - registro transacional, que nao depende de o cliente
+  // estar vivo depois do apagamento para acontecer. Nao remova esta constante
+  // nem o rotulo em EVENT_LABELS achando que e codigo morto: e o rotulo que
+  // nomeia na tela o evento que o banco gravou.
   BULK_DELETE: 'bulk_delete',
   DATA_IMPORTED: 'data_imported',
   RLS_VIOLATION: 'rls_violation_attempt',
-  SUSPICIOUS: 'suspicious_activity',
 }
 
 /** Descricoes legiveis para a interface */
@@ -51,7 +62,14 @@ export const EVENT_LABELS = {
   bulk_delete: { icon: '🗑️', text: 'Exclusão em massa de dados' },
   data_imported: { icon: '📥', text: 'Dados importados' },
   rls_violation_attempt: { icon: '🛑', text: 'Tentativa de acesso a dados de outro usuário' },
-  suspicious_activity: { icon: '⚠️', text: 'Atividade suspeita' },
+  // Nenhuma chamada do app emite este tipo - quem grava e o banco. Passados 50
+  // eventos comuns na hora, log_security_event para de gravar e registra este
+  // uma vez para dizer que descartou o excedente
+  // (migrations/20260815174044_v36_critical_audit_quota.sql:52-69). Sem o rotulo
+  // aqui, SecurityPanel.jsx:56 caia no fallback e a tela mostrava a string crua
+  // 'rate_limited' - justo no momento em que o painel precisa se explicar,
+  // porque a lista dali para frente esta incompleta.
+  rate_limited: { icon: '⏳', text: 'Registro de eventos pausado por limite na última hora' },
 }
 
 /** Campos que nunca devem ser gravados, mesmo por engano */
@@ -73,7 +91,9 @@ const FORBIDDEN_KEYS = [
  * Chaves de diagnostico do proprio app, isentas do filtro por substring.
  * `db_code` contem 'code' - palavra que barra codigo TOTP e de recuperacao -
  * mas um SQLSTATE nao e segredo, e sem ele o log de violacao de RLS nao
- * distingue 42501 (a politica negou) de PGRST301 (token expirado, rotina).
+ * distingue o 42501 explicito da recusa reconhecida apenas pelo texto da
+ * mensagem ('permission denied', 'row-level security'), que pode ser falta de
+ * GRANT em vez de politica.
  * Isencao pontual de proposito: a comparacao exata na lista proibida deixaria
  * passar `recovery_code`, `otp_code` e todo segredo em camelCase.
  */
@@ -128,7 +148,16 @@ export async function logEvent(eventType, severity = 'info', details = {}) {
  * permissao - ou seja, tentativa de tocar em dado que nao e do usuario.
  *
  * 42501 = insufficient_privilege
- * PGRST301 = JWT invalido/ausente na camada da API
+ *
+ * PGRST301 fica DE FORA de proposito. Ele e sessao expirada - rotina, nao
+ * recusa de politica - e useSupabaseFinance.js:181 ja o trata assim, chamando
+ * signOut('session_expired'). Enquanto esteve nesta lista, uma carga com token
+ * morto classificava as 10 leituras guardadas de load() como acesso indevido e
+ * disparava 10 RPCs de log que o banco recusa de saida: log_security_event
+ * comeca por `if v_uid is null or not is_token_valid() then return`
+ * (migrations/20260815174044_v36_critical_audit_quota.sql:30-32). Dava 10
+ * requisicoes de rede, zero linha gravada, e o mesmo codigo de erro
+ * classificado de dois jeitos opostos em dois arquivos.
  */
 export function isAccessViolation(error) {
   if (!error) return false
@@ -136,7 +165,6 @@ export function isAccessViolation(error) {
   const message = String(error.message || '').toLowerCase()
   return (
     code === '42501' ||
-    code === 'PGRST301' ||
     message.includes('row-level security') ||
     message.includes('violates row-level security') ||
     message.includes('permission denied') ||

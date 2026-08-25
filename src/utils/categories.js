@@ -20,11 +20,6 @@ export function normalizeType(type) {
   return TX_TYPES.includes(type) ? type : 'expense'
 }
 
-/** Tipos que representam saida de liquidez (despesa comum + reinvestida). */
-export function isOutflowType(type) {
-  return type === 'expense' || type === 'reinvested'
-}
-
 /** Categoria "Outros" padrao usada como destino ao excluir uma categoria. */
 export function fallbackCategoryId(type) {
   if (type === 'income') return 'outros-r'

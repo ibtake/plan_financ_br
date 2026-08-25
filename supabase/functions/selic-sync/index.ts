@@ -12,6 +12,11 @@ function response(status: number, body: Record<string, unknown>) {
   })
 }
 
+// Gemea byte a byte de reverse-goal-cleanup/index.ts:15. Copia deliberada, nao
+// sobra: o deploy destas funcoes e por colagem de um arquivo no painel do
+// Supabase, onde nao existe pasta acima da funcao - `supabase/functions/_shared/`
+// so funciona com deploy por CLI (backlog B34). Mexer aqui obriga a mexer na
+// gemea: e comparacao em tempo constante, e a copia esquecida nao acusa erro.
 function secureEqual(left: string, right: string) {
   const a = new TextEncoder().encode(left)
   const b = new TextEncoder().encode(right)
@@ -42,8 +47,19 @@ function formatBcbDate(isoDate: string) {
   return `01/${month}/${year}`
 }
 
+// Mes corrente no fuso de Brasilia, nao em UTC. O `new Date().toISOString()`
+// anterior lia UTC, que das 21:00 as 23:59 de SP ja esta no dia seguinte: no
+// ultimo dia do mes isso adiantava o mes inteiro. Como `completedMonth` (`:124`)
+// existe justamente para descartar o mes ainda aberto no filtro de `:131`,
+// adiantar um mes fazia o mes corrente PASSAR pelo filtro e ser gravado com a
+// taxa parcial. E `upsert` roda com `ignoreDuplicates: true` (`:152`), entao esse
+// valor nunca seria reescrito quando o mes fechasse - `rebuild_all_reverse_goals`
+// (`:155`) o espalharia para as metas reversas de todos os usuarios. Serie mensal
+// do BCB e do calendario brasileiro; alinha com `widget-data/index.ts:74` (B40).
 function currentMonth() {
-  return new Date().toISOString().slice(0, 7) + '-01'
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]))
+  return `${values.year}-${values.month}-01`
 }
 
 function supportedStartDate(startDate: string) {

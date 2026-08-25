@@ -7,6 +7,11 @@ function response(status: number, body: Record<string, unknown>) {
   })
 }
 
+// Gemea byte a byte de selic-sync/index.ts:20. Copia deliberada, nao sobra: o
+// deploy destas funcoes e por colagem de um arquivo no painel do Supabase, onde
+// nao existe pasta acima da funcao - `supabase/functions/_shared/` so funciona
+// com deploy por CLI (backlog B34). Mexer aqui obriga a mexer na gemea: e
+// comparacao em tempo constante, e a copia esquecida nao acusa erro nenhum.
 function secureEqual(left: string, right: string) {
   const a = new TextEncoder().encode(left)
   const b = new TextEncoder().encode(right)

@@ -2,10 +2,21 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { supabase, translateAuthError } from '../lib/supabase.js'
 import { EVENTS, guarded, logEvent } from '../lib/audit.js'
-import { DEFAULT_CATEGORIES, fallbackCategoryId, normalizeType } from '../utils/categories.js'
+import { selectAllPages } from '../lib/pagination.js'
+import { fallbackCategoryId, normalizeType } from '../utils/categories.js'
 import { uid } from '../utils/format.js'
+import { RECURRENCE_END_ERROR, recurrenceEndBeforeStart } from '../utils/recurrence.js'
 import { DEFAULT_TRANSACTION_FORM_FIELDS, normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
 import { useLocalStorage } from './useLocalStorage.js'
+
+// Toda leitura de lista do `load` passa por aqui. O `count: 'exact'` nao e
+// enfeite: e o unico jeito de saber que o teto de linhas do servidor cortou a
+// resposta, porque o corte chega 200 OK e truncado (lib/pagination.js explica o
+// resto). No caso comum continua sendo uma requisicao por tabela.
+const listRead = (table, apply = (query) => query) => selectAllPages((from, to) => guarded(
+  () => apply(supabase.from(table).select('*', { count: 'exact' })).range(from, to),
+  { table, action: 'select' },
+))
 
 function normalizeTransaction(input) {
   return {
@@ -125,21 +136,47 @@ export function useSupabaseFinance() {
   const transactionFormFieldsVersion = useRef(0)
   const errorTimer = useRef(0)
 
-  const reportError = useCallback((dbError) => {
-    setError(translateAuthError(dbError))
+  // Tres estados de proposito (B78): ausente nao fala de recarga, `true` promete
+  // que ela houve, `false` avisa que ela falhou. O default NAO pode ser `false` -
+  // os outros dezoito pontos de reporte passariam a avisar de uma recarga que nem
+  // tentaram. Mesma licao do B76: ausente nao e `false`.
+  const reportError = useCallback((dbError, { reloaded = null } = {}) => {
+    const message = translateAuthError(dbError)
+    // O sufixo pertence a quem reporta, nao ao banner. App.jsx colava
+    // " Os dados foram recarregados do servidor." em TODA mensagem, e mentia em
+    // quase todas: validacao local de categoria (:426), 'Backup invalido.'
+    // (:628), sessao expirada na importacao (:632), falha ao excluir meta (:596)
+    // e o proprio erro de carga (:224) retornam sem recarregar nada. Dos
+    // dezenove pontos de reporte deste arquivo - dezessete chamadas e dois
+    // `.catch(reportError)` - so o `persist` (:308) tenta recarregar, e por isso
+    // so ele passa a flag.
+    const suffix = reloaded === true ? ' Os dados foram recarregados do servidor.'
+      : reloaded === false ? ' Recarregue a página: os dados na tela não foram confirmados pelo servidor.'
+        : ''
+    setError(`${message}${suffix}`)
     // Cancela o timer anterior. O callback faz `setError('')` sem saber qual erro
-    // esta na tela: com 16 chamadores e janela de 6 s, dois erros dentro da janela
-    // faziam o timer do primeiro apagar a mensagem do segundo (offline com duas
-    // escritas seguidas e o caso comum). O ref tambem serve de limpeza no unmount,
-    // logo abaixo - mas o unmount e a parte inofensiva: o React 18 descarta
+    // esta na tela: com dezenove chamadores, dois erros dentro da janela faziam o
+    // timer do primeiro apagar a mensagem do segundo (offline com duas escritas
+    // seguidas e o caso comum). O ref tambem serve de limpeza no unmount, logo
+    // abaixo - mas o unmount e a parte inofensiva: o React 18 descarta
     // `setState` em componente desmontado sem aviso.
     window.clearTimeout(errorTimer.current)
-    errorTimer.current = window.setTimeout(() => setError(''), 6000)
+    // 12 s, nao 6. A mensagem some sozinha e nao ha onde reler depois, mas a
+    // maioria carrega instrucao de recuperacao ("Entre novamente para importar o
+    // backup", "Mantenha pelo menos uma categoria deste tipo para realocar os
+    // lancamentos") - seis segundos nao davam para ler e agir.
+    errorTimer.current = window.setTimeout(() => setError(''), 12000)
   }, [])
 
   useEffect(() => () => window.clearTimeout(errorTimer.current), [])
 
-  const load = useCallback(async ({ preserveError = false, preserveLoading = false } = {}) => {
+  // `preserveLoading` tem default `true` de proposito, invertido em 24/08/2026 (B58).
+  // Levantar `loading` troca a arvore de App.jsx pelo esqueleto de FinanceLoadingScreen,
+  // desmontando Topbar, Sidebar, modais e o formulario aberto - correto na carga inicial,
+  // destrutivo em qualquer recarga. Das doze chamadas deste hook, onze querem preservar;
+  // so o efeito de montagem pede o esqueleto, e pede explicitamente. Com o default
+  // seguro, um `load()` novo escrito sem o parametro nao derruba mais a UI montada.
+  const load = useCallback(async ({ preserveError = false, preserveLoading = true } = {}) => {
     const requestId = ++latestLoadRequest.current
     try {
       if (!user || !supabase) {
@@ -159,17 +196,19 @@ export function useSupabaseFinance() {
       // sendo buscados em paralelo, mas nao devem segurar a primeira tela apos
       // login, especialmente em redes moveis.
       const supportingDataRequest = Promise.all([
-        guarded(() => supabase.from('reverse_goal_history').select('*').order('reference_month', { ascending: false }), { table: 'reverse_goal_history', action: 'select' }),
-        guarded(() => supabase.from('reverse_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_contributions', action: 'select' }),
-        guarded(() => supabase.from('standard_goal_contributions').select('*').order('occurred_on', { ascending: false }), { table: 'standard_goal_contributions', action: 'select' }),
-        guarded(() => supabase.from('reverse_goal_events').select('*').order('occurred_on', { ascending: false }), { table: 'reverse_goal_events', action: 'select' }),
+        listRead('reverse_goal_history', (query) => query.order('reference_month', { ascending: false })),
+        listRead('reverse_goal_contributions', (query) => query.order('occurred_on', { ascending: false })),
+        listRead('standard_goal_contributions', (query) => query.order('occurred_on', { ascending: false })),
+        listRead('reverse_goal_events', (query) => query.order('occurred_on', { ascending: false })),
+        // Fora do listRead de proposito: e uma linha so, por maybeSingle, e nao
+        // tem lista para o teto do servidor cortar.
         guarded(() => supabase.from('reverse_goal_retention_settings').select('completed_goal_retention_months').maybeSingle(), { table: 'reverse_goal_retention_settings', action: 'select' }),
       ])
       const [txResult, catResult, budgetResult, goalResult] = await Promise.all([
-        guarded(() => supabase.from('transactions').select('*').order('created_at', { ascending: false }), { table: 'transactions', action: 'select' }),
-        guarded(() => supabase.from('categories').select('*').order('created_at'), { table: 'categories', action: 'select' }),
-        guarded(() => supabase.from('budgets').select('*'), { table: 'budgets', action: 'select' }),
-        guarded(() => supabase.from('goals').select('*').order('created_at'), { table: 'goals', action: 'select' }),
+        listRead('transactions', (query) => query.order('created_at', { ascending: false })),
+        listRead('categories', (query) => query.order('created_at')),
+        listRead('budgets'),
+        listRead('goals', (query) => query.order('created_at')),
       ])
       // Uma carga iniciada antes de uma mutacao nao pode restaurar um snapshot
       // antigo sobre os dados que acabaram de ser confirmados pelo servidor.
@@ -209,14 +248,19 @@ export function useSupabaseFinance() {
             return
           }
           reportError(supportingError)
-          return
         }
-        setReverseGoalHistory(reverseHistoryResult.data || [])
-        setReverseGoalContributions(reverseContributionsResult.data || [])
-        setStandardGoalContributions(standardContributionsResult.data || [])
-        setReverseGoalEvents(reverseEventsResult.data || [])
-        setReverseGoalRetentionMonths(retentionResult.data?.completed_goal_retention_months ?? null)
-        setReverseGoalRetentionLoaded(true)
+        // Cada leitura aplica a propria: as cinco tabelas nao tem relacao entre si,
+        // e um unico erro descartava as quatro que chegaram - inclusive o sinal de
+        // retencao, que deixava o <select> do SettingsPanel desabilitado e pedindo
+        // recarga por causa de uma tabela sem relacao com ele.
+        if (!reverseHistoryResult.error) setReverseGoalHistory(reverseHistoryResult.data || [])
+        if (!reverseContributionsResult.error) setReverseGoalContributions(reverseContributionsResult.data || [])
+        if (!standardContributionsResult.error) setStandardGoalContributions(standardContributionsResult.data || [])
+        if (!reverseEventsResult.error) setReverseGoalEvents(reverseEventsResult.data || [])
+        if (!retentionResult.error) {
+          setReverseGoalRetentionMonths(retentionResult.data?.completed_goal_retention_months ?? null)
+          setReverseGoalRetentionLoaded(true)
+        }
       }).catch(reportError)
 
       void profileRequest.then((profileResult) => {
@@ -233,7 +277,7 @@ export function useSupabaseFinance() {
     } catch (error) {
       // `load` nunca rejeita: os doze chamadores tratam o retorno booleano, e uma
       // rejeicao aqui deixaria `loading` em true para sempre - tela presa no
-      // esqueleto de App.jsx:263, sem retry possivel a nao ser recarregar a pagina.
+      // esqueleto de App.jsx:278, sem retry possivel a nao ser recarregar a pagina.
       // O caminho alcancavel e o `await signOut()` das linhas de sessao expirada.
       reportError(error)
       if (requestId === latestLoadRequest.current) setLoading(false)
@@ -245,17 +289,23 @@ export function useSupabaseFinance() {
   // callback e dispara a carga completa a cada renovacao de token.
   }, [reportError, signOut, user])
 
-  useEffect(() => { load() }, [load])
+  // Unica chamada que mostra o esqueleto, e a unica que passa o flag explicito:
+  // na montagem nao ha UI para preservar. Ver o default invertido em `load`.
+  useEffect(() => { load({ preserveLoading: false }) }, [load])
 
   const persist = useCallback(async (operation, context) => {
     const result = await guarded(operation, context)
     if (result.error) {
-      reportError(result.error)
-      // preserveLoading pelo mesmo motivo das outras onze recargas, e aqui com um
-      // agravante: sem ele, setLoading(true) desmonta a arvore em App.jsx:263 e o
-      // esqueleto tapa a mensagem que a linha acima acabou de gravar. Vale para as
-      // doze escritas otimistas que passam por aqui.
-      await load({ preserveError: true, preserveLoading: true })
+      // Reportar DEPOIS da recarga, nao antes (B78): o `preserveError` cobre o
+      // setError('') de :187 (B54), mas nao o reportError(firstError) de :224 -
+      // na falha dupla a mensagem da leitura apagava a da escrita e sobrava
+      // estado otimista na tela sem aviso nenhum. A ordem garante que a escrita
+      // e a ultima a falar, e o `reloaded` sai do RETORNO do load: promessa
+      // cumprida, nao asserida. `preserveLoading` explicito embora seja o default
+      // (B58) - o esqueleto de FinanceLoadingScreen taparia a mensagem. Vale para
+      // as doze escritas otimistas que passam por aqui.
+      const reloaded = await load({ preserveError: true, preserveLoading: true })
+      reportError(result.error, { reloaded })
       return false
     }
     return true
@@ -337,7 +387,14 @@ export function useSupabaseFinance() {
     categoryInsertInFlight.current = true
     try {
       const base = String(input.name || 'cat').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-      const cat = { id: input.id || `${base}-${Math.random().toString(36).slice(2, 5)}`, name: String(input.name || 'Nova categoria').trim(), type: normalizeType(input.type), color: input.color || '#6366f1', icon: input.icon || '📁', targetPercentage: Math.max(0, Math.min(100, Number(input.targetPercentage) || 0)), custom: true }
+      // O sufixo era `Math.random().toString(36).slice(2, 5)`: 3 chars base36 =
+      // 15,5 bits, 46.656 combinacoes e nenhum timestamp - 50% de chance de
+      // colisao em ~254 categorias do mesmo nome-base, ordens de magnitude
+      // mais alcancavel que o uid(). Colisao nao corrompia (a PK (user_id, id)
+      // de schema.sql:617 recusa o insert e o persist recarrega, desfazendo o
+      // otimista da linha abaixo), mas a categoria evaporava com erro. Os 8
+      // chars do randomUUID sao CSPRNG e mantem o id legivel (B51).
+      const cat = { id: input.id || `${base}-${crypto.randomUUID().slice(0, 8)}`, name: String(input.name || 'Nova categoria').trim(), type: normalizeType(input.type), color: input.color || '#6366f1', icon: input.icon || '📁', targetPercentage: Math.max(0, Math.min(100, Number(input.targetPercentage) || 0)), custom: true }
       setCategories((prev) => [...prev, cat])
       void persist(() => supabase.from('categories').insert(toCategory(cat, user.id)), { table: 'categories', action: 'insert' })
         .finally(() => { categoryInsertInFlight.current = false })
@@ -369,8 +426,10 @@ export function useSupabaseFinance() {
       reportError({ message: 'Mantenha pelo menos uma categoria deste tipo para realocar os lançamentos.' })
       return
     }
-    // Reatribui os lancamentos ligados a uma categoria "Outros" do mesmo grupo
-    // ANTES de excluir. Isso evita erro de chave estrangeira e lancamentos orfaos.
+    // Reatribui os lancamentos a uma categoria "Outros" do mesmo grupo ANTES de
+    // excluir. Nao e por chave estrangeira - `transactions.category_id` e text puro
+    // (schema.sql:674), sem `references`. O que a realocacao evita e lancamento
+    // orfao, apontando para um id que nao existe mais em categories.
     const fallbackId = fallback.id
     setCategories((prev) => prev.filter((cat) => cat.id !== id))
     setBudgets((prev) => { const next = { ...prev }; delete next[id]; return next })
@@ -573,6 +632,17 @@ export function useSupabaseFinance() {
       reportError({ message: 'Sessão expirada. Entre novamente para importar o backup.' })
       return false
     }
+    // B41: mesma regra do formulario, mesma mensagem. Bloqueia o backup INTEIRO,
+    // como os dois guards acima - a RPC replace_my_data e transacional e trocar
+    // tudo menos uma linha deixaria o arquivo e o banco em desacordo silencioso.
+    // So o que vem no arquivo e conferido: `transactions` do estado ja passou
+    // pelo formulario. Nomeia o lancamento porque quem importa precisa achar a
+    // linha errada num JSON, e a mensagem sozinha nao diz qual e.
+    const badEnd = (Array.isArray(data.transactions) ? data.transactions : []).find(recurrenceEndBeforeStart)
+    if (badEnd) {
+      reportError({ message: `${RECURRENCE_END_ERROR} Corrija "${String(badEnd.description || 'sem descrição').slice(0, 60)}" no arquivo e importe de novo.` })
+      return false
+    }
 
     // O try cobre tambem a montagem do payload, nao so a chamada da RPC: o
     // validador de importJSON confere o tipo de cada colecao, nao o de cada
@@ -615,7 +685,10 @@ export function useSupabaseFinance() {
         reverseGoalContributions: Array.isArray(data.reverseGoalContributions) ? data.reverseGoalContributions : reverseGoalContributions,
         reverseGoalHistory: Array.isArray(data.reverseGoalHistory) ? data.reverseGoalHistory : reverseGoalHistory,
         reverseGoalEvents: Array.isArray(data.reverseGoalEvents) ? data.reverseGoalEvents : reverseGoalEvents,
-        reverseGoalRetentionMonths: data.reverseGoalRetentionMonths ?? reverseGoalRetentionMonths,
+        // Aqui `null` E valor (retencao desativada), so a chave ausente cai no
+        // fallback: com `??` um backup feito com a retencao desligada voltava com
+        // ela ligada e o cleanup_expired_reverse_goals apagava as metas concluidas.
+        reverseGoalRetentionMonths: data.reverseGoalRetentionMonths === undefined ? reverseGoalRetentionMonths : data.reverseGoalRetentionMonths,
         // O app carrega o plano com a chave `params` (usePGBL.fromRow) e a RPC le
         // `fiscal_params`, coluna NOT NULL: sem a traducao o insert viola a
         // constraint e o restore inteiro sofre rollback.
@@ -640,8 +713,8 @@ export function useSupabaseFinance() {
       reportError(error)
       return false
     }
-    // Como as outras onze recargas do hook: sem preserveLoading, setLoading(true)
-    // desmonta a arvore inteira e o SettingsPanel remonta sem a mensagem de resultado.
+    // Explicito embora seja o default (B58): o esqueleto remontaria o SettingsPanel
+    // sem a mensagem de resultado da importacao.
     await load({ preserveLoading: true })
     return true
   }, [budgets, categories, goals, load, reportError, reverseGoalContributions, reverseGoalEvents, reverseGoalHistory, reverseGoalRetentionMonths, transactions, user])
@@ -701,7 +774,7 @@ export function useSupabaseFinance() {
     return transactionFormFieldsQueue.current
   }, [reportError, user])
 
-  return { transactions, categories, budgets, goals, theme, transactionFormFields, loading, error, isDeletingGoal, goalDeletionPhase, reload: load,
+  return { transactions, categories, budgets, goals, theme, transactionFormFields, loading, error, isDeletingGoal, goalDeletionPhase,
     addTransaction, updateTransaction, deleteTransaction, duplicateTransaction, togglePaid,
     addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateReverseGoalContribution, addStandardGoalContribution, updateStandardGoalContribution, updateGoal, updateReverseGoal, deleteGoal,
     reverseGoalHistory, reverseGoalContributions, standardGoalContributions, reverseGoalEvents, reverseGoalRetentionMonths, reverseGoalRetentionLoaded,

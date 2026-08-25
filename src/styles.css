@@ -2141,20 +2141,6 @@ body:has(.modal-backdrop) .fab {
 }
 
 /* Utilitários de transação */
-.tx-rank {
-  width: 24px;
-  height: 24px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-xs);
-  background: var(--surface-2);
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
 .tx-icon-btn {
   cursor: pointer;
   transition: var(--transition);
@@ -3221,22 +3207,6 @@ body:has(.modal-backdrop) .fab {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
 }
 
-.user-menu {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.user-email {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
 .mfa-setup {
   display: flex;
   flex-direction: column;
@@ -3596,10 +3566,6 @@ body:has(.modal-backdrop) .fab {
   .month-nav-today {
     padding: 0 8px !important;
     font-size: 10.5px !important;
-  }
-
-  .user-email {
-    display: none;
   }
 
   /* Botões de ação não encolhem — evita sobreposição com o seletor de mês */
@@ -4429,7 +4395,13 @@ body:has(.modal-backdrop) .fab {
 @media (max-width: 900px) { .pgbl-tool > .stack > .card:first-child .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .pgbl-tool > .stack > .card:first-child .form-grid { grid-template-columns: 1fr; } }
 
-.quick-entry-field { margin-inline:-14px; padding:14px; border:1px solid color-mix(in srgb, var(--accent) 52%, var(--border)); border-radius:14px; background:color-mix(in srgb, var(--accent) 5%, var(--surface)); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent); }
+/* --primary, nao --accent: `--accent` so existe inline no `.kpi`
+   (SummaryCards.jsx:39), e este campo mora no TransactionForm, fora daquela
+   subarvore. Variavel nao resolvida dentro de color-mix() e invalida no valor
+   computado e derruba a declaracao inteira - as tres caiam juntas, e como o
+   atalho `border` carrega o `1px solid` (mesmo mecanismo do B33) sobrava so o
+   padding e o border-radius: sem borda, sem fundo e sem halo. */
+.quick-entry-field { margin-inline:-14px; padding:14px; border:1px solid color-mix(in srgb, var(--primary) 52%, var(--border)); border-radius:14px; background:color-mix(in srgb, var(--primary) 5%, var(--surface)); box-shadow:0 0 0 3px color-mix(in srgb, var(--primary) 8%, transparent); }
 .quick-entry-row { display:flex; align-items:center; gap:12px; }
 .quick-entry-row .input { flex:1; min-width:0; }
 .quick-entry-row .input::placeholder { color:var(--text-muted); opacity:.78; }

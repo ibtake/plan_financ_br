@@ -7,10 +7,13 @@ async function hash(value: string) {
 }
 const MAX_BODY_BYTES = 16_384
 
-// Copia literal de admin-users/index.ts:7 (a de widget-data:128 difere por
-// checar content-length dentro da funcao; aqui a checagem barata fica antes da
-// autenticacao, como no admin-users). Terceira copia: o B34 consolida em
-// _shared/ - ao extrair, esta e a versao a manter.
+// Copia literal de admin-users/index.ts:11; a terceira copia esta em
+// widget-data/index.ts e difere de proposito, checando content-length dentro da
+// funcao. Aqui e no admin-users a checagem barata fica no handler, ANTES da
+// autenticacao (:69), que e o custo real - foi o ponto do B29.
+// As tres continuam copiadas: `supabase/functions/_shared/` exige deploy por
+// CLI, e o desta app e colagem de arquivo no painel do Supabase (backlog B34).
+// Mexer no limite obriga a mexer nas tres.
 async function readJsonWithinLimit(request: Request): Promise<Record<string, unknown>> {
   const reader = request.body?.getReader()
   if (!reader) throw new Error('invalid_body')

@@ -29,6 +29,17 @@ export default function AuthScreen() {
     if (auth.mfaStage === 'required') setMode('mfa')
   }, [auth.mfaStage])
 
+  // Auto-submit do codigo MFA quando atinge 6 digitos (colagem ou autofill).
+  // Fica aqui, e nao junto de handleMfa, porque o early return de missingConfig
+  // (:49) esta no meio do componente: hook depois de return condicional muda o
+  // numero de hooks entre renders e quebra a tela. O guard do corpo cobre os
+  // demais modos. verifyMfaCode e' declarado abaixo e nao entra nas deps de
+  // proposito — no array ele seria lido durante o render, antes de existir.
+  useEffect(() => {
+    if (mode !== 'mfa' || code.length !== 6 || busy) return
+    void verifyMfaCode(code)
+  }, [mode, code, busy])
+
   const set = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))
 
   const resetMessages = () => {
@@ -166,11 +177,6 @@ export default function AuthScreen() {
     event.preventDefault()
     await verifyMfaCode(code)
   }
-
-  useEffect(() => {
-    if (mode !== 'mfa' || code.length !== 6 || busy) return
-    void verifyMfaCode(code)
-  }, [mode, code, busy])
 
   const cancelMfa = async () => {
     await auth.signOut('mfa_cancelled')

@@ -1028,7 +1028,9 @@ create trigger pgbl_plans_no_owner_change before update on public.pgbl_plans for
 grant select, insert, update, delete on public.pgbl_plans to authenticated;
 
 alter table public.widget_install_codes enable row level security;
+alter table public.widget_install_codes force row level security;
 alter table public.widget_tokens enable row level security;
+alter table public.widget_tokens force row level security;
 revoke all on public.widget_install_codes, public.widget_tokens from public, anon, authenticated;
 
 create or replace function public.activate_widget_install_code(

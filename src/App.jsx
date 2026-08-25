@@ -24,6 +24,7 @@ import { useLocalStorage } from './hooks/useLocalStorage.js'
 import { useSupabaseFinance } from './hooks/useSupabaseFinance.js'
 import { usePGBL } from './hooks/usePGBL.js'
 import { currentMonthKey, isoDateInMonth, monthLabel } from './utils/format.js'
+import { isRecurring } from './utils/recurrence.js'
 import { exportCSV, exportJSON } from './utils/exporters.js'
 import { buildSampleData } from './utils/sampleData.js'
 
@@ -185,10 +186,20 @@ function AuthenticatedApp() {
   }
 
   const deleteTransaction = useCallback((occurrence) => {
-    const scope = occurrence.sourceId || String(occurrence.id).includes('#')
+    // Era `occurrence.sourceId || String(occurrence.id).includes('#')`, e o
+    // primeiro operando e sempre verdadeiro: makeOccurrence (recurrence.js:97)
+    // grava `sourceId: tx.id` nas cinco saidas de occurrencesInMonth, entao o
+    // aviso aparecia em todo delete - inclusive num lancamento unico, sem
+    // recorrencia e sem parcela, que lia "exclui toda a serie" sem ter serie -
+    // e o teste do `#` nunca era avaliado, morto atras do short-circuit (B46).
+    // isRecurring ja e o predicado certo e ja roda em FixedExpenses.jsx:12.
+    const scope = isRecurring(occurrence)
       ? ' Esta ação exclui toda a série ou todas as parcelas.'
       : ''
     if (window.confirm(`Excluir “${occurrence.description}”?${scope}`)) {
+      // Segue `sourceId || id`: e a raiz da serie, e o hook ainda corta o `#`
+      // por conta propria (useSupabaseFinance.js:334). Nao ha exclusao de
+      // ocorrencia isolada no app - todo delete apaga a serie inteira.
       finance.deleteTransaction(occurrence.sourceId || occurrence.id)
     }
   }, [finance.deleteTransaction])
@@ -314,9 +325,18 @@ function AuthenticatedApp() {
         />
 
         <main className="container main-content">
+          {/* Sem sufixo colado aqui: o banner nao sabe se houve recarga, e um
+              " Os dados foram recarregados do servidor." fixo mentia em toda
+              mensagem que retorna antes de qualquer leitura - validacao local de
+              categoria (useSupabaseFinance.js:426), 'Backup invalido.' (:628),
+              sessao expirada na importacao (:632), falha ao excluir meta (:596).
+              Quem reporta sabe se recarregou: o sufixo sai de reportError
+              (useSupabaseFinance.js:143), que desde o B78 recebe `reloaded` em
+              tres estados - a promessa vem do retorno do `load`, e a recarga que
+              falha avisa em vez de calar. */}
           {finance.error && (
             <div className="notice danger" role="alert" style={{ marginBottom: 20 }}>
-              {finance.error} Os dados foram recarregados do servidor.
+              {finance.error}
             </div>
           )}
 

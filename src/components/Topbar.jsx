@@ -35,6 +35,49 @@ function useDismiss(ref, onDismiss, active) {
   }, [ref, active])
 }
 
+/**
+ * Navegacao de mes: os mesmos 29 nos apareciam duas vezes neste arquivo, em
+ * `:138` (desktop) e `:305` (mobile, dentro de `.month-nav-scroll`), byte a byte
+ * iguais - o `showMonthNav` envolvia as duas, uma colado no `month-nav` e outra
+ * no wrapper de scroll, entao nem essa diferenca existia. Fica FORA de `Topbar`
+ * de proposito: declarada dentro do corpo, a identidade da funcao mudaria a cada
+ * render, o React trataria como outro tipo de componente e remontaria os botoes -
+ * perdendo o foco de quem navega por teclado no meio da troca de mes (B39).
+ */
+function MonthNav({ monthKey, isMonthPending, isCurrent, onMonthChange }) {
+  return (
+    <div className="month-nav">
+      <button
+        type="button"
+        onClick={() => onMonthChange((month) => addMonths(month, -1))}
+        title="Mês anterior"
+        aria-label="Mês anterior"
+      >
+        <ChevronLeft size={16} strokeWidth={2} />
+      </button>
+      <div className={`month-nav-label${isMonthPending ? ' is-updating' : ''}`}>{monthLabel(monthKey)}</div>
+      <button
+        type="button"
+        onClick={() => onMonthChange((month) => addMonths(month, 1))}
+        title="Próximo mês"
+        aria-label="Próximo mês"
+      >
+        <ChevronRight size={16} strokeWidth={2} />
+      </button>
+      {!isCurrent && (
+        <button
+          type="button"
+          className="month-nav-today"
+          onClick={() => onMonthChange(currentMonthKey())}
+          title="Voltar para o mês atual"
+        >
+          Hoje
+        </button>
+      )}
+    </div>
+  )
+}
+
 /** Iniciais para o avatar do perfil */
 function initials(email) {
   if (!email) return '?'
@@ -135,35 +178,14 @@ export default function Topbar({
       </div>
 
       {/* Período */}
-      {showMonthNav && <div className="month-nav">
-        <button
-          type="button"
-          onClick={() => onMonthChange((month) => addMonths(month, -1))}
-          title="Mês anterior"
-          aria-label="Mês anterior"
-        >
-          <ChevronLeft size={16} strokeWidth={2} />
-        </button>
-        <div className={`month-nav-label${isMonthPending ? ' is-updating' : ''}`}>{monthLabel(monthKey)}</div>
-        <button
-          type="button"
-          onClick={() => onMonthChange((month) => addMonths(month, 1))}
-          title="Próximo mês"
-          aria-label="Próximo mês"
-        >
-          <ChevronRight size={16} strokeWidth={2} />
-        </button>
-        {!isCurrent && (
-          <button
-            type="button"
-            className="month-nav-today"
-            onClick={() => onMonthChange(currentMonthKey())}
-            title="Voltar para o mês atual"
-          >
-            Hoje
-          </button>
-        )}
-      </div>}
+      {showMonthNav && (
+        <MonthNav
+          monthKey={monthKey}
+          isMonthPending={isMonthPending}
+          isCurrent={isCurrent}
+          onMonthChange={onMonthChange}
+        />
+      )}
 
       <div className="topbar-spacer" />
 
@@ -302,35 +324,12 @@ export default function Topbar({
     </header>
 
     {showMonthNav && <div className="month-nav-scroll">
-      <div className="month-nav">
-        <button
-          type="button"
-          onClick={() => onMonthChange((month) => addMonths(month, -1))}
-          title="Mês anterior"
-          aria-label="Mês anterior"
-        >
-          <ChevronLeft size={16} strokeWidth={2} />
-        </button>
-        <div className={`month-nav-label${isMonthPending ? ' is-updating' : ''}`}>{monthLabel(monthKey)}</div>
-        <button
-          type="button"
-          onClick={() => onMonthChange((month) => addMonths(month, 1))}
-          title="Próximo mês"
-          aria-label="Próximo mês"
-        >
-          <ChevronRight size={16} strokeWidth={2} />
-        </button>
-        {!isCurrent && (
-          <button
-            type="button"
-            className="month-nav-today"
-            onClick={() => onMonthChange(currentMonthKey())}
-            title="Voltar para o mês atual"
-          >
-            Hoje
-          </button>
-        )}
-      </div>
+      <MonthNav
+        monthKey={monthKey}
+        isMonthPending={isMonthPending}
+        isCurrent={isCurrent}
+        onMonthChange={onMonthChange}
+      />
     </div>}
     </>
   )

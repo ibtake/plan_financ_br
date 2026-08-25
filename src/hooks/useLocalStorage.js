@@ -1,8 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 /**
  * Estado persistido no localStorage.
  * Funciona igual ao useState, mas grava as mudancas no navegador.
+ *
+ * `key` e `initialValue` entram nas dependencias de proposito. Antes um
+ * `keyRef.current` alimentava o efeito com deps `[value]`: trocar de chave em
+ * um render fazia o hook ler da chave antiga (o useState inicial ja rodou) e
+ * gravar na nova, e o exhaustive-deps nunca ia avisar porque a regra ignora
+ * leitura de ref.current - por isso o B36 nao pegaria isto. Os dois chamadores
+ * de hoje passam literal (App.jsx:136 e useSupabaseFinance.js:122), entao o
+ * comportamento em producao nao muda: some so a armadilha (B47).
  */
 export function useLocalStorage(key, initialValue) {
   const [value, setValue] = useState(() => {
@@ -15,26 +23,13 @@ export function useLocalStorage(key, initialValue) {
     }
   })
 
-  const keyRef = useRef(key)
-  keyRef.current = key
-
   useEffect(() => {
     try {
-      window.localStorage.setItem(keyRef.current, JSON.stringify(value))
+      window.localStorage.setItem(key, JSON.stringify(value))
     } catch {
       // quota cheia ou modo privado: ignora silenciosamente
     }
-  }, [value])
+  }, [key, value])
 
-  const reset = useCallback(() => {
-    setValue(initialValue)
-    try {
-      window.localStorage.removeItem(keyRef.current)
-    } catch {
-      /* noop */
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  return [value, setValue, reset]
+  return [value, setValue]
 }

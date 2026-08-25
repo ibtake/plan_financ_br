@@ -1,5 +1,12 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
+// Sem os genericos, `ReturnType<typeof createClient>` resolve para um cliente de
+// schema `never`: as tres assinaturas abaixo recusavam o proprio `admin` que o
+// handler cria, e o `rpc()` delas virava `never` - 18 dos 19 erros do `deno
+// check`. Alias local, nao em _shared: o deploy e por colagem no painel do
+// Supabase, e ali nao existe pasta acima da funcao. Ver backlog B34.
+type AdminClient = ReturnType<typeof createClient<any, 'public', 'public'>>
+
 const jsonHeaders = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
 const encoder = new TextEncoder()
 
@@ -11,7 +18,7 @@ function authLog(fields: Record<string, unknown>) {
   console.log(JSON.stringify({ event: 'widget_auth', ...fields }))
 }
 
-async function recordSampledMetric(admin: ReturnType<typeof createClient>, failureType: 'token' | 'refresh' | 'install_code' | 'unauthorized') {
+async function recordSampledMetric(admin: AdminClient, failureType: 'token' | 'refresh' | 'install_code' | 'unauthorized') {
   // ponytail: amostragem de 10%; trocar por janela global se o volume exigir contagem exata.
   if (Math.random() >= 0.1) return
   // try/catch, nao .catch(): o retorno de .rpc() e um PostgrestFilterBuilder, que
@@ -33,7 +40,7 @@ async function hash(value: string) {
 // Limite por credencial: so e chamado com credencial ja validada. A
 // entropia do token (256 bits) e a protecao real contra adivinhacao, por
 // isso falha do contador NAO bloqueia o usuario legitimo (fail-open).
-async function enforceRateLimit(admin: ReturnType<typeof createClient>, keyHash: string, operation: 'token' | 'refresh' | 'install') {
+async function enforceRateLimit(admin: AdminClient, keyHash: string, operation: 'token' | 'refresh' | 'install') {
   const { data, error } = await admin.rpc('consume_widget_rate_limit', { p_key_hash: keyHash, p_operation: operation })
   if (error) {
     authLog({ rateLimit: 'error', operation, errorCode: error.code || null })
@@ -49,7 +56,7 @@ async function enforceRateLimit(admin: ReturnType<typeof createClient>, keyHash:
 // Contador global de credenciais invalidas: unico caminho que persiste
 // estado para valores nao verificados. Sem resposta do contador, credencial
 // invalida NAO passa (fail-closed) - protege o armazenamento do plano gratuito.
-async function enforceInvalidAttemptLimit(admin: ReturnType<typeof createClient>) {
+async function enforceInvalidAttemptLimit(admin: AdminClient) {
   const { data, error } = await admin.rpc('consume_widget_invalid_attempt_limit')
   if (error) return response(503, { error: 'Serviço indisponível.' })
   const result = Array.isArray(data) ? data[0] : data
@@ -122,7 +129,11 @@ function occurrenceDate(tx: Record<string, any>, date: string) {
 
 // Pentest 16/08: corpo legitimo do widget tem centenas de bytes; 16 KiB e
 // folga ampla. Teto medido no STREAM (nao no header), entao chunked/ausencia
-// de content-length tambem e limitado - mesmo padrao do admin-users.
+// de content-length tambem e limitado - mesmo padrao do admin-users, com uma
+// diferenca de proposito: aqui o content-length e checado DENTRO do leitor
+// (esta versao se protege sozinha), e no admin-users/widget-setup ele fica no
+// handler, antes da autenticacao. Terceira copia do mesmo leitor; seguem
+// copiadas porque `_shared/` exige deploy por CLI (backlog B34).
 const MAX_BODY_BYTES = 16_384
 
 async function readJsonWithinLimit(request: Request): Promise<Record<string, any>> {
@@ -278,7 +289,10 @@ Deno.serve(async (request) => {
   if (error) return response(503, { error: 'Não foi possível consultar as contas.' })
   const bills = (rows || []).flatMap((tx) => {
     const index = occurrenceDate(tx, date)
-    const paid = index === 0 ? tx.paid !== false : Boolean(tx.paid_occurrences?.[index])
+    // O `index !== null` aqui e so para o tipo, e parece redundante com o da
+    // linha seguinte: em runtime `?.[null]` ja devolvia `undefined` (mesmo
+    // resultado). Sem ele, `deno check` acusa TS2538. Ver backlog B62.
+    const paid = index === 0 ? tx.paid !== false : Boolean(index !== null && tx.paid_occurrences?.[index])
     return index !== null && !paid ? [{ description: String(tx.description).slice(0, 80), amount: Number(tx.amount) || 0, date, installment: Number(tx.installments) > 1 ? `${index + 1}/${tx.installments}` : null }] : []
   })
   if (tokenHash && !responseToken) await admin.from('widget_tokens').update({ last_used_at: new Date().toISOString() }).eq('token_hash', tokenHash)

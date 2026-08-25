@@ -97,11 +97,11 @@ const RAW = [
   ['👏', 'Parabéns', 'insight', 'Insights'],
   ['🏆', 'Meta batida', 'insight', 'Metas, insights e aba'],
   ['🐖', 'Economia', 'insight', 'Insights e resumo'],
-  ['💸', 'Maiores despesas', 'insight', 'Cartão de maiores despesas'],
   ['💙', 'Saldo positivo', 'insight', 'Resumo do mês'],
-  ['🥇', '1º lugar', 'insight', 'Ranking de despesas'],
-  ['🥈', '2º lugar', 'insight', 'Ranking de despesas'],
-  ['🥉', '3º lugar', 'insight', 'Ranking de despesas'],
+  // O cartao "Maiores despesas" e o ranking 1o/2o/3o lugar sairam junto com o
+  // TopExpenses.jsx (B37): as 4 entradas que os servem (💸 e as medalhas) foram
+  // removidas daqui porque a tela de personalizacao oferecia trocar o icone de
+  // um cartao e de um ranking que nao existem em lugar nenhum da interface.
 
   // Eventos de seguranca
   ['👋', 'Sessão encerrada', 'security', 'Histórico de segurança'],
@@ -140,3 +140,21 @@ export const ICON_CATALOG = RAW.map(([emoji, label, group, usage]) => ({
 }))
 
 export const TOTAL_ICONS = ICON_CATALOG.length
+
+const CATALOG_EMOJIS = new Set(ICON_CATALOG.map((item) => item.emoji))
+
+/**
+ * Conta so os overrides cujo emoji ainda existe no catalogo (B71). Sem o filtro,
+ * um override orfao - personalizacao de um emoji removido do catalogo, como as
+ * 4 entradas que o B37 tirou - contava no progresso mas some do grid (que itera
+ * o catalogo), estourando 100% e o rotulo "X de TOTAL_ICONS". Os orfaos NAO sao
+ * apagados: continuam no localStorage e visiveis para o "Restaurar tudo".
+ */
+export function countCatalogOverrides(overrides) {
+  if (!overrides) return 0
+  let n = 0
+  for (const emoji of Object.keys(overrides)) {
+    if (CATALOG_EMOJIS.has(emoji)) n++
+  }
+  return n
+}

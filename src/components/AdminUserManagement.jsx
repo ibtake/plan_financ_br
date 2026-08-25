@@ -106,7 +106,7 @@ export default function AdminUserManagement() {
         <div className="admin-users-grid">
           <form className="stack" onSubmit={createUser}>
             <h3 className="panel-heading">Novo usuário</h3>
-            {message && <div className={`notice ${message.tone}`} role="status">{message.text}</div>}
+            {message && <div className={`notice ${message.tone}`} role={message.tone === 'danger' ? 'alert' : 'status'}>{message.text}</div>}
             <div className="field"><label className="label" htmlFor="admin-full-name">Nome</label><input id="admin-full-name" className="input" value={form.fullName} onChange={set('fullName')} maxLength={120} autoComplete="off" required /></div>
             <div className="field"><label className="label" htmlFor="admin-email">E-mail</label><input id="admin-email" className="input" type="email" value={form.email} onChange={set('email')} maxLength={254} autoComplete="off" required /></div>
             <div className="field">

@@ -19,6 +19,10 @@ export function usePGBL() {
   const load = useCallback(async () => {
     if (!user || !supabase) { setLoading(false); return }
     setLoading(true)
+    // Erro de uma tentativa anterior nao sobrevive a uma recarga bem-sucedida:
+    // `load` sai como `reload` (:135) e e refeito no retorno de aba
+    // (AuthContext.jsx:154).
+    setError('')
     const result = await guarded(() => supabase.from('pgbl_plans').select('*').order('year', { ascending: false }), { table: 'pgbl_plans', action: 'select' })
     if (result.error) { setError(translateAuthError(result.error)); setLoading(false); return }
     const next = Object.fromEntries((result.data || []).map((row) => [row.year, fromRow(row)]))
@@ -46,7 +50,12 @@ export function usePGBL() {
   /** Grava um plano. Compartilhada pelo debounce e pelo flush de saida. */
   const writePlan = useCallback(async (payload) => {
     const result = await guarded(() => supabase.from('pgbl_plans').upsert(payload).select().single(), { table: 'pgbl_plans', action: 'upsert' })
-    if (result.error) setError(translateAuthError(result.error))
+    // Limpa no sucesso, e nao por temporizador: o debounce de 450 ms grava a cada
+    // pausa da digitacao, entao uma falha passageira de rede deixaria o aviso
+    // vermelho na tela por toda a edicao seguinte e o usuario nao teria como saber
+    // se o plano esta salvo. `setError('')` com o estado ja vazio nao re-renderiza
+    // (React compara por Object.is), logo nao custa nada no caso comum.
+    setError(result.error ? translateAuthError(result.error) : '')
   }, [])
 
   // Descarrega o debounce quando a aba vai para segundo plano: e o unico momento
@@ -119,6 +128,7 @@ export function usePGBL() {
       setError(translateAuthError(result.error))
       return false
     }
+    setError('')
     return true
   }, [plans, user])
 
