@@ -86,7 +86,9 @@ async function load() {
     try {
       const iconRequest = new Request(ICON_URL)
       files.writeImage(ICON_PATH, await iconRequest.loadImage())
-    } catch (_) {}
+    } catch (error) {
+      console.warn('Não foi possível baixar o ícone do widget; continuando sem ícone.', error?.message)
+    }
   }
   if (files.fileExists(ICON_PATH)) {
     const icon = header.addImage(files.readImage(ICON_PATH))

@@ -2998,6 +2998,31 @@ dialog.modal-backdrop {
 .finance-loading-panel { height: 205px; border-radius: var(--radius); border: 1px solid var(--border); }
 .finance-loading-message { position: absolute; right: 32px; top: calc(var(--topbar-h) + 18px); color: var(--text-muted); font-size: 12px; }
 
+.refresh-skeleton-bar {
+  position: fixed;
+  z-index: 80;
+  top: var(--topbar-h);
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(320px, calc(100vw - 40px));
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 0 0 12px 12px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: var(--shadow);
+  color: var(--text-muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.refresh-skeleton-line { width: 72px; height: 10px; flex: 0 0 auto; }
+
+.page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+
+.spin { animation: spin 900ms linear infinite; }
+
 .skeleton {
   display: block;
   border-radius: 8px;
@@ -3044,10 +3069,13 @@ dialog.modal-backdrop {
   .finance-loading-kpi { min-height: 124px; padding: 16px; }
   .finance-loading-chart { height: 220px; }
   .finance-loading-message { font-size: 11px; }
+  .refresh-skeleton-bar { right: 10px; width: calc(100vw - 20px); }
+  .page-actions { width: 100%; justify-content: stretch; }
+  .page-actions .btn { flex: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skeleton, .finance-content-enter { animation: none; }
+  .skeleton, .finance-content-enter, .spin { animation: none; }
 }
 
 .spinner {
