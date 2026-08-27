@@ -1,7 +1,3 @@
-// =====================================================================
-// Leitura completa de uma tabela, pagina por pagina
-// =====================================================================
-//
 // O PostgREST limita quantas linhas cabem em uma resposta (max_rows). Esse
 // numero vive no painel do projeto hospedado, nao neste repositorio - o codigo
 // nao tem como ler nem declarar (config.toml e do CLI local e nao configura o

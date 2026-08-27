@@ -12,6 +12,7 @@ import { MOBILE_PRIMARY, MOBILE_SECONDARY } from './navigation.js'
 export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) {
   const [moreOpen, setMoreOpen] = useState(false)
   const navRef = useRef(null)
+  const moreButtonRef = useRef(null)
   const primaryIndex = MOBILE_PRIMARY.findIndex((item) => item.id === active)
   const moreIsActive = primaryIndex === -1
   const activeIndex = moreIsActive ? MOBILE_PRIMARY.length : primaryIndex
@@ -23,7 +24,10 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
       if (navRef.current && !navRef.current.contains(event.target)) setMoreOpen(false)
     }
     const closeOnEscape = (event) => {
-      if (event.key === 'Escape') setMoreOpen(false)
+      if (event.key === 'Escape') {
+        setMoreOpen(false)
+        moreButtonRef.current?.focus()
+      }
     }
 
     document.addEventListener('pointerdown', closeOnOutsideInteraction)
@@ -60,6 +64,7 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
                 type="button"
                 className={`bottom-nav-link${isActive ? ' active' : ''}`}
                 onClick={() => handleSelect(item.id)}
+                aria-current={isActive ? 'page' : undefined}
               >
                 <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
                 <span>{item.short || item.label}</span>
@@ -69,9 +74,11 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
           })}
 
           <button
+            ref={moreButtonRef}
             type="button"
             className={`bottom-nav-link${moreIsActive || moreOpen ? ' active' : ''}`}
             onClick={() => setMoreOpen((isOpen) => !isOpen)}
+            aria-current={moreIsActive ? 'page' : undefined}
             aria-expanded={moreOpen}
             aria-controls="bottom-nav-more-menu"
             aria-haspopup="menu"
@@ -101,6 +108,7 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
                   className={`bottom-nav-popover-item${isActive ? ' active' : ''}`}
                   onClick={() => handleSelect(item.id)}
                   tabIndex={moreOpen ? 0 : -1}
+                  aria-current={isActive ? 'page' : undefined}
                 >
                   <Icon size={18} strokeWidth={isActive ? 2.1 : 1.8} />
                   <span>{item.label}</span>

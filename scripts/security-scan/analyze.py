@@ -19,6 +19,7 @@ Secrets esperadas no ambiente:
   STRIX_LLM     -> nome do modelo
 """
 import json
+import logging
 import os
 import sys
 import urllib.error
@@ -42,7 +43,8 @@ def extract_findings(osv_json):
     findings = []
     seen = set()
     for result in osv_json.get("results", []):
-        source = result.get("source", {}).get("path", "desconhecido")
+        source_info = result.get("source") or {}
+        source = source_info.get("path", "desconhecido")
         for pkg in result.get("packages", []):
             package_info = pkg.get("package", {})
             component = package_info.get("name", "desconhecido")
@@ -225,11 +227,11 @@ def main():
         if ai_findings is None:
             print("Aviso: resposta da IA nao era o JSON esperado. Mantendo achados deterministicos.")
     except KeyError as e:
-        print(f"Aviso: secret ausente ({e}). Pulando classificacao por IA.")
+        logging.warning("Secret ausente; pulando classificacao por IA: %s", e)
     except (urllib.error.URLError, urllib.error.HTTPError) as e:
-        print(f"Aviso: chamada a IA falhou ({e}). Mantendo achados deterministicos.")
-    except Exception as e:  # nunca deixar a IA derrubar o relatorio deterministico
-        print(f"Aviso: erro inesperado na etapa de IA ({e}). Mantendo achados deterministicos.")
+        logging.warning("Chamada a IA falhou; mantendo achados deterministicos: %s", e)
+    except Exception:
+        logging.exception("Erro inesperado na etapa de IA; mantendo achados deterministicos")
 
     write_report(findings, ai_findings, scanned_at)
 

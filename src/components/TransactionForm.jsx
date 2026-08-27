@@ -114,14 +114,10 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
   const amountValue = parseAmount(form.amount)
 
   return (
-    <div className={`modal-backdrop${closing ? ' is-closing' : ''}`} onClick={close} role="presentation">
+    <dialog open className={`modal-backdrop${closing ? ' is-closing' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) close() }} aria-label={isEditing ? 'Editar lançamento' : 'Novo lançamento'}>
       <div
         ref={surfaceRef}
         className={`modal${closing ? ' is-closing' : ''}`}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={isEditing ? 'Editar lançamento' : 'Novo lançamento'}
       >
         <form onSubmit={handleSubmit}>
           <div className="modal-head transaction-form-head">
@@ -199,12 +195,14 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                 <input
                   id="tx-desc"
                   className={`input${errors.description ? ' input-invalid' : ''}`}
+                  aria-invalid={Boolean(errors.description)}
+                  aria-describedby={errors.description ? 'tx-desc-error' : undefined}
                   value={form.description}
                   onChange={(e) => set({ description: e.target.value })}
                   maxLength={200}
                   placeholder="Ex.: Supermercado, Salário, Aluguel..."
                 />
-                {errors.description && <span className="field-error">{errors.description}</span>}
+                {errors.description && <span id="tx-desc-error" className="field-error">{errors.description}</span>}
               </div>
 
               <div className="field">
@@ -214,12 +212,14 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                 <input
                   id="tx-amount"
                   className={`input mono${errors.amount ? ' input-invalid' : ''}`}
+                  aria-invalid={Boolean(errors.amount)}
+                  aria-describedby={errors.amount ? 'tx-amount-error' : undefined}
                   value={form.amount}
                   onChange={(e) => set({ amount: formatAmountInput(e.target.value) })}
                   placeholder="0,00"
                   inputMode="numeric"
                 />
-                {errors.amount && <span className="field-error">{errors.amount}</span>}
+                {errors.amount && <span id="tx-amount-error" className="field-error">{errors.amount}</span>}
               </div>
 
               <div className="field">
@@ -230,10 +230,12 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                   id="tx-date"
                   type="date"
                   className={`input${errors.date ? ' input-invalid' : ''}`}
+                  aria-invalid={Boolean(errors.date)}
+                  aria-describedby={errors.date ? 'tx-date-error' : undefined}
                   value={form.date}
                   onChange={(e) => set({ date: e.target.value })}
                 />
-                {errors.date && <span className="field-error">{errors.date}</span>}
+                {errors.date && <span id="tx-date-error" className="field-error">{errors.date}</span>}
               </div>
 
               <div className="field">
@@ -243,6 +245,8 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                 <select
                   id="tx-cat"
                   className={`select${errors.categoryId ? ' input-invalid' : ''}`}
+                  aria-invalid={Boolean(errors.categoryId)}
+                  aria-describedby={errors.categoryId ? 'tx-cat-error' : undefined}
                   value={form.categoryId}
                   onChange={(e) => set({ categoryId: e.target.value })}
                 >
@@ -252,7 +256,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                     </option>
                   ))}
                 </select>
-                {errors.categoryId && <span className="field-error">{errors.categoryId}</span>}
+                {errors.categoryId && <span id="tx-cat-error" className="field-error">{errors.categoryId}</span>}
               </div>
 
               {showField('method') && <div className="field">
@@ -329,11 +333,13 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
                     id="tx-rec-end"
                     type="date"
                     className={`input${errors.recurrenceEnd ? ' input-invalid' : ''}`}
+                    aria-invalid={Boolean(errors.recurrenceEnd)}
+                    aria-describedby={errors.recurrenceEnd ? 'tx-rec-end-error' : undefined}
                     value={form.recurrenceEnd}
                     onChange={(e) => set({ recurrenceEnd: e.target.value })}
                     min={form.date}
                   />
-                  {errors.recurrenceEnd && <span className="field-error">{errors.recurrenceEnd}</span>}
+                  {errors.recurrenceEnd && <span id="tx-rec-end-error" className="field-error">{errors.recurrenceEnd}</span>}
                   <span className="hint">Em branco = repete indefinidamente.</span>
                 </div>
               )}
@@ -392,6 +398,6 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
           </div>
         </form>
       </div>
-    </div>
+    </dialog>
   )
 }

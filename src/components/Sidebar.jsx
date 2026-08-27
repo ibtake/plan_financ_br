@@ -67,7 +67,7 @@ export default function Sidebar({ active, onChange, badges = {} }) {
         return (
           <div key={group.id}>
             <div className="sidebar-section">{group.label}</div>
-            <nav className="sidebar-nav" role="tablist" aria-label={group.label}>
+            <nav className="sidebar-nav" aria-label={group.label}>
               {items.map((item) => {
                 const Icon = item.icon
                 const isActive = active === item.id
@@ -77,8 +77,7 @@ export default function Sidebar({ active, onChange, badges = {} }) {
                   <button
                     key={item.id}
                     type="button"
-                    role="tab"
-                    aria-selected={isActive}
+                    aria-current={isActive ? 'page' : undefined}
                     className={`sidebar-link${isActive ? ' active' : ''}${hovered === item.id ? ' is-hovered' : ''}`}
                     onClick={() => onChange(item.id)}
                     onMouseEnter={() => setHovered(item.id)}

@@ -35,7 +35,7 @@ function EventList() {
   const hasMoreEvents = events.length > summaryEvents.length
 
   return (
-    <section className="card">
+    <section className="card" aria-busy={loading}>
       <div className="card-head">
         <div>
           <div className="card-title">Histórico de segurança</div>
@@ -44,12 +44,12 @@ function EventList() {
         <button className="btn btn-sm" onClick={load} disabled={loading}>Atualizar</button>
       </div>
       {failures >= 3 && (
-        <div className="notice danger" style={{ marginBottom: 14 }}>
+          <div className="notice danger" role="alert" style={{ marginBottom: 14 }}>
           Foram detectados {failures} eventos de atenção nas últimas 24 horas. Revise o
           histórico e altere sua senha se não reconhecer alguma atividade.
         </div>
       )}
-      {loading ? <div className="empty">Carregando histórico...</div> : error ? (
+      {loading ? <div className="empty" role="status" aria-live="polite">Carregando histórico...</div> : error ? (
         <div className="notice danger" role="alert">{error}</div>
       ) : events.length === 0 ? (
         <div className="empty">Nenhum evento registrado ainda.</div>
@@ -158,7 +158,7 @@ export default function SecurityPanel() {
             <div className="text-sm text-soft">
               Além da senha, cada login exigirá um código temporário gerado no seu celular.
             </div>
-            <button className="btn btn-primary" onClick={begin} disabled={busy}>
+            <button className="btn btn-primary" onClick={begin} disabled={busy} aria-busy={busy}>
               {busy ? 'Preparando...' : 'Ativar MFA'}
             </button>
           </div>
@@ -178,7 +178,7 @@ export default function SecurityPanel() {
             </details>
             <CodeInput value={code} onChange={setCode} disabled={busy} errorId={message?.field === 'code' ? 'security-message' : undefined} />
             <div className="settings-actions">
-              <button className="btn btn-primary" onClick={confirm} disabled={busy || code.length !== 6}>
+              <button className="btn btn-primary" onClick={confirm} disabled={busy || code.length !== 6} aria-busy={busy}>
                 {busy ? 'Verificando...' : 'Confirmar ativação'}
               </button>
               <button className="btn" onClick={() => setSetup(null)} disabled={busy}>Cancelar</button>
@@ -188,12 +188,12 @@ export default function SecurityPanel() {
 
         {enabled && (
           <div className="stack" style={{ gap: 12 }}>
-            <div className="notice success">Sua conta exige um código temporário após a senha.</div>
+            <div className="notice success" role="status">Sua conta exige um código temporário após a senha.</div>
             <div className="field" style={{ maxWidth: 420 }}>
-              <label className="label">Código atual para desativar</label>
-              <CodeInput value={disableCode} onChange={setDisableCode} disabled={busy} autoFocus={false} errorId={message?.field === 'disableCode' ? 'security-message' : undefined} />
+              <span className="label" id="disable-mfa-label">Código atual para desativar</span>
+              <CodeInput value={disableCode} onChange={setDisableCode} disabled={busy} autoFocus={false} errorId={message?.field === 'disableCode' ? 'security-message' : undefined} labelledBy="disable-mfa-label" />
             </div>
-            <div><button className="btn btn-danger" onClick={disable} disabled={busy || disableCode.length !== 6}>Desativar MFA</button></div>
+            <div><button className="btn btn-danger" onClick={disable} disabled={busy || disableCode.length !== 6} aria-busy={busy}>Desativar MFA</button></div>
           </div>
         )}
       </section>

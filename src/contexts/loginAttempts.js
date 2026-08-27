@@ -1,11 +1,5 @@
-// =====================================================================
-// Controle local de tentativas de login
-// =====================================================================
-//
 // Complementa o rate limit do Supabase com resposta imediata na interface.
 // Nao substitui a protecao do servidor e pertence somente ao fluxo de auth.
-// =====================================================================
-
 const ATTEMPTS_KEY = 'planejador:login_attempts'
 const MAX_ATTEMPTS = 5
 const LOCK_MINUTES = 5
