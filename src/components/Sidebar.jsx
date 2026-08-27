@@ -48,7 +48,7 @@ export default function Sidebar({ active, onChange, badges = {} }) {
       <span
         className="sidebar-hover-pill"
         aria-hidden="true"
-        style={{ transform: `translateY(${indicator.top}px)`, height: indicator.height }}
+        style={{ '--sidebar-pill-y': `${indicator.top}px`, height: indicator.height }}
       />
       <div className="sidebar-brand">
         <div className="brand-logo">

@@ -181,6 +181,10 @@ export default function Topbar({
         <div className="brand-logo" style={{ width: 30, height: 30 }}>
           <img className="brand-favicon" src="/dindin-10-logo.png" alt="DinDin 10!" />
         </div>
+        <div className="topbar-brand-copy">
+          <div className="brand-title">DinDin 10!</div>
+          <div className="brand-sub">FinanÃ§as sob controle</div>
+        </div>
       </div>
 
       {/* Período */}
