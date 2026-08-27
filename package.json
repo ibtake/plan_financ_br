@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test \"test/*.test.js\"",
+    "test": "node --test",
     "lint": "eslint .",
     "functions:check": "deno check \"supabase/functions/*/index.ts\"",
     "migrations:check": "node scripts/validate-migrations.mjs",

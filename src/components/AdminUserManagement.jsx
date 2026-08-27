@@ -70,7 +70,7 @@ export default function AdminUserManagement() {
       return setMessage({ tone: 'danger', text: 'A senha temporária não atende à política de segurança.' })
     }
     if (code.length !== 6) {
-      return setMessage({ tone: 'danger', text: 'Informe o código MFA atual para autorizar a criação.' })
+      return setMessage({ tone: 'danger', field: 'code', text: 'Informe o código MFA atual para autorizar a criação.' })
     }
 
     setBusy(true)
@@ -78,7 +78,7 @@ export default function AdminUserManagement() {
     if (verified.error) {
       setBusy(false)
       setCode('')
-      return setMessage({ tone: 'danger', text: verified.error })
+      return setMessage({ tone: 'danger', field: 'code', text: verified.error })
     }
 
     const result = await callAdminApi('create-user', form)
@@ -106,14 +106,14 @@ export default function AdminUserManagement() {
         <div className="admin-users-grid">
           <form className="stack" onSubmit={createUser}>
             <h3 className="panel-heading">Novo usuário</h3>
-            {message && <div className={`notice ${message.tone}`} role={message.tone === 'danger' ? 'alert' : 'status'}>{message.text}</div>}
+            {message && <div id="admin-message" className={`notice ${message.tone}`} role={message.tone === 'danger' ? 'alert' : 'status'}>{message.text}</div>}
             <div className="field"><label className="label" htmlFor="admin-full-name">Nome</label><input id="admin-full-name" className="input" value={form.fullName} onChange={set('fullName')} maxLength={120} autoComplete="off" required /></div>
             <div className="field"><label className="label" htmlFor="admin-email">E-mail</label><input id="admin-email" className="input" type="email" value={form.email} onChange={set('email')} maxLength={254} autoComplete="off" required /></div>
             <div className="field">
               <label className="label" htmlFor="admin-password">Senha temporária</label>
               <div className="input-action-row"><input id="admin-password" className="input" type="password" value={form.password} onChange={set('password')} minLength={10} maxLength={128} autoComplete="new-password" required /><button className="btn" type="button" onClick={generate}>Gerar</button></div>
             </div>
-            <div className="field"><label className="label">Confirmação MFA</label><CodeInput value={code} onChange={setCode} disabled={busy} /></div>
+            <div className="field"><label className="label">Confirmação MFA</label><CodeInput value={code} onChange={setCode} disabled={busy} errorId={message?.field === 'code' ? 'admin-message' : undefined} /></div>
             <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? 'Criando...' : 'Criar usuário'}</button>
           </form>
 

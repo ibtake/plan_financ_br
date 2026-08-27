@@ -198,7 +198,7 @@ function AuthenticatedApp() {
       : ''
     if (window.confirm(`Excluir “${occurrence.description}”?${scope}`)) {
       // Segue `sourceId || id`: e a raiz da serie, e o hook ainda corta o `#`
-      // por conta propria (useSupabaseFinance.js:334). Nao ha exclusao de
+      // por conta propria (useFinanceOperations.js:35). Nao ha exclusao de
       // ocorrencia isolada no app - todo delete apaga a serie inteira.
       finance.deleteTransaction(occurrence.sourceId || occurrence.id)
     }
@@ -328,10 +328,10 @@ function AuthenticatedApp() {
           {/* Sem sufixo colado aqui: o banner nao sabe se houve recarga, e um
               " Os dados foram recarregados do servidor." fixo mentia em toda
               mensagem que retorna antes de qualquer leitura - validacao local de
-              categoria (useSupabaseFinance.js:426), 'Backup invalido.' (:628),
-              sessao expirada na importacao (:632), falha ao excluir meta (:596).
+              categoria (useFinanceOperations.js:88), 'Backup invalido.' (useFinanceDataManagement.js:19),
+              sessao expirada na importacao (:23), falha ao excluir meta (useGoalOperations.js:74).
               Quem reporta sabe se recarregou: o sufixo sai de reportError
-              (useSupabaseFinance.js:143), que desde o B78 recebe `reloaded` em
+              (useSupabaseFinance.js:46), que desde o B78 recebe `reloaded` em
               tres estados - a promessa vem do retorno do `load`, e a recarga que
               falha avisa em vez de calar. */}
           {finance.error && (
@@ -382,7 +382,6 @@ function AuthenticatedApp() {
               reverseHistory={finance.reverseGoalHistory}
               reverseContributions={finance.reverseGoalContributions}
               standardContributions={finance.standardGoalContributions}
-              reverseEvents={finance.reverseGoalEvents}
               onAdd={finance.addGoal}
               onAddReverse={finance.addReverseGoal}
               onAddReverseContribution={finance.addReverseGoalContribution}

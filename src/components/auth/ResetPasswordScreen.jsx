@@ -183,13 +183,13 @@ export default function ResetPasswordScreen() {
           <div className="text-sm text-muted">{done ? 'Todas as sessões foram encerradas.' : 'Use uma senha forte para proteger sua conta.'}</div>
         </div>
 
-        {error && <div className="notice danger" style={{ marginTop: 16 }} role="alert">{error}</div>}
+        {error && <div id="reset-error" className="notice danger" style={{ marginTop: 16 }} role="alert">{error}</div>}
 
         {done && <a className="btn btn-primary btn-block" style={{ marginTop: 18 }} href="/">Voltar para o login</a>}
 
         {!done && mfaRequired && (
           <form className="stack" style={{ gap: 14, marginTop: 18 }} onSubmit={submitMfa}>
-            <div className="field"><label className="label">Codigo do autenticador</label><CodeInput value={mfaCode} onChange={setMfaCode} disabled={busy} /></div>
+            <div className="field"><label className="label">Codigo do autenticador</label><CodeInput value={mfaCode} onChange={setMfaCode} disabled={busy} errorId={error ? 'reset-error' : undefined} /></div>
             <button className="btn btn-primary btn-block" type="submit" disabled={busy}>{busy ? 'Validando...' : 'Confirmar identidade'}</button>
           </form>
         )}

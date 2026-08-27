@@ -152,7 +152,7 @@ export function buildSampleData(currentCategories) {
   // insert e quem excluiu uma categoria padrao recebe dado orfao - "Sem
   // categoria" na lista, no grafico e no orcamento (achado 1.25 / B64).
   // Uniao, nao substituicao: importData troca as categorias quando o payload as
-  // traz (useSupabaseFinance.js:583) e o confirm do painel promete que as
+  // traz (useFinanceDataManagement.js:39) e o confirm do painel promete que as
   // personalizadas ficam. Nada faltando -> a chave sai do objeto e o exemplo
   // segue sem escrever em categories, como antes deste item.
   // O conjunto sai dos proprios dados: acrescentar lancamento aqui nao exige

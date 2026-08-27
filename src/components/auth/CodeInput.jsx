@@ -3,7 +3,7 @@
 
 import { useEffect, useRef } from 'react'
 
-export default function CodeInput({ value, onChange, disabled, autoFocus = true }) {
+export default function CodeInput({ value, onChange, disabled, autoFocus = true, errorId }) {
   const refs = useRef([])
   const digits = String(value || '').padEnd(6, ' ').slice(0, 6).split('')
 
@@ -45,13 +45,13 @@ export default function CodeInput({ value, onChange, disabled, autoFocus = true 
   }
 
   return (
-    <div className="code-input" role="group" aria-label="Código de verificação de 6 dígitos">
+    <div className="code-input" role="group" aria-describedby={errorId} aria-label="Código de verificação de 6 dígitos">
       {digits.map((digit, index) => (
         <input
           key={index}
           name={`verification-code-${index + 1}`}
           ref={(el) => (refs.current[index] = el)}
-          className="code-digit mono"
+          className={`code-digit mono${errorId ? ' input-invalid' : ''}`}
           type="text"
           inputMode="numeric"
           autoComplete={index === 0 ? 'one-time-code' : 'off'}
@@ -62,6 +62,7 @@ export default function CodeInput({ value, onChange, disabled, autoFocus = true 
           onKeyDown={(e) => handleKeyDown(index, e)}
           onFocus={(e) => e.target.select()}
           aria-label={`Dígito ${index + 1}`}
+          aria-invalid={errorId ? true : undefined}
         />
       ))}
     </div>

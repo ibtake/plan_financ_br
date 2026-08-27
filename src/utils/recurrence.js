@@ -207,7 +207,7 @@ export function isRecurring(tx) {
  * (schema.sql:696) so limita 1970-2200 e nada cruza os dois campos.
  *
  * Vive aqui, e nao no formulario, porque dois caminhos aplicam a mesma regra -
- * `TransactionForm.jsx:96` no submit e `useSupabaseFinance.js:625` no import de
+ * `TransactionForm.jsx:96` no submit e `useFinanceDataManagement.js:26` no import de
  * backup - e duas copias divergiriam. Campo vazio de um dos lados nao e
  * invalido: sem inicio a comparacao nao significa nada e `occurrencesInMonth`
  * ja devolve [] por `!startKey`; sem fim a serie e infinita, que e valido (B41).

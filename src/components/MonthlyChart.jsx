@@ -16,18 +16,8 @@ function useIsMobile() {
     const update = () => setMobile(query.matches)
     update()
 
-    if (typeof query.addEventListener === 'function') {
-      query.addEventListener('change', update)
-      return () => query.removeEventListener('change', update)
-    }
-
-    // Safari/iOS WebViews antigos expoem apenas a API legada.
-    if (typeof query.addListener === 'function') {
-      query.addListener(update)
-      return () => query.removeListener(update)
-    }
-
-    return undefined
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
   }, [])
 
   return mobile

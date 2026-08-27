@@ -7,7 +7,7 @@
 // nao tem como ler nem declarar (config.toml e do CLI local e nao configura o
 // projeto hospedado). Quando o teto corta, a resposta vem 200 OK, com a lista
 // truncada e SEM erro: totais somados sobre um subconjunto, e exportData
-// (useSupabaseFinance.js:561) gerando backup incompleto que parece completo.
+// (useFinanceDataManagement.js:48) gerando backup incompleto que parece completo.
 // Como replace_my_data apaga as linhas do usuario antes de reinserir o payload,
 // exportar e reimportar descartaria de vez o que a carga nao trouxe.
 //

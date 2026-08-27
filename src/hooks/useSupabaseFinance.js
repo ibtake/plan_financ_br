@@ -1,112 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { supabase, translateAuthError } from '../lib/supabase.js'
-import { EVENTS, guarded, logEvent } from '../lib/audit.js'
+import { guarded } from '../lib/audit.js'
+import { fromCategory, fromGoal } from '../lib/financeTransforms.js'
+import { loadFinanceData } from '../lib/financeLoader.js'
 import { selectAllPages } from '../lib/pagination.js'
-import { fallbackCategoryId, normalizeType } from '../utils/categories.js'
-import { uid } from '../utils/format.js'
-import { RECURRENCE_END_ERROR, recurrenceEndBeforeStart } from '../utils/recurrence.js'
 import { DEFAULT_TRANSACTION_FORM_FIELDS, normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
 import { useLocalStorage } from './useLocalStorage.js'
-
-// Toda leitura de lista do `load` passa por aqui. O `count: 'exact'` nao e
-// enfeite: e o unico jeito de saber que o teto de linhas do servidor cortou a
-// resposta, porque o corte chega 200 OK e truncado (lib/pagination.js explica o
-// resto). No caso comum continua sendo uma requisicao por tabela.
-const listRead = (table, apply = (query) => query) => selectAllPages((from, to) => guarded(
-  () => apply(supabase.from(table).select('*', { count: 'exact' })).range(from, to),
-  { table, action: 'select' },
-))
-
-function normalizeTransaction(input) {
-  return {
-    id: input.id || uid(),
-    type: normalizeType(input.type),
-    description: String(input.description || '').trim() || 'Sem descrição',
-    amount: Math.abs(Number(input.amount) || 0),
-    categoryId: input.categoryId || 'outros-d',
-    date: String(input.date || '').slice(0, 10),
-    method: input.method || 'pix',
-    paid: input.paid !== false,
-    recurrence: input.recurrence || 'none',
-    recurrenceEnd: input.recurrenceEnd || '',
-    installments: Math.max(1, Number(input.installments) || 1),
-    tags: Array.isArray(input.tags)
-      ? input.tags
-      : String(input.tags || '').split(/[,\s]+/).map((tag) => tag.trim()).filter(Boolean),
-    note: String(input.note || ''),
-    paidOccurrences: input.paidOccurrences || {},
-    createdAt: input.createdAt || new Date().toISOString(),
-  }
-}
-
-const toTxRow = (tx, userId) => ({
-  id: tx.id,
-  user_id: userId,
-  type: tx.type,
-  description: tx.description,
-  amount: tx.amount,
-  category_id: tx.categoryId,
-  date: tx.date,
-  method: tx.method,
-  paid: tx.paid,
-  recurrence: tx.recurrence,
-  recurrence_end: tx.recurrenceEnd || null,
-  installments: tx.installments,
-  tags: tx.tags,
-  note: tx.note || null,
-  paid_occurrences: tx.paidOccurrences,
-  created_at: tx.createdAt,
-})
-
-const fromTxRow = (row) => normalizeTransaction({
-  id: row.id,
-  type: row.type,
-  description: row.description,
-  amount: Number(row.amount),
-  categoryId: row.category_id,
-  date: row.date,
-  method: row.method,
-  paid: row.paid,
-  recurrence: row.recurrence,
-  recurrenceEnd: row.recurrence_end || '',
-  installments: row.installments,
-  tags: row.tags || [],
-  note: row.note || '',
-  paidOccurrences: row.paid_occurrences || {},
-  createdAt: row.created_at,
-})
-
-const fromCategory = (row) => ({
-  id: row.id, name: row.name, type: row.type, color: row.color, icon: row.icon,
-  targetPercentage: Number(row.target_percentage) || 0, custom: row.custom,
-})
-const toCategory = (cat, userId) => ({
-  id: cat.id, user_id: userId, name: cat.name, type: cat.type,
-  color: cat.color, icon: cat.icon,
-  target_percentage: Math.max(0, Math.min(100, Number(cat.targetPercentage) || 0)),
-  custom: cat.custom !== false,
-})
-const fromGoal = (row) => ({
-  id: row.id, name: row.name, target: Number(row.target), current: Number(row.current),
-  deadline: row.deadline || '', icon: row.icon, color: row.color,
-  goalType: row.goal_type || 'standard',
-  reverseOriginalAmount: Number(row.reverse_original_amount) || 0,
-  reverseRemainingAmount: Number(row.reverse_remaining_amount) || 0,
-  reverseCorrectedAmount: Number(row.reverse_corrected_amount) || 0,
-  reverseTotalContributed: Number(row.reverse_total_contributed) || 0,
-  reverseCorrectionAmount: Number(row.reverse_correction_amount) || 0,
-  reverseProgressPercent: Number(row.reverse_progress_percent) || 0,
-  reverseForecastCompletionDate: row.reverse_forecast_completion_date || null,
-  reverseMonthlyContributionAverage: Number(row.reverse_monthly_contribution_average || 0),
-  reverseStartDate: row.reverse_start_date || '',
-  reverseSelicFactor: Number(row.reverse_selic_factor) || 1,
-  reverseCompletedAt: row.reverse_completed_at || null,
-})
-const toGoal = (goal, userId) => ({
-  id: goal.id, user_id: userId, name: goal.name, target: goal.target,
-  current: goal.current, deadline: goal.deadline || null, icon: goal.icon, color: goal.color,
-})
+import { useFinanceOperations } from './useFinanceOperations.js'
+import { useGoalOperations } from './useGoalOperations.js'
+import { useFinanceDataManagement } from './useFinanceDataManagement.js'
 
 export function useSupabaseFinance() {
   const { user, signOut } = useAuth()
@@ -185,31 +88,8 @@ export function useSupabaseFinance() {
       }
       if (!preserveLoading) setLoading(true)
       if (!preserveError) setError('')
-      // Preferencias de interface nao podem impedir o acesso aos dados financeiros.
-      // A leitura permanece paralela, mas e tratada separadamente para manter a
-      // compatibilidade caso o frontend seja publicado antes da migracao.
-      const profileRequest = guarded(
-        () => supabase.from('profiles').select('transaction_form_fields').maybeSingle(),
-        { table: 'profiles', action: 'select_transaction_form_fields' },
-      )
-      // O resumo principal nao depende dos historicos de metas. Eles continuam
-      // sendo buscados em paralelo, mas nao devem segurar a primeira tela apos
-      // login, especialmente em redes moveis.
-      const supportingDataRequest = Promise.all([
-        listRead('reverse_goal_history', (query) => query.order('reference_month', { ascending: false })),
-        listRead('reverse_goal_contributions', (query) => query.order('occurred_on', { ascending: false })),
-        listRead('standard_goal_contributions', (query) => query.order('occurred_on', { ascending: false })),
-        listRead('reverse_goal_events', (query) => query.order('occurred_on', { ascending: false })),
-        // Fora do listRead de proposito: e uma linha so, por maybeSingle, e nao
-        // tem lista para o teto do servidor cortar.
-        guarded(() => supabase.from('reverse_goal_retention_settings').select('completed_goal_retention_months').maybeSingle(), { table: 'reverse_goal_retention_settings', action: 'select' }),
-      ])
-      const [txResult, catResult, budgetResult, goalResult] = await Promise.all([
-        listRead('transactions', (query) => query.order('created_at', { ascending: false })),
-        listRead('categories', (query) => query.order('created_at')),
-        listRead('budgets'),
-        listRead('goals', (query) => query.order('created_at')),
-      ])
+      const { profileRequest, supportingDataRequest, primaryDataRequest } = loadFinanceData({ supabase, guarded, selectAllPages })
+      const [txResult, catResult, budgetResult, goalResult] = await primaryDataRequest
       // Uma carga iniciada antes de uma mutacao nao pode restaurar um snapshot
       // antigo sobre os dados que acabaram de ser confirmados pelo servidor.
       if (requestId !== latestLoadRequest.current) return false
@@ -311,25 +191,10 @@ export function useSupabaseFinance() {
     return true
   }, [load, reportError])
 
-  const addTransaction = useCallback((input) => {
-    // Segunda camada contra duplo-clique (a primeira e o disabled do form):
-    // ignorar segunda chamada no mesmo instante evita insert duplicado, pois
-    // cada chamada gera id proprio e o banco nao tem unique de negocio.
-    if (transactionInsertInFlight.current) return null
-    transactionInsertInFlight.current = true
-    try {
-      const tx = normalizeTransaction(input)
-      setTransactions((prev) => [tx, ...prev])
-      void persist(() => supabase.from('transactions').insert(toTxRow(tx, user.id)), { table: 'transactions', action: 'insert' })
-        .finally(() => { transactionInsertInFlight.current = false })
-      return tx
-    } catch (error) {
-      transactionInsertInFlight.current = false
-      throw error
-    }
-  }, [persist, user])
+  const { addTransaction, updateTransaction, deleteTransaction, duplicateTransaction, togglePaid, addCategory, updateCategory, deleteCategory, setBudget } = useFinanceOperations({ persist, user, transactions, categories, setTransactions, setCategories, setBudgets, reportError, transactionInsertInFlight, categoryInsertInFlight })
 
-  const updateTransaction = useCallback((id, input, occurrenceIndex = 0) => {
+  /* Legacy operations moved to useFinanceOperations.
+  const updateTransactionLegacy = useCallback((id, input, occurrenceIndex = 0) => {
     const rootId = String(id).split('#')[0]
     const patch = Number(occurrenceIndex) > 0
       ? Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'date' && key !== 'paid'))
@@ -354,18 +219,18 @@ export function useSupabaseFinance() {
     )
   }, [persist, transactions, user])
 
-  const deleteTransaction = useCallback((id) => {
+  const deleteTransactionLegacy = useCallback((id) => {
     const rootId = String(id).split('#')[0]
     setTransactions((prev) => prev.filter((tx) => tx.id !== rootId))
     void persist(() => supabase.from('transactions').delete().eq('id', rootId).eq('user_id', user.id), { table: 'transactions', action: 'delete' })
   }, [persist, user])
 
-  const duplicateTransaction = useCallback((occurrence) => addTransaction({
+  const duplicateTransactionLegacy = useCallback((occurrence) => addTransactionLegacy({
     ...occurrence, id: uid(), description: `${occurrence.description} (cópia)`, recurrence: 'none',
     installments: 1, paidOccurrences: {}, createdAt: new Date().toISOString(),
   }), [addTransaction])
 
-  const togglePaid = useCallback((occurrence) => {
+  const togglePaidLegacy = useCallback((occurrence) => {
     const rootId = occurrence.sourceId || String(occurrence.id).split('#')[0]
     const index = occurrence.occurrenceIndex || 0
     void persist(async () => {
@@ -453,6 +318,10 @@ export function useSupabaseFinance() {
     else void persist(() => supabase.from('budgets').upsert({ user_id: user.id, category_id: categoryId, limit_amount: amount }), { table: 'budgets', action: 'upsert' })
   }, [persist, user])
 
+  */
+  const { addGoal, addStandardGoalContribution, updateStandardGoalContribution, addReverseGoal, addReverseGoalContribution, updateReverseGoalContribution, setReverseGoalRetention, updateGoal, updateReverseGoal, deleteGoal } = useGoalOperations({ load, persist, guarded, reportError, user, deleteGoalInFlight, latestLoadRequest, setGoals, setReverseGoalHistory, setReverseGoalContributions, setStandardGoalContributions, setReverseGoalEvents, setIsDeletingGoal, setGoalDeletionPhase })
+
+  /* Legacy goal operations moved to useGoalOperations.
   const callGoalRpc = useCallback(async (operation, action) => {
     try {
       const result = await guarded(operation, { table: 'goals', action })
@@ -617,6 +486,10 @@ export function useSupabaseFinance() {
     }
   }, [reportError, user])
 
+  */
+  const { exportData, importData, clearAll, setTransactionFormFields } = useFinanceDataManagement({ transactions, categories, budgets, goals, standardGoalContributions, reverseGoalContributions, reverseGoalHistory, reverseGoalEvents, reverseGoalRetentionMonths, setTransactionFormFieldsState, confirmedTransactionFormFields, transactionFormFieldsQueue, transactionFormFieldsVersion, load, guarded, reportError, user })
+
+  /* Legacy data-management operations moved to useFinanceDataManagement.
   const exportData = useCallback(() => ({
     transactions, categories, budgets, goals, standardGoalContributions,
     reverseGoalContributions, reverseGoalHistory, reverseGoalEvents,
@@ -774,6 +647,7 @@ export function useSupabaseFinance() {
     return transactionFormFieldsQueue.current
   }, [reportError, user])
 
+  */
   return { transactions, categories, budgets, goals, theme, transactionFormFields, loading, error, isDeletingGoal, goalDeletionPhase,
     addTransaction, updateTransaction, deleteTransaction, duplicateTransaction, togglePaid,
     addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateReverseGoalContribution, addStandardGoalContribution, updateStandardGoalContribution, updateGoal, updateReverseGoal, deleteGoal,

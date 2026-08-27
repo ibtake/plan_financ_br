@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
  * um render fazia o hook ler da chave antiga (o useState inicial ja rodou) e
  * gravar na nova, e o exhaustive-deps nunca ia avisar porque a regra ignora
  * leitura de ref.current - por isso o B36 nao pegaria isto. Os dois chamadores
- * de hoje passam literal (App.jsx:136 e useSupabaseFinance.js:122), entao o
+ * de hoje passam literal (App.jsx:136 e useSupabaseFinance.js:26), entao o
  * comportamento em producao nao muda: some so a armadilha (B47).
  */
 export function useLocalStorage(key, initialValue) {
