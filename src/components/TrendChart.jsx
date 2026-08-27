@@ -31,6 +31,10 @@ export default function TrendChart({ trend, variant = 'card', accumulatedValue =
     positiveCumulative: Math.max(item.cumulative, 0),
     negativeCumulative: Math.min(item.cumulative, 0),
   }))
+  const latest = chartData.at(-1)
+  const chartLabel = latest
+    ? `Gráfico de saldo acumulado. Último valor em ${monthLabel(latest.key)}: ${formatCurrency(latest.cumulative)}.`
+    : 'Gráfico de saldo acumulado sem dados.'
 
   return (
     <div className={isHero ? 'balance-hero' : 'card'}>
@@ -52,7 +56,7 @@ export default function TrendChart({ trend, variant = 'card', accumulatedValue =
       </div>
 
       {hasData ? (
-        <div className={isHero ? 'chart-wrap balance-hero-chart' : 'chart-wrap'} style={{ height: isHero ? 190 : 240 }}>
+        <div className={isHero ? 'chart-wrap balance-hero-chart' : 'chart-wrap'} style={{ height: isHero ? 190 : 240 }} role="img" aria-label={chartLabel}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }} onClick={(state) => {
               if (state?.chartX == null || state?.chartY == null) return

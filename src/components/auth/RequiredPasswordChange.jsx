@@ -39,7 +39,7 @@ export default function RequiredPasswordChange() {
         {error && <div className="notice danger" role="alert">{error}</div>}
         <div className="field"><label className="label" htmlFor="required-password">Nova senha</label><input id="required-password" className="input" type="password" autoComplete="new-password" minLength={10} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
         <div className="field"><label className="label" htmlFor="required-confirm">Confirmar nova senha</label><input id="required-confirm" className={`input${confirm && confirm !== password ? ' input-invalid' : ''}`} type="password" autoComplete="new-password" minLength={10} maxLength={128} value={confirm} onChange={(event) => setConfirm(event.target.value)} required /></div>
-        <button className="btn btn-primary btn-block" type="submit" disabled={busy}>{busy ? 'Salvando...' : 'Salvar nova senha'}</button>
+        <button className="btn btn-primary btn-block" type="submit" disabled={busy} aria-busy={busy}>{busy ? 'Salvando...' : 'Salvar nova senha'}</button>
       </form>
     </div>
   )

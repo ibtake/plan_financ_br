@@ -33,7 +33,6 @@ export default function ResetPasswordScreen() {
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
 
-  // --- EFEITO: processa o fluxo de recuperacao ---
   const settled = useRef(false)
 
   useEffect(() => {
@@ -133,7 +132,7 @@ export default function ResetPasswordScreen() {
     setReady(true)
   }
 
-  useEffect(() => {
+    useEffect(() => {
     if (mfaRequired && mfaCode.length === 6 && !busy) {
       void submitMfaCode(mfaCode)
     }
@@ -189,7 +188,7 @@ export default function ResetPasswordScreen() {
 
         {!done && mfaRequired && (
           <form className="stack" style={{ gap: 14, marginTop: 18 }} onSubmit={submitMfa}>
-            <div className="field"><label className="label">Codigo do autenticador</label><CodeInput value={mfaCode} onChange={setMfaCode} disabled={busy} errorId={error ? 'reset-error' : undefined} /></div>
+            <div className="field"><span className="label" id="reset-mfa-label">Codigo do autenticador</span><CodeInput value={mfaCode} onChange={setMfaCode} disabled={busy} errorId={error ? 'reset-error' : undefined} labelledBy="reset-mfa-label" /></div>
             <button className="btn btn-primary btn-block" type="submit" disabled={busy}>{busy ? 'Validando...' : 'Confirmar identidade'}</button>
           </form>
         )}

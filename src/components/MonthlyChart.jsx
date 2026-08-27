@@ -84,5 +84,23 @@ export default function MonthlyChart({ transactions, monthKey, categories }) {
   }
 
   const roundedSegment = (kind, rank, row) => <Cell key={`${kind}-${rank}-${row.name}`} fill={row[`${kind}Ranks`][rank]?.color || 'transparent'} />
-  return <div className="card"><div className="card-head"><div><div className="card-title">Receita × Despesas</div><div className="card-sub">{isMobile ? 'Últimos 3 meses' : 'Últimos 6 meses'} · distribuição por categoria</div></div></div><div className="chart-wrap monthly-chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={chart.data} margin={{ top: 8, right: isMobile ? 4 : 12, left: isMobile ? 2 : 8, bottom: 2 }} barGap={3}><XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: 'var(--text-muted)', fontSize: isMobile ? 10 : 11 }} tickMargin={isMobile ? 6 : 8}/><YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} tick={{ fill: 'var(--text-muted)', fontSize: isMobile ? 9 : 10 }} width={isMobile ? 42 : 52}/><Tooltip shared={false} content={<MonthlyTooltip />} />{Array.from({ length: chart.incomeRankCount }, (_, rank) => <Bar key={`income-rank-${rank}`} dataKey={`income:rank:${rank}`} stackId="income" fill="transparent" stroke={SEGMENT_GAP_COLOR} strokeWidth={2} barSize={isMobile ? 18 : 24} radius={[5,5,5,5]}>{chart.data.map((row) => roundedSegment('income', rank, row))}</Bar>)}{Array.from({ length: chart.expenseRankCount }, (_, rank) => <Bar key={`expense-rank-${rank}`} dataKey={`expense:rank:${rank}`} stackId="expense" fill="transparent" stroke={SEGMENT_GAP_COLOR} strokeWidth={2} barSize={isMobile ? 18 : 24} radius={[5,5,5,5]}>{chart.data.map((row) => roundedSegment('expense', rank, row))}</Bar>)}</BarChart></ResponsiveContainer></div></div>
+  const chartSummary = chart.data.map((row) => `${row.name}: receitas ${formatCurrency(row.incomeTotal)}, despesas ${formatCurrency(row.expenseTotal)}`).join('. ')
+
+  return (
+    <div className="card">
+      <div className="card-head"><div><div className="card-title">Receita × Despesas</div><div className="card-sub">{isMobile ? 'Últimos 3 meses' : 'Últimos 6 meses'} · distribuição por categoria</div></div></div>
+      <div className="chart-wrap monthly-chart-wrap" role="img" aria-label={`Gráfico mensal de receitas e despesas. ${chartSummary}`}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chart.data} margin={{ top: 8, right: isMobile ? 4 : 12, left: isMobile ? 2 : 8, bottom: 2 }} barGap={3}>
+            <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: 'var(--text-muted)', fontSize: isMobile ? 10 : 11 }} tickMargin={isMobile ? 6 : 8}/>
+            <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} tick={{ fill: 'var(--text-muted)', fontSize: isMobile ? 9 : 10 }} width={isMobile ? 42 : 52}/>
+            <Tooltip shared={false} content={<MonthlyTooltip />} />
+            {Array.from({ length: chart.incomeRankCount }, (_, rank) => <Bar key={`income-rank-${rank}`} dataKey={`income:rank:${rank}`} stackId="income" fill="transparent" stroke={SEGMENT_GAP_COLOR} strokeWidth={2} barSize={isMobile ? 18 : 24} radius={[5,5,5,5]}>{chart.data.map((row) => roundedSegment('income', rank, row))}</Bar>)}
+            {Array.from({ length: chart.expenseRankCount }, (_, rank) => <Bar key={`expense-rank-${rank}`} dataKey={`expense:rank:${rank}`} stackId="expense" fill="transparent" stroke={SEGMENT_GAP_COLOR} strokeWidth={2} barSize={isMobile ? 18 : 24} radius={[5,5,5,5]}>{chart.data.map((row) => roundedSegment('expense', rank, row))}</Bar>)}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="sr-only">{chartSummary}</p>
+    </div>
+  )
 }

@@ -164,6 +164,7 @@ async function setupErrorMessage(error) {
     const body = await error?.context?.json?.()
     return typeof body?.error === 'string' && body.error ? body.error : fallback
   } catch {
+    console.warn('Não foi possível ler a resposta de configuração do widget.')
     return fallback
   }
 }

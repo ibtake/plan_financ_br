@@ -98,6 +98,7 @@ const TransactionItem = memo(function TransactionItem({ tx, categories, onEdit, 
           onClick={() => onTogglePaid(tx)}
           title={tx.paid ? 'Marcar como pendente' : 'Marcar como pago'}
           aria-label={tx.paid ? 'Marcar como pendente' : 'Marcar como pago'}
+          aria-pressed={tx.paid}
         >
           {tx.paid ? <Check size={16} strokeWidth={2.4} /> : <Circle size={16} strokeWidth={2} />}
         </button>
@@ -254,13 +255,14 @@ export default function TransactionList({
         className="filters-toggle"
         onClick={() => setFiltersOpen((open) => !open)}
         aria-expanded={filtersOpen}
+        aria-controls="transaction-filters"
       >
         <SlidersHorizontal size={15} strokeWidth={1.9} />
         <span>Filtros e ordenação</span>
         {activeFilters > 0 && <span className="chip primary">{activeFilters}</span>}
       </button>
 
-      <div className={`filters collapsible${filtersOpen ? ' open' : ''}`}>
+      <div id="transaction-filters" className={`filters collapsible${filtersOpen ? ' open' : ''}`}>
         <div className="search-box">
           <Search size={15} strokeWidth={2} aria-hidden="true" />
           <input

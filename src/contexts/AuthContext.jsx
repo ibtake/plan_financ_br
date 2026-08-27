@@ -1,7 +1,3 @@
-// =====================================================================
-// AuthContext - fachada publica para sessao, login e MFA (TOTP)
-// =====================================================================
-
 import { createContext, useContext, useMemo } from 'react'
 import { isSupabaseConfigured, configurationProblem } from '../lib/supabase.js'
 import { useAuthSession } from './authSession.js'

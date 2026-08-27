@@ -156,19 +156,20 @@ function CategoryForm({ initial, onSave, onCancel, otherTargetTotal }) {
     <form className="card" onSubmit={submit} style={{ background: 'var(--surface-2)' }}>
       <div className="form-grid">
         <div className="field">
-          <label className="label">Nome *</label>
+          <label className="label" htmlFor="category-name">Nome *</label>
           <input
+            id="category-name"
             name="category-name"
             className="input"
             value={form.name}
             onChange={(e) => set({ name: e.target.value })}
             placeholder="Ex.: Viagens"
-            autoFocus
           />
         </div>
         <div className="field">
-          <label className="label">Tipo</label>
+          <label className="label" htmlFor="category-type">Tipo</label>
           <select
+            id="category-type"
             name="category-type"
             className="select"
             value={form.type}
@@ -197,11 +198,13 @@ function CategoryForm({ initial, onSave, onCancel, otherTargetTotal }) {
               max="100"
               step="0.5"
               className={`input mono${overLimit ? ' input-invalid' : ''}`}
+              aria-invalid={overLimit}
+              aria-describedby={overLimit ? 'cat-target-error' : undefined}
               value={form.targetPercentage ?? 0}
               onChange={(e) => set({ targetPercentage: e.target.value })}
             />
             {overLimit ? (
-              <span className="field-error">
+              <span id="cat-target-error" className="field-error">
                 A soma das metas chegaria a {totalTarget.toFixed(1)}%. Reduza para no máximo{' '}
                 {(100 - otherTargetTotal).toFixed(1)}% nesta categoria.
               </span>
@@ -215,12 +218,12 @@ function CategoryForm({ initial, onSave, onCancel, otherTargetTotal }) {
         )}
 
         <div className="field span-2">
-          <label className="label">Ícone</label>
+          <span className="label">Ícone</span>
           <IconPicker value={form.icon} onChange={(icon) => set({ icon })} />
         </div>
 
         <div className="field span-2">
-          <label className="label">Cor</label>
+          <span className="label">Cor</span>
           <div className="swatch-grid">
             {CHART_PALETTE.map((c) => (
               <button

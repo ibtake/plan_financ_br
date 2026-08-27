@@ -238,7 +238,7 @@ export default function SettingsPanel({
             </label>
           ))}
         </div>
-        <p className="hint" style={{ marginTop: 12 }}>
+        <p className="hint" style={{ marginTop: 12 }} role={loadingWidgetStatus ? 'status' : widgetError ? 'alert' : undefined} aria-live="polite">
           Descrição, valor, data, categoria e tipo são obrigatórios e continuam sempre visíveis. As preferências ficam salvas apenas na sua conta.
         </p>
       </section>
@@ -315,8 +315,8 @@ export default function SettingsPanel({
         </div>
         <div className="setting-row" style={{ alignItems: 'flex-end', gap: 16 }}>
           <div className="field grow">
-            <label className="label">Excluir metas concluídas após</label>
-            <select className="input" value={retentionMonths} onChange={(event) => setRetentionMonths(event.target.value)} disabled={!reverseGoalRetentionLoaded || savingRetention}>
+            <label className="label" htmlFor="reverse-goal-retention">Excluir metas concluídas após</label>
+            <select id="reverse-goal-retention" className="input" value={retentionMonths} onChange={(event) => setRetentionMonths(event.target.value)} disabled={!reverseGoalRetentionLoaded || savingRetention}>
               <option value="">Nunca excluir</option>
               {Array.from({ length: 12 }, (_, index) => index + 1).map((months) => <option key={months} value={months}>{months} {months === 1 ? 'mês' : 'meses'}</option>)}
             </select>

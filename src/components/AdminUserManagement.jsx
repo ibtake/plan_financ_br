@@ -101,7 +101,7 @@ export default function AdminUserManagement() {
       </div>
 
       {status === 'needs-mfa' ? (
-        <div className="notice warning">Ative a verificação em duas etapas na aba Segurança e entre novamente para administrar usuários.</div>
+        <div className="notice warning" role="alert">Ative a verificação em duas etapas na aba Segurança e entre novamente para administrar usuários.</div>
       ) : (
         <div className="admin-users-grid">
           <form className="stack" onSubmit={createUser}>
@@ -113,8 +113,8 @@ export default function AdminUserManagement() {
               <label className="label" htmlFor="admin-password">Senha temporária</label>
               <div className="input-action-row"><input id="admin-password" className="input" type="password" value={form.password} onChange={set('password')} minLength={10} maxLength={128} autoComplete="new-password" required /><button className="btn" type="button" onClick={generate}>Gerar</button></div>
             </div>
-            <div className="field"><label className="label">Confirmação MFA</label><CodeInput value={code} onChange={setCode} disabled={busy} errorId={message?.field === 'code' ? 'admin-message' : undefined} /></div>
-            <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? 'Criando...' : 'Criar usuário'}</button>
+            <div className="field"><span className="label" id="admin-mfa-label">Confirmação MFA</span><CodeInput value={code} onChange={setCode} disabled={busy} errorId={message?.field === 'code' ? 'admin-message' : undefined} labelledBy="admin-mfa-label" /></div>
+            <button className="btn btn-primary" type="submit" disabled={busy} aria-busy={busy}>{busy ? 'Criando...' : 'Criar usuário'}</button>
           </form>
 
           <div className="admin-user-list">

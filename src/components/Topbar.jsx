@@ -122,6 +122,8 @@ export default function Topbar({
 
   const profileRef = useRef(null)
   const bellRef = useRef(null)
+  const profileButtonRef = useRef(null)
+  const bellButtonRef = useRef(null)
   const searchRef = useRef(null)
 
   const SEARCH_DEBOUNCE_MS = 300
@@ -155,8 +157,8 @@ export default function Topbar({
     }, SEARCH_DEBOUNCE_MS)
   }
 
-  useDismiss(profileRef, () => setProfileOpen(false), profileOpen)
-  useDismiss(bellRef, () => setBellOpen(false), bellOpen)
+  useDismiss(profileRef, () => { setProfileOpen(false); profileButtonRef.current?.focus() }, profileOpen)
+  useDismiss(bellRef, () => { setBellOpen(false); bellButtonRef.current?.focus() }, bellOpen)
 
   const isCurrent = monthKey === currentMonthKey()
   const count = pending.length
@@ -225,18 +227,20 @@ export default function Topbar({
         {/* Notificações */}
         <div className="popover-anchor" ref={bellRef}>
           <button
+            ref={bellButtonRef}
             type="button"
             className={`topbar-btn${bellOpen ? ' active' : ''}`}
             onClick={() => setBellOpen((open) => !open)}
             title="Notificações"
             aria-label={`Notificações${count > 0 ? ` (${count} pendentes)` : ''}`}
             aria-expanded={bellOpen}
+            aria-controls="notification-popover"
           >
             <Bell size={18} strokeWidth={1.9} />
             {count > 0 && <span className="topbar-dot">{count > 9 ? '9+' : count}</span>}
           </button>
 
-          <div className={`popover glass-popover notification-popover${bellOpen ? ' is-open' : ''}`} role="dialog" aria-label="Notificações" aria-hidden={!bellOpen}>
+          <div id="notification-popover" className={`popover glass-popover notification-popover${bellOpen ? ' is-open' : ''}`} role="dialog" aria-label="Notificações" aria-hidden={!bellOpen}>
               <div className="popover-head">
                 <div className="popover-title">Pendências do mês</div>
                 <div className="popover-sub">
@@ -302,18 +306,20 @@ export default function Topbar({
         {/* Perfil */}
         <div className="popover-anchor" ref={profileRef}>
           <button
+            ref={profileButtonRef}
             type="button"
             className={`topbar-btn topbar-profile-btn${profileOpen ? ' active' : ''}`}
             onClick={() => setProfileOpen((open) => !open)}
             title={user?.email}
             aria-label="Menu da conta"
             aria-expanded={profileOpen}
+            aria-controls="profile-popover"
             style={{ width: 34 }}
           >
             <span className="avatar">{initials(user?.email)}</span>
           </button>
 
-          <div className={`popover glass-popover${profileOpen ? ' is-open' : ''}`} role="menu" aria-label="Conta" aria-hidden={!profileOpen}>
+          <div id="profile-popover" className={`popover glass-popover${profileOpen ? ' is-open' : ''}`} role="menu" aria-label="Conta" aria-hidden={!profileOpen}>
               <div className="popover-head">
                 <div className="popover-title">Conta</div>
                 <div className="popover-sub" title={user?.email}>{user?.email}</div>

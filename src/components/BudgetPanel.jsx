@@ -58,7 +58,6 @@ function BudgetRow({ category, spent, limit, onChange, onRemove }) {
                   if (e.key === 'Enter') save()
                   if (e.key === 'Escape') setEditing(false)
                 }}
-                autoFocus
                 inputMode="numeric"
                 aria-label={`Limite de ${category.name}`}
               />
@@ -103,6 +102,12 @@ function BudgetRow({ category, spent, limit, onChange, onRemove }) {
         <div
           className={`progress-bar ${barClass(percent)}`}
           style={{ width: `${Math.min(100, percent)}%` }}
+          role="progressbar"
+          aria-label={`Uso do orçamento de ${category.name}`}
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow={Math.min(100, Math.max(0, percent))}
+          aria-valuetext={formatPercent(percent)}
         />
       </div>
 
@@ -183,6 +188,12 @@ export default function BudgetPanel({ budgets, byCategory, categories, monthKey,
               <div
                 className={`progress-bar ${barClass(totals.percent)}`}
                 style={{ width: `${Math.min(100, totals.percent)}%` }}
+                role="progressbar"
+                aria-label="Uso total do orçamento"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow={Math.min(100, Math.max(0, totals.percent))}
+                aria-valuetext={formatPercent(totals.percent)}
               />
             </div>
             <div className="row-between text-xs text-muted" style={{ marginTop: 8, gap: 10 }}>

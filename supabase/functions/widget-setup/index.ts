@@ -129,6 +129,8 @@ Deno.serve(async (request) => {
     if (error instanceof Error && error.message === 'body_too_large') {
       return response(request, 413, { error: 'Requisição muito grande.' })
     }
+    console.warn('Corpo ausente ou inválido; usando o fluxo legado de emissão do widget.')
+    body = {}
   }
   if (body.action !== undefined && body.action !== 'status' && body.action !== 'revoke') {
     return response(request, 400, { error: 'Ação inválida.' })

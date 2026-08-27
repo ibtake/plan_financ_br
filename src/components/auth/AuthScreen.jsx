@@ -35,7 +35,7 @@ export default function AuthScreen() {
   // numero de hooks entre renders e quebra a tela. O guard do corpo cobre os
   // demais modos. verifyMfaCode e' declarado abaixo e nao entra nas deps de
   // proposito — no array ele seria lido durante o render, antes de existir.
-  useEffect(() => {
+    useEffect(() => {
     if (mode !== 'mfa' || code.length !== 6 || busy) return
     void verifyMfaCode(code)
   }, [mode, code, busy])
@@ -215,9 +215,9 @@ export default function AuthScreen() {
           </div>
         )}
         {notice && (
-          <div className="notice success" style={{ marginTop: 16 }} role="status">
+          <output className="notice success" style={{ marginTop: 16 }} aria-live="polite">
             {notice}
-          </div>
+          </output>
         )}
 
         {/* ----- Login ----- */}
