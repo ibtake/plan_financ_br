@@ -83,11 +83,16 @@ export function useSupabaseFinance() {
     const requestId = ++latestLoadRequest.current
     try {
       if (!user || !supabase) {
+        console.warn('[finance-load] carregamento ignorado', {
+          userPresent: Boolean(user),
+          supabaseConfigured: Boolean(supabase),
+        })
         if (requestId === latestLoadRequest.current) setLoading(false)
         return false
       }
       if (!preserveLoading) setLoading(true)
       if (!preserveError) setError('')
+      console.info('[finance-load] iniciando carregamento', { userPresent: true, supabaseConfigured: true })
       const { profileRequest, supportingDataRequest, primaryDataRequest } = loadFinanceData({ supabase, guarded, selectAllPages })
       const [txResult, catResult, budgetResult, goalResult] = await primaryDataRequest
       // Uma carga iniciada antes de uma mutacao nao pode restaurar um snapshot
@@ -159,6 +164,11 @@ export function useSupabaseFinance() {
       // rejeicao aqui deixaria `loading` em true para sempre - tela presa no
       // esqueleto de App.jsx:278, sem retry possivel a nao ser recarregar a pagina.
       // O caminho alcancavel e o `await signOut()` das linhas de sessao expirada.
+      console.error('[finance-load] falha antes ou durante o carregamento', {
+        name: error?.name,
+        message: error?.message,
+        code: error?.code,
+      })
       reportError(error)
       if (requestId === latestLoadRequest.current) setLoading(false)
       return false
