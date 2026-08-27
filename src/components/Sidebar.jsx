@@ -12,7 +12,7 @@ export default function Sidebar({ active, onChange, badges = {} }) {
   const sidebarRef = useRef(null)
   const itemRefs = useRef(new Map())
   const [hovered, setHovered] = useState(null)
-  const [indicator, setIndicator] = useState({ top: 0, height: 0 })
+  const [indicator, setIndicator] = useState({ top: 0, left: 0, width: 0, height: 0 })
   const targetId = hovered || active
 
   const moveIndicator = useCallback((id) => {
@@ -23,6 +23,8 @@ export default function Sidebar({ active, onChange, badges = {} }) {
     const itemRect = item.getBoundingClientRect()
     setIndicator({
       top: itemRect.top - sidebarRect.top + sidebar.scrollTop,
+      left: itemRect.left - sidebarRect.left,
+      width: itemRect.width,
       height: itemRect.height,
     })
   }, [])
@@ -37,9 +39,12 @@ export default function Sidebar({ active, onChange, badges = {} }) {
     const refresh = () => moveIndicator(targetId)
     sidebar.addEventListener('scroll', refresh, { passive: true })
     window.addEventListener('resize', refresh)
+    const observer = new ResizeObserver(refresh)
+    observer.observe(sidebar)
     return () => {
       sidebar.removeEventListener('scroll', refresh)
       window.removeEventListener('resize', refresh)
+      observer.disconnect()
     }
   }, [moveIndicator, targetId])
 
@@ -48,7 +53,7 @@ export default function Sidebar({ active, onChange, badges = {} }) {
       <span
         className="sidebar-hover-pill"
         aria-hidden="true"
-        style={{ '--sidebar-pill-y': `${indicator.top}px`, height: indicator.height }}
+        style={{ '--sidebar-pill-y': `${indicator.top}px`, left: indicator.left, width: indicator.width, height: indicator.height }}
       />
       <div className="sidebar-brand">
         <div className="brand-logo">
