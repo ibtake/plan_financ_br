@@ -150,7 +150,7 @@ export async function logEvent(eventType, severity = 'info', details = {}) {
  * 42501 = insufficient_privilege
  *
  * PGRST301 fica DE FORA de proposito. Ele e sessao expirada - rotina, nao
- * recusa de politica - e useSupabaseFinance.js:181 ja o trata assim, chamando
+ * recusa de politica - e useSupabaseFinance.js:101 ja o trata assim, chamando
  * signOut('session_expired'). Enquanto esteve nesta lista, uma carga com token
  * morto classificava as 10 leituras guardadas de load() como acesso indevido e
  * disparava 10 RPCs de log que o banco recusa de saida: log_security_event

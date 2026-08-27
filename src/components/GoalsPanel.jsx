@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AlertTriangle, CircleHelp, Pencil, Plus, Trash2, Trophy, X } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { amountToInput, formatAmountInput, formatCurrency, formatDate, formatPercent, monthLabelShort, monthsBehind, parseAmount, todayISO } from '../utils/format.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const ICONS = ['🎯', '✈️', '🏠', '🚗', '💻', '🎓', '💍', '🏖️', '📱', '🎁']
 const COLORS = ['#6366f1', '#22c55e', '#0ea5e9', '#f97316', '#ec4899', '#8b5cf6']
@@ -67,19 +68,9 @@ function ReverseMetadataForm({ initial, onSave, onCancel }) {
 function ContributionModal({ goal, onSave, onClose, title = 'Registrar aporte', amountName = 'contribution-amount', dateName = 'contribution-date', dateLabel = 'Data do aporte', minDate }) {
   const [amount, setAmount] = useState('')
   const [occurredOn, setOccurredOn] = useState(todayISO())
-  const [closing, setClosing] = useState(false)
-  const closeWithAnimation = () => {
-    if (closing) return
-    setClosing(true)
-    // Sem ref nem limpeza no unmount, de proposito: aqui o modal desmonta mesmo,
-    // mas o callback do timer e o `onClose` do pai (`() => setModal(false)`), que
-    // continua montado e recebe o valor que ja tem - o React descarta. E reabrir
-    // dentro dos 240 ms nao alcanca o timer velho, porque o backdrop segue cobrindo
-    // a tela (`.reverse-modal-backdrop.is-closing` nao desliga `pointer-events`).
-    window.setTimeout(onClose, 240)
-  }
-  const submit = async (event) => { event.preventDefault(); if (await onSave(goal.id, { amount: parseAmount(amount), occurredOn })) closeWithAnimation() }
-  return <div className={`reverse-modal-backdrop${closing ? ' is-closing' : ''}`} onMouseDown={closeWithAnimation}><form className={`reverse-details aporte-modal${closing ? ' is-closing' : ''}`} onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}><div className="row-between"><strong>{title}</strong><button type="button" className="icon-btn" onClick={closeWithAnimation}><X size={18} /></button></div><label className="label">Valor *</label><input name={amountName} className="input mono aporte-value" value={amount} onChange={(event) => setAmount(formatAmountInput(event.target.value))} inputMode="numeric" required autoFocus /><label className="label">{dateLabel} *</label><input name={dateName} className="input" type="date" min={minDate} max={todayISO()} value={occurredOn} onChange={(event) => setOccurredOn(event.target.value)} required /><button className="btn btn-primary">Salvar aporte</button></form></div>
+  const { closing, close, surfaceRef } = useDialog(onClose)
+  const submit = async (event) => { event.preventDefault(); if (await onSave(goal.id, { amount: parseAmount(amount), occurredOn })) close() }
+  return <div className={`reverse-modal-backdrop${closing ? ' is-closing' : ''}`} onMouseDown={close} role="presentation"><form ref={surfaceRef} className={`reverse-details aporte-modal${closing ? ' is-closing' : ''}`} onMouseDown={(event) => event.stopPropagation()} onSubmit={submit} role="dialog" aria-modal="true" aria-label={title}><div className="row-between"><strong>{title}</strong><button type="button" className="icon-btn" onClick={close} aria-label="Fechar"><X size={18} /></button></div><label className="label">Valor *</label><input name={amountName} className="input mono aporte-value" value={amount} onChange={(event) => setAmount(formatAmountInput(event.target.value))} inputMode="numeric" required autoFocus /><label className="label">{dateLabel} *</label><input name={dateName} className="input" type="date" min={minDate} max={todayISO()} value={occurredOn} onChange={(event) => setOccurredOn(event.target.value)} required /><button className="btn btn-primary">Salvar aporte</button></form></div>
 }
 
 const StandardAporteModal = ContributionModal
@@ -88,14 +79,7 @@ function EditContributionModal({ item, minDate, onSave, onClose }) {
   const [amount, setAmount] = useState(amountToInput(item.amount))
   const [occurredOn, setOccurredOn] = useState(item.occurredOn || '')
   const [saving, setSaving] = useState(false)
-  const [closing, setClosing] = useState(false)
-
-  const closeWithAnimation = () => {
-    if (saving || closing) return
-    setClosing(true)
-    // Mesmo caso do ContributionModal acima; ver o comentario de la.
-    window.setTimeout(onClose, 240)
-  }
+  const { closing, close, surfaceRef } = useDialog(onClose, true, saving)
 
   const submit = async (event) => {
     event.preventDefault()
@@ -104,12 +88,12 @@ function EditContributionModal({ item, minDate, onSave, onClose }) {
     setSaving(true)
     const ok = await onSave(item.id, { amount: parsedAmount, occurredOn })
     setSaving(false)
-    if (ok) closeWithAnimation()
+    if (ok) close()
   }
 
-  return <div className={`reverse-modal-backdrop${closing ? ' is-closing' : ''}`} onMouseDown={closeWithAnimation} role="presentation">
-    <form className={`reverse-details aporte-modal${closing ? ' is-closing' : ''}`} onMouseDown={(event) => event.stopPropagation()} onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="edit-contribution-title">
-      <div className="row-between"><strong id="edit-contribution-title">Editar aporte</strong><button type="button" className="icon-btn" onClick={closeWithAnimation} disabled={saving} aria-label="Fechar"><X size={18} /></button></div>
+  return <div className={`reverse-modal-backdrop${closing ? ' is-closing' : ''}`} onMouseDown={close} role="presentation">
+    <form ref={surfaceRef} className={`reverse-details aporte-modal${closing ? ' is-closing' : ''}`} onMouseDown={(event) => event.stopPropagation()} onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="edit-contribution-title">
+      <div className="row-between"><strong id="edit-contribution-title">Editar aporte</strong><button type="button" className="icon-btn" onClick={close} disabled={saving} aria-label="Fechar"><X size={18} /></button></div>
       <label className="label" htmlFor="edit-contribution-amount">Valor *</label>
       <input id="edit-contribution-amount" name="edit-contribution-amount" className="input mono aporte-value" value={amount} onChange={(event) => setAmount(formatAmountInput(event.target.value))} inputMode="numeric" required autoFocus disabled={saving} />
       <label className="label" htmlFor="edit-contribution-date">Data do aporte *</label>
@@ -119,11 +103,12 @@ function EditContributionModal({ item, minDate, onSave, onClose }) {
   </div>
 }
 
-function ReverseCard({ goal, onAporte, onEdit, onDelete, history = [], contributions = [], events = [], onUpdateContribution, isDeleting }) {
+function ReverseCard({ goal, onAporte, onEdit, onDelete, history = [], contributions = [], onUpdateContribution, isDeleting }) {
   const [open, setOpen] = useState(false)
   const [modal, setModal] = useState(false)
   const [details, setDetails] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
+  const detailsDialog = useDialog(() => setDetails(false), details)
   const progress = Math.min(100, Math.max(0, Number(goal.reverseProgressPercent) || 0))
   const completed = Boolean(goal.reverseCompletedAt || goal.reverseRemainingAmount <= 0)
   // Selic congelada nao inventa valor: rebuild_reverse_goal_for_user faz
@@ -131,7 +116,7 @@ function ReverseCard({ goal, onAporte, onEdit, onDelete, history = [], contribut
   // segue abatendo os aportes sem correcao nenhuma (:1714), entao o restante
   // aparece MENOR que o real - erro a favor da sensacao de progresso, o tipo
   // que ninguem estranha. Sem leitura nova: o historico da meta ja esta em
-  // memoria (useSupabaseFinance.js:162). Sem correcao nenhuma a referencia e o
+  // memoria (financeLoader.js:11-15). Sem correcao nenhuma a referencia e o
   // mes de inicio, senao tabela vazia (cron que nunca rodou) passaria batido.
   // Corte em 2 meses porque a serie 4390 do BCB publica o mes fechado com
   // alguns dias de atraso; 1 mes acusaria todo comeco de mes.
@@ -151,7 +136,7 @@ function ReverseCard({ goal, onAporte, onEdit, onDelete, history = [], contribut
     {open && <><div className="reverse-summary"><span>Original<strong>{formatCurrency(goal.reverseOriginalAmount)}</strong></span><span>Aportado<strong>{formatCurrency(goal.reverseTotalContributed)}</strong></span><span>Correção<strong>{formatCurrency(goal.reverseCorrectionAmount)}</strong></span><span>Restante<strong>{formatCurrency(goal.reverseRemainingAmount)}</strong></span></div><p className="muted">{goal.reverseForecastCompletionDate ? `Previsão de conclusão: ${formatDate(goal.reverseForecastCompletionDate)} (média mensal: ${formatCurrency(goal.reverseMonthlyContributionAverage)})` : 'A previsão aparecerá após os aportes criarem uma média mensal.'}</p>{goal.reverseRemainingAmount > 0 && <button className="btn btn-primary" onClick={() => setModal(true)} disabled={isDeleting}>Fazer aporte</button>}<button className="btn btn-sm" type="button" onClick={() => setDetails(true)} disabled={isDeleting}>Mais detalhes</button></>}
     {modal && <ContributionModal goal={goal} title="Fazer aporte" amountName="reverse-contribution-amount" dateName="reverse-contribution-date" dateLabel="Data real" minDate={goal.reverseStartDate} onSave={onAporte} onClose={() => setModal(false)} />}
     {editingItem && <EditContributionModal item={editingItem} minDate={goal.reverseStartDate} onSave={onUpdateContribution} onClose={() => setEditingItem(null)} />}
-    {details && <div className="reverse-modal-backdrop" onMouseDown={() => setDetails(false)}><section className="reverse-details" onMouseDown={(event) => event.stopPropagation()}><div className="row-between"><strong>Mais detalhes</strong><button className="icon-btn" aria-label="Fechar" onClick={() => setDetails(false)}><X size={18} /></button></div><div className="reverse-timeline">{items.length ? items.map((item, index) => <article className={item.t === 'Aporte' ? 'reverse-timeline-contribution' : ''} key={`${item.t}-${item.id || item.d}-${index}`}><div className="reverse-timeline-info"><strong>{formatDate(item.d)} · {item.t}</strong>{item.v !== undefined && <p>{formatCurrency(Number(item.v))}</p>}</div>{item.t === 'Aporte' && <button className="btn btn-sm reverse-timeline-edit" aria-label="Editar aporte" onClick={() => editContribution(item)} disabled={isDeleting}><Pencil size={15} /><span className="reverse-timeline-edit-label">Editar aporte</span></button>}</article>) : <p className="muted">Ainda não há movimentações nesta meta.</p>}</div></section></div>}
+    {details && <div className={`reverse-modal-backdrop${detailsDialog.closing ? ' is-closing' : ''}`} onMouseDown={detailsDialog.close} role="presentation"><section ref={detailsDialog.surfaceRef} className={`reverse-details${detailsDialog.closing ? ' is-closing' : ''}`} onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="reverse-details-title"><div className="row-between"><strong id="reverse-details-title">Mais detalhes</strong><button className="icon-btn" aria-label="Fechar" onClick={detailsDialog.close}><X size={18} /></button></div><div className="reverse-timeline">{items.length ? items.map((item, index) => <article className={item.t === 'Aporte' ? 'reverse-timeline-contribution' : ''} key={`${item.t}-${item.id || item.d}-${index}`}><div className="reverse-timeline-info"><strong>{formatDate(item.d)} · {item.t}</strong>{item.v !== undefined && <p>{formatCurrency(Number(item.v))}</p>}</div>{item.t === 'Aporte' && <button className="btn btn-sm reverse-timeline-edit" aria-label="Editar aporte" onClick={() => editContribution(item)} disabled={isDeleting}><Pencil size={15} /><span className="reverse-timeline-edit-label">Editar aporte</span></button>}</article>) : <p className="muted">Ainda não há movimentações nesta meta.</p>}</div></section></div>}
   </div>
 }
 
@@ -160,20 +145,21 @@ function StandardCard({ goal, contributions = [], onAddContribution, onUpdateCon
   const [modal, setModal] = useState(false)
   const [details, setDetails] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
+  const detailsDialog = useDialog(() => setDetails(false), details)
   const progress = goal.target ? goal.current / goal.target * 100 : 0
   const completed = goal.current >= goal.target
   const items = [...contributions].sort((a, b) => String(b.occurred_on).localeCompare(String(a.occurred_on)) || Number(b.id) - Number(a.id))
   const editContribution = (item) => setEditingItem({ id: item.id, amount: item.amount, occurredOn: item.occurred_on })
   const toggleFromCard = (event) => { if (!event.target.closest('button, input, select, textarea, form')) setOpen((current) => !current) }
-  return <div className={`goal-card goal-card-expandable${completed ? ' goal-completed' : ''}`} onClick={toggleFromCard}><div className="row-between"><button className="standard-card-main" onClick={() => setOpen(!open)} disabled={isDeleting}><div className="goal-icon" style={{ background: `${goal.color}22`, color: goal.color }}><AppIcon emoji={goal.icon} /></div><span><strong>{goal.name}</strong><small className="goal-badge standard-badge">Meta</small></span></button><div className="row"><button className="icon-btn" onClick={() => onEdit(goal)} disabled={isDeleting}><Pencil size={15} /></button><button className="icon-btn danger" disabled={isDeleting} onClick={async () => { if (window.confirm('Excluir esta meta?')) await onDelete(goal.id) }}><Trash2 size={15} /></button></div></div><div className="progress"><div className="progress-bar" style={{ width: `${Math.min(100, progress)}%`, background: goal.color }} /></div><div className="completion-status text-xs"><span>{formatPercent(progress, 1)} concluído</span>{completed && <span className="completion-trophy" role="img" aria-label="Meta concluída">🏆</span>}</div>{open && <><div className="standard-summary"><span>Valor da meta<strong>{formatCurrency(goal.target)}</strong></span><span>Já aportado<strong>{formatCurrency(goal.current)}</strong></span></div>{!completed && <button className="btn btn-primary" onClick={() => setModal(true)} disabled={isDeleting}><Plus size={15} />Aportar</button>}<button className="btn btn-sm" type="button" onClick={() => setDetails(true)} disabled={isDeleting}>Mais detalhes</button></>}{modal && <StandardAporteModal goal={goal} onSave={onAddContribution} onClose={() => setModal(false)} />}{editingItem && <EditContributionModal item={editingItem} onSave={onUpdateContribution} onClose={() => setEditingItem(null)} />}{details && <div className="reverse-modal-backdrop" onMouseDown={() => setDetails(false)}><section className="reverse-details" onMouseDown={(event) => event.stopPropagation()}><div className="row-between"><strong>Mais detalhes</strong><button className="icon-btn" aria-label="Fechar" onClick={() => setDetails(false)}><X size={18} /></button></div><div className="reverse-timeline">{items.length ? items.map((item) => <article className="reverse-timeline-contribution" key={item.id}><div className="reverse-timeline-info"><strong>{formatDate(item.occurred_on)} · Aporte</strong><p>{formatCurrency(Number(item.amount))}{item.note && ` · ${item.note}`}</p></div><button className="btn btn-sm reverse-timeline-edit" aria-label="Editar aporte" onClick={() => editContribution(item)} disabled={isDeleting}><Pencil size={15} /><span className="reverse-timeline-edit-label">Editar aporte</span></button></article>) : <p className="muted">Ainda não há aportes nesta meta.</p>}</div></section></div>}</div>
+  return <div className={`goal-card goal-card-expandable${completed ? ' goal-completed' : ''}`} onClick={toggleFromCard}><div className="row-between"><button className="standard-card-main" onClick={() => setOpen(!open)} disabled={isDeleting}><div className="goal-icon" style={{ background: `${goal.color}22`, color: goal.color }}><AppIcon emoji={goal.icon} /></div><span><strong>{goal.name}</strong><small className="goal-badge standard-badge">Meta</small></span></button><div className="row"><button className="icon-btn" onClick={() => onEdit(goal)} disabled={isDeleting}><Pencil size={15} /></button><button className="icon-btn danger" disabled={isDeleting} onClick={async () => { if (window.confirm('Excluir esta meta?')) await onDelete(goal.id) }}><Trash2 size={15} /></button></div></div><div className="progress"><div className="progress-bar" style={{ width: `${Math.min(100, progress)}%`, background: goal.color }} /></div><div className="completion-status text-xs"><span>{formatPercent(progress, 1)} concluído</span>{completed && <span className="completion-trophy" role="img" aria-label="Meta concluída">🏆</span>}</div>{open && <><div className="standard-summary"><span>Valor da meta<strong>{formatCurrency(goal.target)}</strong></span><span>Já aportado<strong>{formatCurrency(goal.current)}</strong></span></div>{!completed && <button className="btn btn-primary" onClick={() => setModal(true)} disabled={isDeleting}><Plus size={15} />Aportar</button>}<button className="btn btn-sm" type="button" onClick={() => setDetails(true)} disabled={isDeleting}>Mais detalhes</button></>}{modal && <StandardAporteModal goal={goal} onSave={onAddContribution} onClose={() => setModal(false)} />}{editingItem && <EditContributionModal item={editingItem} onSave={onUpdateContribution} onClose={() => setEditingItem(null)} />}{details && <div className={`reverse-modal-backdrop${detailsDialog.closing ? ' is-closing' : ''}`} onMouseDown={detailsDialog.close} role="presentation"><section ref={detailsDialog.surfaceRef} className={`reverse-details${detailsDialog.closing ? ' is-closing' : ''}`} onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="reverse-details-title"><div className="row-between"><strong id="reverse-details-title">Mais detalhes</strong><button className="icon-btn" aria-label="Fechar" onClick={detailsDialog.close}><X size={18} /></button></div><div className="reverse-timeline">{items.length ? items.map((item) => <article className="reverse-timeline-contribution" key={item.id}><div className="reverse-timeline-info"><strong>{formatDate(item.occurred_on)} · Aporte</strong><p>{formatCurrency(Number(item.amount))}{item.note && ` · ${item.note}`}</p></div><button className="btn btn-sm reverse-timeline-edit" aria-label="Editar aporte" onClick={() => editContribution(item)} disabled={isDeleting}><Pencil size={15} /><span className="reverse-timeline-edit-label">Editar aporte</span></button></article>) : <p className="muted">Ainda não há aportes nesta meta.</p>}</div></section></div>}</div>
 }
 
-export default function GoalsPanel({ goals, reverseHistory, reverseContributions, reverseEvents, standardContributions, onAdd, onAddReverse, onAddReverseContribution, onUpdateReverseContribution, onAddStandardContribution, onUpdateStandardContribution, onUpdate, onUpdateReverse, onDelete, isDeleting }) {
+export default function GoalsPanel({ goals, reverseHistory, reverseContributions, standardContributions, onAdd, onAddReverse, onAddReverseContribution, onUpdateReverseContribution, onAddStandardContribution, onUpdateStandardContribution, onUpdate, onUpdateReverse, onDelete, isDeleting }) {
   const [show, setShow] = useState(false)
   const [editing, setEditing] = useState(null)
   const [editingReverse, setEditingReverse] = useState(null)
   const save = (data) => data.goalType === 'reverse' ? onAddReverse(data) : (editing ? onUpdate(editing.id, data) : onAdd(data))
   const saveReverse = async (data) => onUpdateReverse(editingReverse.id, data)
 
-  return <div className="stack"><div className="card row-between"><div><div className="card-title">Metas de economia</div><div className="card-sub">Crie metas normais ou reversas</div></div><button className="btn btn-primary" onClick={() => { setEditing(null); setEditingReverse(null); setShow(true) }} disabled={isDeleting}><Plus size={15} />Nova meta</button></div>{show && <GoalForm initial={editing} onSave={save} onCancel={() => { setShow(false); setEditing(null) }} />}{editingReverse && <ReverseMetadataForm initial={editingReverse} onSave={saveReverse} onCancel={() => setEditingReverse(null)} />}{goals.length ? <div className="grid-3 goals-grid">{goals.map((goal) => goal.goalType === 'reverse' ? <ReverseCard key={goal.id} goal={goal} history={reverseHistory.filter((item) => item.goal_id === goal.id)} contributions={reverseContributions.filter((item) => item.goal_id === goal.id)} events={reverseEvents.filter((item) => item.goal_id === goal.id)} onAporte={onAddReverseContribution} onUpdateContribution={onUpdateReverseContribution} onEdit={setEditingReverse} onDelete={onDelete} isDeleting={isDeleting} /> : <StandardCard key={goal.id} goal={goal} contributions={standardContributions.filter((item) => item.goal_id === goal.id)} onAddContribution={onAddStandardContribution} onUpdateContribution={onUpdateStandardContribution} onEdit={(item) => { setEditingReverse(null); setEditing(item); setShow(true) }} onDelete={onDelete} isDeleting={isDeleting} />)}</div> : !show && !editingReverse && <div className="card empty"><Trophy />Nenhuma meta cadastrada</div>}</div>
+  return <div className="stack"><div className="card row-between"><div><div className="card-title">Metas de economia</div><div className="card-sub">Crie metas normais ou reversas</div></div><button className="btn btn-primary" onClick={() => { setEditing(null); setEditingReverse(null); setShow(true) }} disabled={isDeleting}><Plus size={15} />Nova meta</button></div>{show && <GoalForm initial={editing} onSave={save} onCancel={() => { setShow(false); setEditing(null) }} />}{editingReverse && <ReverseMetadataForm initial={editingReverse} onSave={saveReverse} onCancel={() => setEditingReverse(null)} />}{goals.length ? <div className="grid-3 goals-grid">{goals.map((goal) => goal.goalType === 'reverse' ? <ReverseCard key={goal.id} goal={goal} history={reverseHistory.filter((item) => item.goal_id === goal.id)} contributions={reverseContributions.filter((item) => item.goal_id === goal.id)} onAporte={onAddReverseContribution} onUpdateContribution={onUpdateReverseContribution} onEdit={setEditingReverse} onDelete={onDelete} isDeleting={isDeleting} /> : <StandardCard key={goal.id} goal={goal} contributions={standardContributions.filter((item) => item.goal_id === goal.id)} onAddContribution={onAddStandardContribution} onUpdateContribution={onUpdateStandardContribution} onEdit={(item) => { setEditingReverse(null); setEditing(item); setShow(true) }} onDelete={onDelete} isDeleting={isDeleting} />)}</div> : !show && !editingReverse && <div className="card empty"><Trophy />Nenhuma meta cadastrada</div>}</div>
 }

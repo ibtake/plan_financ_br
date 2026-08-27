@@ -210,7 +210,7 @@ export default function AuthScreen() {
         </div>
 
         {error && (
-          <div className="notice danger" style={{ marginTop: 16 }} role="alert">
+          <div id="auth-error" className="notice danger" style={{ marginTop: 16 }} role="alert">
             {error}
           </div>
         )}
@@ -311,7 +311,7 @@ export default function AuthScreen() {
               Digite o código de 6 dígitos exibido no seu aplicativo autenticador.
             </div>
 
-            <CodeInput value={code} onChange={setCode} disabled={busy} />
+            <CodeInput value={code} onChange={setCode} disabled={busy} errorId={error ? 'auth-error' : undefined} />
 
             <button
               className="btn btn-primary btn-block"

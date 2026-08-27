@@ -139,6 +139,10 @@ export default function Topbar({
   // O valor autoritativo pode mudar por fora (ex.: limpeza em outro painel);
   // o rascunho acompanha quando ja nao ha edicao em andamento.
   useEffect(() => {
+    // Um debounce pendente carrega o valor antigo: sem cancelar, ele reverteria
+    // a mudanca vinda de fora poucos ms depois.
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+    searchDebounceRef.current = null
     setSearchDraft(search)
   }, [search])
 

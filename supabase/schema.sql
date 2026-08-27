@@ -97,15 +97,16 @@ $$;
 -- expirar naturalmente (ate 1 hora).
 -- =====================================================================
 
--- GRACE_SECONDS absorve duas fontes de erro que, sem tolerancia, causariam
+-- c_grace absorve duas fontes de erro que, sem tolerancia, causariam
 -- bloqueio total do usuario legitimo:
 --   1. "iat" tem granularidade de 1 segundo (truncado); updated_at tem
 --      microssegundos. Sem arredondar para baixo, um token emitido no mesmo
 --      instante do UPDATE ja nasceria "velho".
 --   2. O proprio Supabase toca updated_at durante o login (last_sign_in_at),
 --      no mesmo momento em que emite o token.
--- 10s nao enfraquece a revogacao: uma troca de senha real deixa o token
+-- 1s nao enfraquece a revogacao: uma troca de senha real deixa o token
 -- antigo minutos ou horas atras do updated_at.
+-- Reduzido de 10s para 1s na v26 (20260811104240_v26_reduce_token_grace.sql).
 
 create or replace function public.is_token_valid()
 returns boolean

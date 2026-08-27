@@ -8,6 +8,7 @@ import {
 import { amountToInput, formatAmountInput, parseAmount, todayISO } from '../utils/format.js'
 import { RECURRENCE_END_ERROR, recurrenceEndBeforeStart } from '../utils/recurrence.js'
 import { normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
+import { useDialog } from '../hooks/useDialog.js'
 import { parseQuickTransaction } from '../utils/quickTransaction.js'
 
 const EMPTY = {
@@ -28,14 +29,13 @@ const EMPTY = {
 export default function TransactionForm({ open, onClose, onSubmit, initial, categories, transactions, defaultDate, fieldVisibility }) {
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
-  const [closing, setClosing] = useState(false)
   const [quickText, setQuickText] = useState('')
   const isEditing = Boolean(initial?.id)
   const visibleFields = normalizeTransactionFormFields(fieldVisibility)
+  const { closing, close, surfaceRef } = useDialog(onClose, open)
 
   useEffect(() => {
     if (!open) return
-    setClosing(false)
     if (initial) {
       setForm({
         ...EMPTY,
@@ -68,17 +68,6 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
   const showField = (field) => isEditing || visibleFields[field]
-  const closeWithAnimation = () => {
-    if (closing) return
-    setClosing(true)
-    // Sem ref nem limpeza no unmount, de proposito: o `if (!open) return null` no
-    // topo mantem este componente montado o tempo todo, entao fechar nao desmonta
-    // nada - ele so cai junto com o AuthenticatedApp, quando o dono do `onClose`
-    // tambem se foi. E reabrir dentro dos 240 ms nao alcanca o timer velho porque o
-    // backdrop segue cobrindo a tela (`.modal-backdrop.is-closing` nao desliga
-    // `pointer-events`). O efeito de `open` zera o `closing` na reabertura.
-    window.setTimeout(onClose, 240)
-  }
 
   const executeQuickEntry = () => {
     const parsed = parseQuickTransaction(quickText, { defaultDate, categories, transactions: transactions || [] })
@@ -118,15 +107,16 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
       amount: parseAmount(form.amount),
       installments: Math.max(1, Number(form.installments) || 1),
     })
-    closeWithAnimation()
+    close()
   }
 
   const installments = Math.max(1, Number(form.installments) || 1)
   const amountValue = parseAmount(form.amount)
 
   return (
-    <div className={`modal-backdrop${closing ? ' is-closing' : ''}`} onClick={closeWithAnimation} role="presentation">
+    <div className={`modal-backdrop${closing ? ' is-closing' : ''}`} onClick={close} role="presentation">
       <div
+        ref={surfaceRef}
         className={`modal${closing ? ' is-closing' : ''}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -141,7 +131,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
               </div>
               {isEditing && <div className="card-sub">Altere os dados e salve</div>}
             </div>
-            <button type="button" className="icon-btn" onClick={closeWithAnimation} aria-label="Fechar">
+            <button type="button" className="icon-btn" onClick={close} aria-label="Fechar">
               <X size={18} strokeWidth={2} />
             </button>
           </div>
@@ -393,7 +383,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
           </div>
 
           <div className="modal-foot">
-            <button type="button" className="btn" onClick={closeWithAnimation}>
+            <button type="button" className="btn" onClick={close}>
               Cancelar
             </button>
             <button type="submit" className="btn btn-primary" disabled={closing}>

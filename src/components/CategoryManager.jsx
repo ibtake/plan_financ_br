@@ -255,7 +255,7 @@ function CategoryRow({ category, usage, onEdit, onDelete }) {
   // Toda categoria e excluivel, as 22 padrao inclusive: a policy `own categories
   // delete` (schema.sql:650-654) so checa o dono, nao ha trigger de delete e
   // `custom` (schema.sql:611) e informativo. deleteCategory realoca os lancamentos
-  // antes de excluir (useSupabaseFinance.js:398-413), e handleDelete (:352) pede
+  // antes de excluir (useFinanceOperations.js:85-101), e handleDelete (:352) pede
   // confirmacao dizendo quantos serao movidos - nao ha nada a bloquear aqui.
 
   return (
@@ -337,7 +337,7 @@ export default function CategoryManager({
   // do evento de clique (lane sincrona): o formulario desmonta antes de o navegador
   // despachar o clique seguinte, e `addCategory` ainda segura
   // `categoryInsertInFlight` durante a escrita inteira
-  // (useSupabaseFinance.js:316-330). A janela so abre se o CategoryForm ganhar
+  // (useFinanceOperations.js:59-73). A janela so abre se o CategoryForm ganhar
   // animacao de saida como o TransactionForm - la o botao segue clicavel por ~240ms
   // e o guard local e obrigatorio (TransactionForm.jsx:93-97). Nesse caso volte um
   // guard aqui, resetado DEPOIS da escrita; resetar no mesmo tick foi o defeito do

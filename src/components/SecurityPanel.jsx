@@ -7,10 +7,12 @@ function EventList() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(false)
+  const [error, setError] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await fetchEvents(60)
+    const { data, error: loadError } = await fetchEvents(60)
+    setError(loadError ? 'Não foi possível carregar o histórico. Tente atualizar.' : null)
     setEvents(data || [])
     setExpanded(false)
     setLoading(false)
@@ -47,7 +49,9 @@ function EventList() {
           histórico e altere sua senha se não reconhecer alguma atividade.
         </div>
       )}
-      {loading ? <div className="empty">Carregando histórico...</div> : events.length === 0 ? (
+      {loading ? <div className="empty">Carregando histórico...</div> : error ? (
+        <div className="notice danger" role="alert">{error}</div>
+      ) : events.length === 0 ? (
         <div className="empty">Nenhum evento registrado ainda.</div>
       ) : (
         <>
@@ -116,7 +120,7 @@ export default function SecurityPanel() {
     setBusy(true); setMessage(null)
     const result = await auth.verifyMfaEnrollment(setup.factorId, code)
     setBusy(false)
-    if (result.error) setMessage({ tone: 'danger', text: result.error })
+    if (result.error) setMessage({ tone: 'danger', text: result.error, field: 'code' })
     else {
       setSetup(null); setCode(''); setEnabled(true)
       setMessage({ tone: 'success', text: 'Verificação em duas etapas ativada.' })
@@ -128,7 +132,7 @@ export default function SecurityPanel() {
     setBusy(true); setMessage(null)
     const result = await auth.disableMfa(disableCode)
     setBusy(false)
-    if (result.error) setMessage({ tone: 'danger', text: result.error })
+    if (result.error) setMessage({ tone: 'danger', text: result.error, field: 'disableCode' })
     else {
       setDisableCode(''); setEnabled(false)
       setMessage({ tone: 'success', text: 'Verificação em duas etapas desativada.' })
@@ -137,7 +141,7 @@ export default function SecurityPanel() {
 
   return (
     <div className="stack">
-      {message && <div className={`notice ${message.tone}`} role={message.tone === 'danger' ? 'alert' : 'status'}>{message.text}</div>}
+      {message && <div id="security-message" className={`notice ${message.tone}`} role={message.tone === 'danger' ? 'alert' : 'status'}>{message.text}</div>}
       <section className="card">
         <div className="card-head">
           <div>
@@ -172,7 +176,7 @@ export default function SecurityPanel() {
               <p>Digite esta chave manualmente no aplicativo:</p>
               <code className="mfa-secret">{setup.secret}</code>
             </details>
-            <CodeInput value={code} onChange={setCode} disabled={busy} />
+            <CodeInput value={code} onChange={setCode} disabled={busy} errorId={message?.field === 'code' ? 'security-message' : undefined} />
             <div className="settings-actions">
               <button className="btn btn-primary" onClick={confirm} disabled={busy || code.length !== 6}>
                 {busy ? 'Verificando...' : 'Confirmar ativação'}
@@ -187,7 +191,7 @@ export default function SecurityPanel() {
             <div className="notice success">Sua conta exige um código temporário após a senha.</div>
             <div className="field" style={{ maxWidth: 420 }}>
               <label className="label">Código atual para desativar</label>
-              <CodeInput value={disableCode} onChange={setDisableCode} disabled={busy} autoFocus={false} />
+              <CodeInput value={disableCode} onChange={setDisableCode} disabled={busy} autoFocus={false} errorId={message?.field === 'disableCode' ? 'security-message' : undefined} />
             </div>
             <div><button className="btn btn-danger" onClick={disable} disabled={busy || disableCode.length !== 6}>Desativar MFA</button></div>
           </div>
