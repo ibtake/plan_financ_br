@@ -613,8 +613,20 @@ canvas {
 
 .month-nav-scroll {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 14px 32px 0;
 }
+
+.refresh-month-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.mobile-month-refresh { display: none; }
+
+.refresh-page-btn.desktop-month-refresh { display: flex; }
 
 .month-nav {
   display: flex;
@@ -2998,28 +3010,10 @@ dialog.modal-backdrop {
 .finance-loading-panel { height: 205px; border-radius: var(--radius); border: 1px solid var(--border); }
 .finance-loading-message { position: absolute; right: 32px; top: calc(var(--topbar-h) + 18px); color: var(--text-muted); font-size: 12px; }
 
-.refresh-skeleton-bar {
-  position: fixed;
-  z-index: 80;
-  top: var(--topbar-h);
-  right: 20px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: min(320px, calc(100vw - 40px));
-  padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: 0 0 12px 12px;
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  box-shadow: var(--shadow);
-  color: var(--text-muted);
-  font-size: 12px;
-  pointer-events: none;
-}
-
-.refresh-skeleton-line { width: 72px; height: 10px; flex: 0 0 auto; }
-
 .page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+
+.refresh-state-success { color: #15803d; }
+.refresh-state-error { color: #dc2626; }
 
 .spin { animation: spin 900ms linear infinite; }
 
@@ -3065,11 +3059,17 @@ dialog.modal-backdrop {
   .finance-loading-message { right: 20px; top: calc(var(--topbar-h) + 14px); }
 }
 
+@media (min-width: 901px) {
+  .page-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 @media (max-width: 520px) {
   .finance-loading-kpi { min-height: 124px; padding: 16px; }
   .finance-loading-chart { height: 220px; }
   .finance-loading-message { font-size: 11px; }
-  .refresh-skeleton-bar { right: 10px; width: calc(100vw - 20px); }
   .page-actions { width: 100%; justify-content: stretch; }
   .page-actions .btn { flex: 1; }
 }
@@ -3767,6 +3767,18 @@ dialog.modal-backdrop {
     padding: 0 10px !important;
     font-size: 11px !important;
   }
+
+  .refresh-month-btn {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .refresh-month-label { display: none; }
+
+  .mobile-month-refresh { display: flex; }
+  .refresh-page-btn.desktop-month-refresh { display: none; }
 
   /* Espaçamento consistente entre o seletor e o título da página */
   .main-content {

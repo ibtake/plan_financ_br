@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useTransition } from 'react'
-import { Plus, RefreshCw } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { Check, Plus, RefreshCw, X } from 'lucide-react'
 import Sidebar from './components/Sidebar.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import Topbar from './components/Topbar.jsx'
@@ -140,12 +140,41 @@ function AuthenticatedApp() {
   // Busca do topo: o mesmo filtro que ja existia na lista, agora acessivel
   // de qualquer painel.
   const [search, setSearch] = useState('')
+  const [refreshState, setRefreshState] = useState('idle')
+  const refreshObservedRef = useRef(false)
+  const refreshResetTimer = useRef(null)
   const monthly = useMonthlyData(finance.transactions, monthKey)
   // "Posicao atual" ancora no mes real de hoje; lancamentos de meses futuros
   // so entram quando o usuario avanca o seletor para alem do mes atual.
   const chartMonthKey = monthKey > currentMonthKey() ? monthKey : currentMonthKey()
   const chartMonthly = useMonthlyData(finance.transactions, chartMonthKey)
   const theme = finance.theme === 'dark' || finance.theme === 'light' ? finance.theme : systemTheme
+  const showMonthNav = !['budget', 'goals', 'pgbl'].includes(activeTab)
+
+  const finishRefreshFeedback = useCallback((state) => {
+    setRefreshState(state)
+    window.clearTimeout(refreshResetTimer.current)
+    refreshResetTimer.current = window.setTimeout(() => setRefreshState('idle'), 10000)
+  }, [])
+
+  const handleRefresh = () => {
+    refreshObservedRef.current = false
+    setRefreshState('loading')
+    void finance.refresh().then((result) => {
+      if (result === false && !refreshObservedRef.current) finishRefreshFeedback('error')
+    })
+  }
+
+  useEffect(() => () => window.clearTimeout(refreshResetTimer.current), [])
+  useEffect(() => {
+    if (refreshState !== 'loading') return
+    if (finance.revalidating) {
+      refreshObservedRef.current = true
+      return
+    }
+    if (!refreshObservedRef.current) return
+    finishRefreshFeedback(finance.dataStatus === 'confirmed' ? 'success' : 'error')
+  }, [finance.dataStatus, finance.revalidating, finishRefreshFeedback, refreshState])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
@@ -294,12 +323,6 @@ function AuthenticatedApp() {
 
   return (
     <div className="app-shell finance-content-enter">
-      {finance.revalidating && (
-        <div className="refresh-skeleton-bar" role="status" aria-live="polite" aria-label="Atualizando dados confirmados" aria-busy="true">
-          <span className="skeleton refresh-skeleton-line" aria-hidden="true" />
-          <span>Atualizando dados confirmados...</span>
-        </div>
-      )}
       {finance.isDeletingGoal && (
         <div className="sync-overlay" role="status" aria-live="assertive" aria-label="Atualizando metas">
           <div className="sync-overlay-card">
@@ -327,7 +350,10 @@ function AuthenticatedApp() {
           pending={pending}
           pendingTotal={pendingTotal}
           onOpenPending={(occurrence) => { setNotificationFocus(occurrence); setActiveTab('transactions') }}
-          showMonthNav={!['budget', 'goals', 'pgbl'].includes(activeTab)}
+          onRefresh={handleRefresh}
+          isRefreshing={refreshState === 'loading' || finance.revalidating}
+          refreshState={refreshState}
+          showMonthNav={showMonthNav}
         />
 
         <main className="container main-content" aria-busy={finance.revalidating}>
@@ -366,9 +392,9 @@ function AuthenticatedApp() {
               </p>
             </div>
             <div className="page-actions">
-              <button type="button" className="btn" onClick={finance.refresh} disabled={finance.revalidating}>
-                <RefreshCw size={16} strokeWidth={2} className={finance.revalidating ? 'spin' : undefined} />
-                {finance.revalidating ? 'Atualizando...' : 'Atualizar'}
+              <button type="button" className={`btn refresh-page-btn${showMonthNav ? ' desktop-month-refresh' : ''} refresh-state-${refreshState}`} onClick={handleRefresh} disabled={refreshState === 'loading' || finance.revalidating}>
+                {refreshState === 'success' ? <Check size={16} strokeWidth={2.4} /> : refreshState === 'error' ? <X size={16} strokeWidth={2.4} /> : <RefreshCw size={16} strokeWidth={2} className={finance.revalidating ? 'spin' : undefined} />}
+                {refreshState === 'success' ? 'Atualizado' : refreshState === 'error' ? 'Ixi, deu erro!' : refreshState === 'loading' || finance.revalidating ? 'Atualizando...' : 'Atualizar'}
               </button>
               {!['budget', 'goals', 'pgbl'].includes(activeTab) && (
                 <button type="button" className="btn btn-primary add-main" onClick={openNew}>

@@ -48,8 +48,13 @@ export default function Sidebar({ active, onChange, badges = {} }) {
     }
   }, [moveIndicator, targetId])
 
+  const handleMouseLeave = () => {
+    setHovered(null)
+    sidebarRef.current?.querySelector(':focus')?.blur()
+  }
+
   return (
-    <aside className="sidebar" ref={sidebarRef} onMouseLeave={() => setHovered(null)}>
+    <aside className="sidebar" ref={sidebarRef} onMouseLeave={handleMouseLeave}>
       <span
         className="sidebar-hover-pill"
         aria-hidden="true"
