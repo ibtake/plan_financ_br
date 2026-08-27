@@ -243,13 +243,6 @@ canvas {
     box-shadow: var(--shadow-lg);
   }
 
-  .sidebar:not(:hover):not(:focus-within) .sidebar-hover-pill {
-    left: 50%;
-    right: auto;
-    width: 44px;
-    transform: translate(-50%, var(--sidebar-pill-y));
-  }
-
   .sidebar:not(:hover):not(:focus-within) .sidebar-badge {
     display: none;
   }
