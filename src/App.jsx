@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useTransition } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, RefreshCw } from 'lucide-react'
 import Sidebar from './components/Sidebar.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import Topbar from './components/Topbar.jsx'
@@ -120,7 +120,7 @@ export default function App() {
   // le o claim com `->>`, que casa boolean true e string 'true').
   if (String(auth.session?.user?.app_metadata?.must_change_password) === 'true') return <RequiredPasswordChange />
 
-  return <AuthenticatedApp />
+  return <AuthenticatedApp key={auth.user.id} />
 }
 
 function AuthenticatedApp() {
@@ -294,6 +294,12 @@ function AuthenticatedApp() {
 
   return (
     <div className="app-shell finance-content-enter">
+      {finance.revalidating && (
+        <div className="refresh-skeleton-bar" role="status" aria-live="polite" aria-label="Atualizando dados confirmados" aria-busy="true">
+          <span className="skeleton refresh-skeleton-line" aria-hidden="true" />
+          <span>Atualizando dados confirmados...</span>
+        </div>
+      )}
       {finance.isDeletingGoal && (
         <div className="sync-overlay" role="status" aria-live="assertive" aria-label="Atualizando metas">
           <div className="sync-overlay-card">
@@ -324,7 +330,7 @@ function AuthenticatedApp() {
           showMonthNav={!['budget', 'goals', 'pgbl'].includes(activeTab)}
         />
 
-        <main className="container main-content">
+        <main className="container main-content" aria-busy={finance.revalidating}>
           {/* Sem sufixo colado aqui: o banner nao sabe se houve recarga, e um
               " Os dados foram recarregados do servidor." fixo mentia em toda
               mensagem que retorna antes de qualquer leitura - validacao local de
@@ -334,6 +340,15 @@ function AuthenticatedApp() {
               (useSupabaseFinance.js:46), que desde o B78 recebe `reloaded` em
               tres estados - a promessa vem do retorno do `load`, e a recarga que
               falha avisa em vez de calar. */}
+          {(finance.dataStatus !== 'confirmed' || finance.offlineStorageError) && (
+            <div className={`notice ${finance.dataStatus === 'offline' || finance.dataStatus === 'error' || finance.offlineStorageError ? 'warning' : 'info'}`} role="status" aria-live="polite" style={{ marginBottom: 20 }}>
+              {finance.offlineStorageError || (finance.dataStatus === 'offline'
+                ? 'Sem confirmação do servidor. Exibindo os últimos dados disponíveis.'
+                : finance.dataStatus === 'error'
+                  ? 'Não foi possível confirmar os dados no servidor.'
+                  : 'Dados locais em exibição; conferindo a versão do servidor.')}
+            </div>
+          )}
           {finance.error && (
             <div className="notice danger" role="alert" style={{ marginBottom: 20 }}>
               {finance.error}
@@ -345,14 +360,23 @@ function AuthenticatedApp() {
               <h1 className="page-title">{page.title}</h1>
               <p className="page-sub">
                 {activeTab === 'overview' ? `${page.sub} • ${monthLabel(monthKey)}` : page.sub}
+                {finance.dataStatus === 'confirmed' && finance.lastUpdatedAt
+                  ? ` • Atualizado às ${new Date(finance.lastUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                  : ''}
               </p>
             </div>
-            {!['budget', 'goals', 'pgbl'].includes(activeTab) && (
-              <button type="button" className="btn btn-primary add-main" onClick={openNew}>
-                <Plus size={16} strokeWidth={2.2} />
-                Novo lançamento
+            <div className="page-actions">
+              <button type="button" className="btn" onClick={finance.refresh} disabled={finance.revalidating}>
+                <RefreshCw size={16} strokeWidth={2} className={finance.revalidating ? 'spin' : undefined} />
+                {finance.revalidating ? 'Atualizando...' : 'Atualizar'}
               </button>
-            )}
+              {!['budget', 'goals', 'pgbl'].includes(activeTab) && (
+                <button type="button" className="btn btn-primary add-main" onClick={openNew}>
+                  <Plus size={16} strokeWidth={2.2} />
+                  Novo lançamento
+                </button>
+              )}
+            </div>
           </div>
 
           {activeTab === 'overview' && overview}
@@ -416,6 +440,8 @@ function AuthenticatedApp() {
               onSetReverseGoalRetention={finance.setReverseGoalRetention}
               transactionFormFields={finance.transactionFormFields}
               onTransactionFormFieldsChange={finance.setTransactionFormFields}
+              offlineCacheEnabled={finance.offlineCacheEnabled}
+              onOfflineCacheChange={auth.setOfflineCache}
             />
           )}
 

@@ -8,7 +8,11 @@ const AuthContext = createContext(null)
 export { validatePassword }
 
 export function AuthProvider({ children }) {
-  const { session, user, loading, mfaStage, assuranceLevel, refreshAssurance, signOut } = useAuthSession()
+  const {
+    session, user, loading, mfaStage, assuranceLevel, sessionRevision,
+    offlineCacheEnabled, refreshAssurance, requestSessionRefresh,
+    scheduleSessionRetry, clearSessionRetry, setOfflineCache, signOut,
+  } = useAuthSession()
   const operations = useAuthOperations({ refreshAssurance })
   const missingConfig = configurationProblem()
 
@@ -18,11 +22,19 @@ export function AuthProvider({ children }) {
     loading,
     mfaStage,
     assuranceLevel,
+    sessionRevision,
+    offlineCacheEnabled,
+    requestSessionRefresh,
+    scheduleSessionRetry,
+    clearSessionRetry,
+    setOfflineCache,
     isConfigured: isSupabaseConfigured,
     configurationProblem: missingConfig,
     ...operations,
     signOut,
-  }), [session, user, loading, mfaStage, assuranceLevel, missingConfig, operations, signOut])
+  }), [session, user, loading, mfaStage, assuranceLevel, sessionRevision, offlineCacheEnabled,
+    requestSessionRefresh, scheduleSessionRetry, clearSessionRetry, setOfflineCache,
+    missingConfig, operations, signOut])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

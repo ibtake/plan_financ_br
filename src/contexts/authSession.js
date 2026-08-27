@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase, isSupabaseConfigured } from '../lib/supabase.js'
+import { offlineDb, OFFLINE_CACHE_PREFERENCE_KEY } from '../lib/offlineDb.js'
+import { createRefreshCoordinator, isRetryableConnectionError, retryDelay } from '../lib/offlineRevalidation.js'
 import { AUTH_EVENTS, logAuthEvent } from './authAudit.js'
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000
@@ -36,9 +38,15 @@ export function useAuthSession() {
   const [loading, setLoading] = useState(true)
   const [mfaStage, setMfaStage] = useState('none')
   const [assuranceLevel, setAssuranceLevel] = useState(null)
+  const [sessionRevision, setSessionRevision] = useState(0)
+  const [offlineCacheEnabled, setOfflineCacheEnabled] = useState(false)
   const idleTimer = useRef(null)
   const lastActivityAt = useRef(0)
-  const refreshInFlight = useRef(null)
+  const currentUserId = useRef(null)
+  const refreshRequest = useRef(async () => false)
+  const retryTimer = useRef(null)
+  const retryAttempt = useRef(0)
+  const scheduleRetryRef = useRef(null)
 
   const getLastActivityAt = useCallback((currentSession) => (
     Math.max(lastActivityAt.current, getStoredLastActivityAt(), getSessionStartedAt(currentSession))
@@ -77,12 +85,45 @@ export function useAuthSession() {
   const signOut = useCallback(async (reason = 'manual') => {
     if (!supabase) return
     if (reason === 'manual') await logAuthEvent(AUTH_EVENTS.LOGOUT, 'info', { reason })
+    if (currentUserId.current) await offlineDb.purgeUser(currentUserId.current)
+    if (retryTimer.current) window.clearTimeout(retryTimer.current)
+    retryTimer.current = null
+    retryAttempt.current = 0
     await supabase.auth.signOut()
     clearUserActivity()
     lastActivityAt.current = 0
     setSession(null)
     setUser(null)
+    currentUserId.current = null
     setMfaStage('none')
+    setOfflineCacheEnabled(false)
+  }, [])
+
+  const requestSessionRefresh = useCallback(() => refreshRequest.current(), [])
+
+  const clearSessionRetry = useCallback(() => {
+    if (retryTimer.current) window.clearTimeout(retryTimer.current)
+    retryTimer.current = null
+    retryAttempt.current = 0
+  }, [])
+
+  const scheduleSessionRetry = useCallback(() => {
+    if (retryTimer.current || document.visibilityState !== 'visible') return
+    const delay = retryDelay(retryAttempt.current++)
+    retryTimer.current = window.setTimeout(async () => {
+      retryTimer.current = null
+      const refreshed = await requestSessionRefresh()
+      if (!refreshed) scheduleRetryRef.current?.()
+    }, delay)
+  }, [requestSessionRefresh])
+  scheduleRetryRef.current = scheduleSessionRetry
+
+  const setOfflineCache = useCallback(async (enabled) => {
+    const userId = currentUserId.current
+    if (!userId) return false
+    const saved = await offlineDb.setEnabled(userId, enabled)
+    if (saved) setOfflineCacheEnabled(Boolean(enabled))
+    return saved
   }, [])
 
   useEffect(() => {
@@ -108,12 +149,17 @@ export function useAuthSession() {
         setAssuranceLevel(null)
       }
       if (!active || version !== sessionVersion) return
+      const previousUserId = currentUserId.current
+      const nextUserId = nextSession?.user?.id || null
+      if (previousUserId && previousUserId !== nextUserId) await offlineDb.purgeUser(previousUserId)
+      currentUserId.current = nextUserId
       setSession(nextSession || null)
       setUser((current) => (
         current?.id === nextSession?.user?.id && current?.updated_at === nextSession?.user?.updated_at
           ? current
           : nextSession?.user || null
       ))
+      setOfflineCacheEnabled(nextUserId ? offlineDb.preferenceEnabled(nextUserId) : false)
       setLoading(false)
     }
 
@@ -132,51 +178,72 @@ export function useAuthSession() {
 
     const refreshSessionOnReturn = async () => {
       if (!active || document.visibilityState !== 'visible') return
-      if (refreshInFlight.current) return refreshInFlight.current
-
-      refreshInFlight.current = (async () => {
-        const { data: current } = await supabase.auth.getSession()
-        if (!current.session) {
-          const version = ++sessionVersion
-          await applySession(null, version)
-          return
-        }
-        if (isIdleSession(current.session)) {
-          clearUserActivity()
-          await supabase.auth.signOut()
-          const version = ++sessionVersion
-          await applySession(null, version)
-          return
-        }
-        const expiresAt = Number(current.session.expires_at || 0) * 1000
-        if (expiresAt && expiresAt - Date.now() > SESSION_REFRESH_SKEW_MS) return
+      const { data: current } = await supabase.auth.getSession()
+      if (!current.session) {
+        const version = ++sessionVersion
+        await applySession(null, version)
+        return false
+      }
+      if (isIdleSession(current.session)) {
+        clearUserActivity()
+        await supabase.auth.signOut()
+        const version = ++sessionVersion
+        await applySession(null, version)
+        return false
+      }
+      const expiresAt = Number(current.session.expires_at || 0) * 1000
+      if (!expiresAt || expiresAt - Date.now() <= SESSION_REFRESH_SKEW_MS) {
         const { data, error } = await supabase.auth.refreshSession()
         if (error || !data.session) {
+          if (isRetryableConnectionError(error)) {
+            scheduleSessionRetry()
+            return false
+          }
           const version = ++sessionVersion
           await applySession(null, version)
+          return false
         }
-      })()
-
-      try {
-        await refreshInFlight.current
-      } finally {
-        refreshInFlight.current = null
       }
+      setSessionRevision((value) => value + 1)
+      return true
     }
 
-    const handleVisibilityChange = () => { void refreshSessionOnReturn() }
+    const coordinatedRefresh = createRefreshCoordinator(async () => {
+      try {
+        return await refreshSessionOnReturn()
+      } catch (error) {
+        if (isRetryableConnectionError(error)) scheduleSessionRetry()
+        return false
+      }
+    })
+    refreshRequest.current = coordinatedRefresh
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        if (retryTimer.current) window.clearTimeout(retryTimer.current)
+        retryTimer.current = null
+        return
+      }
+      void coordinatedRefresh()
+    }
+    const handleReturn = () => { void coordinatedRefresh() }
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('pageshow', handleVisibilityChange)
-    window.addEventListener('focus', handleVisibilityChange)
+    window.addEventListener('pageshow', handleReturn)
+    window.addEventListener('focus', handleReturn)
+    window.addEventListener('online', handleReturn)
 
     return () => {
       active = false
+      refreshRequest.current = async () => false
+      if (retryTimer.current) window.clearTimeout(retryTimer.current)
+      retryTimer.current = null
       listener?.subscription?.unsubscribe()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('pageshow', handleVisibilityChange)
-      window.removeEventListener('focus', handleVisibilityChange)
+      window.removeEventListener('pageshow', handleReturn)
+      window.removeEventListener('focus', handleReturn)
+      window.removeEventListener('online', handleReturn)
     }
-  }, [isIdleSession, markUserActivity, refreshAssurance])
+  }, [isIdleSession, markUserActivity, refreshAssurance, scheduleSessionRetry])
 
   useEffect(() => {
     if (!session) return
@@ -215,6 +282,9 @@ export function useAuthSession() {
         }
         schedule()
       }
+      if (event.key === OFFLINE_CACHE_PREFERENCE_KEY) {
+        setOfflineCacheEnabled(offlineDb.preferenceEnabled(session.user.id))
+      }
     }
     window.addEventListener('storage', handleSharedActivity)
     schedule()
@@ -226,5 +296,9 @@ export function useAuthSession() {
     }
   }, [getLastActivityAt, isIdleSession, markUserActivity, session, signOut])
 
-  return { session, user, loading, mfaStage, assuranceLevel, refreshAssurance, signOut }
+  return {
+    session, user, loading, mfaStage, assuranceLevel, sessionRevision,
+    offlineCacheEnabled, refreshAssurance, requestSessionRefresh,
+    scheduleSessionRetry, clearSessionRetry, setOfflineCache, signOut,
+  }
 }

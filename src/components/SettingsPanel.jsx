@@ -20,6 +20,8 @@ export default function SettingsPanel({
   onSetReverseGoalRetention,
   transactionFormFields,
   onTransactionFormFieldsChange,
+  offlineCacheEnabled,
+  onOfflineCacheChange,
 }) {
   const inputRef = useRef(null)
   const [message, setMessage] = useState(null)
@@ -30,6 +32,7 @@ export default function SettingsPanel({
   const [widgetTokens, setWidgetTokens] = useState([])
   const [loadingWidgetStatus, setLoadingWidgetStatus] = useState(true)
   const [widgetError, setWidgetError] = useState(false)
+  const [savingOfflineCache, setSavingOfflineCache] = useState(false)
 
   // A configuracao vem junto dos dados auxiliares. Enquanto ela nao chegou,
   // o select fica bloqueado para nao gravar acidentalmente "Nunca excluir".
@@ -55,6 +58,16 @@ export default function SettingsPanel({
     ['note', 'Observação'],
     ['paid', 'Status pago/recebido'],
   ]
+
+  const toggleOfflineCache = async () => {
+    setSavingOfflineCache(true)
+    const enabled = !offlineCacheEnabled
+    const saved = await onOfflineCacheChange(enabled)
+    setMessage(saved
+      ? { tone: 'success', text: enabled ? 'Cache local ativado neste dispositivo.' : 'Cache local desativado; a limpeza dos dados foi solicitada.' }
+      : { tone: 'danger', text: 'Não foi possível alterar o cache local neste navegador.' })
+    setSavingOfflineCache(false)
+  }
 
   // Sucesso so pode aparecer se a operacao concluiu de fato. Os dois caminhos de
   // falha sao distintos: importData e clearAll sinalizam erro por retorno `false`
@@ -212,6 +225,15 @@ export default function SettingsPanel({
             <div><strong>{transactionCount}</strong><span>lançamentos</span></div>
             <div><strong>{categoryCount}</strong><span>categorias</span></div>
             <div><strong>{goalCount}</strong><span>metas</span></div>
+          </div>
+          <div className="setting-row" style={{ marginTop: 18 }}>
+            <div>
+              <strong>Cache local neste dispositivo</strong>
+              <div className="text-sm text-muted">Acesso ao perfil do navegador pode expor os dados armazenados. Senhas e tokens nunca entram no cache.</div>
+            </div>
+            <button className="btn" type="button" onClick={toggleOfflineCache} disabled={savingOfflineCache} aria-pressed={offlineCacheEnabled}>
+              {savingOfflineCache ? 'Aplicando...' : offlineCacheEnabled ? 'Desativar' : 'Ativar'}
+            </button>
           </div>
         </section>
       </div>
