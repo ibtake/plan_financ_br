@@ -237,10 +237,6 @@ canvas {
     transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease;
   }
 
-  .sidebar-brand {
-    display: none;
-  }
-
   .sidebar:hover,
   .sidebar:focus-within {
     width: var(--sidebar-w);
@@ -254,8 +250,8 @@ canvas {
     transform: translate(-50%, var(--sidebar-pill-y));
   }
 
-  .topbar-mobile-brand {
-    margin-left: calc(var(--sidebar-w) - var(--sidebar-collapsed-w));
+  .sidebar:not(:hover):not(:focus-within) .sidebar-badge {
+    display: none;
   }
 
   .sidebar-brand {
@@ -329,6 +325,7 @@ canvas {
 
   .sidebar:hover .sidebar-badge,
   .sidebar:focus-within .sidebar-badge {
+    display: grid;
     opacity: 1;
     visibility: visible;
   }
@@ -598,13 +595,9 @@ canvas {
 }
 
 .topbar-mobile-brand {
-  display: flex;
+  display: none;
   align-items: center;
   gap: 10px;
-  min-width: 0;
-}
-
-.topbar-brand-copy {
   min-width: 0;
 }
 
@@ -3605,9 +3598,6 @@ dialog.modal-backdrop {
     display: flex;
   }
 
-  .topbar-brand-copy {
-    display: none;
-  }
 
   .topbar {
     padding-left: 16px;
