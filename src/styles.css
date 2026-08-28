@@ -383,7 +383,7 @@ canvas {
 
 .grid-4 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 232px), 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -3713,6 +3713,10 @@ dialog.modal-backdrop {
     gap: 16px;
   }
 
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .month-nav-label {
     min-width: 104px;
     font-size: 12.5px;
@@ -3822,6 +3826,11 @@ dialog.modal-backdrop {
 
 /* Mobile */
 @media (max-width: 640px) {
+  .grid-4,
+  .finance-loading-kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .card {
     padding: 16px;
   }
