@@ -149,7 +149,7 @@ function AuthenticatedApp() {
   const chartMonthKey = monthKey > currentMonthKey() ? monthKey : currentMonthKey()
   const chartMonthly = useMonthlyData(finance.transactions, chartMonthKey)
   const theme = finance.theme === 'dark' || finance.theme === 'light' ? finance.theme : systemTheme
-  const showMonthNav = !['budget', 'goals', 'pgbl'].includes(activeTab)
+  const showMonthNav = ['overview', 'transactions'].includes(activeTab)
   const showPageRefresh = ['budget', 'goals', 'pgbl'].includes(activeTab)
   const showRefresh = ['overview', 'transactions'].includes(activeTab)
   const showDesktopRefresh = showRefresh || showPageRefresh
