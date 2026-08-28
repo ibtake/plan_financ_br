@@ -625,6 +625,8 @@ canvas {
 }
 
 .month-nav-scroll .mobile-month-refresh { display: flex; }
+.month-nav-scroll.desktop-refresh-only { justify-content: flex-end; }
+.desktop-only-month-refresh { display: flex; }
 
 
 .month-nav {
@@ -3056,6 +3058,7 @@ dialog.modal-backdrop {
   .finance-loading-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .finance-loading-bottom { grid-template-columns: 1fr; }
   .finance-loading-message { right: 20px; top: calc(var(--topbar-h) + 14px); }
+  .month-nav-scroll.desktop-refresh-only { display: none; }
 }
 
 @media (min-width: 901px) {
@@ -3063,6 +3066,8 @@ dialog.modal-backdrop {
     flex-direction: column;
     align-items: stretch;
   }
+  .mobile-page-refresh { display: none; }
+  .page-actions-refresh-only { display: none; }
 }
 
 @media (max-width: 520px) {
@@ -3072,12 +3077,23 @@ dialog.modal-backdrop {
   .page-actions { width: 100%; justify-content: stretch; }
   .page-actions .btn { flex: 1; }
   .page-actions { justify-content: flex-end; }
+  .page-actions-refresh-only { width: auto; }
   .refresh-page-btn { width: 40px; height: 40px; padding: 0; justify-content: center; flex: 0 0 auto !important; }
   .refresh-page-label { display: none; }
+  .desktop-only-month-refresh { display: none !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .skeleton, .finance-content-enter, .spin { animation: none; }
+}
+
+@media (min-width: 901px) {
+  .topbar > .topbar-search {
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 .spinner {
@@ -3775,6 +3791,7 @@ dialog.modal-backdrop {
     height: 40px;
     padding: 0;
     justify-content: center;
+    order: 2;
   }
 
   .refresh-month-label { display: none; }

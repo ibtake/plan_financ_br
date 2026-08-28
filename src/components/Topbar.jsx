@@ -115,6 +115,7 @@ export default function Topbar({
   isRefreshing = false,
   refreshState = 'idle',
   showRefresh = true,
+  showDesktopRefresh = false,
   showMonthNav = true,
 }) {
   const [profileOpen, setProfileOpen] = useState(false)
@@ -339,14 +340,14 @@ export default function Topbar({
       </div>
     </header>
 
-    {showMonthNav && <div className="month-nav-scroll">
-      <MonthNav
+    {(showMonthNav || showDesktopRefresh) && <div className={`month-nav-scroll${!showMonthNav ? ' desktop-refresh-only' : ''}`}>
+      {showMonthNav && <MonthNav
         monthKey={monthKey}
         isMonthPending={isMonthPending}
         isCurrent={isCurrent}
         onMonthChange={onMonthChange}
-      />
-      {showRefresh && <button type="button" className={`btn refresh-month-btn mobile-month-refresh refresh-state-${refreshState}`} onClick={onRefresh} disabled={isRefreshing} aria-label="Atualizar dados">
+      />}
+      {(showRefresh || showDesktopRefresh) && <button type="button" className={`btn refresh-month-btn mobile-month-refresh${!showRefresh ? ' desktop-only-month-refresh' : ''} refresh-state-${refreshState}`} onClick={onRefresh} disabled={isRefreshing} aria-label="Atualizar dados">
         {refreshState === 'success' ? <Check size={16} strokeWidth={2.4} /> : refreshState === 'error' ? <X size={16} strokeWidth={2.4} /> : <RefreshCw size={16} strokeWidth={2} className={isRefreshing ? 'spin' : undefined} />}
         <span className="refresh-month-label">{refreshState === 'success' ? 'Atualizado' : refreshState === 'error' ? 'Ixi, deu erro!' : isRefreshing ? 'Atualizando...' : 'Atualizar'}</span>
       </button>}
