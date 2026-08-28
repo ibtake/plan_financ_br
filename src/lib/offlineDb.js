@@ -4,6 +4,7 @@ const SNAPSHOT_STORE = 'snapshots'
 export const OFFLINE_CACHE_PREFERENCE_KEY = 'planejador:offline-cache-preferences'
 const PREFERENCE_KEY = OFFLINE_CACHE_PREFERENCE_KEY
 const PURGE_KEY = 'planejador:offline-purge-pending'
+const PURGE_EPOCH_KEY = 'planejador:offline-purge-epoch'
 const MAX_RESOURCE_BYTES = 8 * 1024 * 1024
 const MAX_LIST_ITEMS = 100000
 const OPEN_TIMEOUT_MS = 2000
@@ -136,12 +137,26 @@ export function createOfflineDb({
 
   const preferenceEnabled = (userId) => readMap(storage, PREFERENCE_KEY)[userId] === true
   const purgePending = (userId) => readMap(storage, PURGE_KEY)[userId] === true
+  const purgeEpoch = (userId) => Number(readMap(storage, PURGE_EPOCH_KEY)[userId] || 0)
 
   const markPurge = (userId, pending) => {
     const values = readMap(storage, PURGE_KEY)
     if (pending) values[userId] = true
     else delete values[userId]
     writeMap(storage, PURGE_KEY, values)
+  }
+
+  const nextPurgeEpoch = (userId) => {
+    const values = readMap(storage, PURGE_EPOCH_KEY)
+    const epoch = purgeEpoch(userId) + 1
+    values[userId] = epoch
+    writeMap(storage, PURGE_EPOCH_KEY, values)
+    return epoch
+  }
+
+  const clearPurge = (userId, expectedEpoch) => {
+    if (purgeEpoch(userId) !== expectedEpoch) return
+    markPurge(userId, false)
   }
 
   const open = () => {
@@ -192,8 +207,9 @@ export function createOfflineDb({
     return connectionPromise
   }
 
-  const purgeUser = async (userId) => {
+  const purgeUserWithEpoch = async (userId) => {
     if (!userId) return true
+    const epoch = nextPurgeEpoch(userId)
     purgingUsers.add(userId)
     markPurge(userId, true)
     try {
@@ -207,13 +223,17 @@ export function createOfflineDb({
         cursor.continue()
       }
       await transactionDone(transaction)
-      markPurge(userId, false)
-      purgingUsers.delete(userId)
-      return true
+      return { ok: true, epoch }
     } catch {
-      return false
+      return { ok: false, epoch }
+    } finally {
+      purgingUsers.delete(userId)
     }
   }
+
+  // Mantém a API pública booleana; os chamadores internos usam a época para
+  // não limpar o marcador de uma purga mais nova iniciada em outra aba.
+  const purgeUser = async (userId) => (await purgeUserWithEpoch(userId)).ok
 
   const setEnabled = async (userId, enabled) => {
     if (!userId) return false
@@ -222,18 +242,24 @@ export function createOfflineDb({
     values[userId] = Boolean(enabled)
     if (!writeMap(storage, PREFERENCE_KEY, values)) return false
     if (!enabled) await purgeUser(userId)
-    else if (purgePending(userId) && !await purgeUser(userId)) {
-      values[userId] = false
-      writeMap(storage, PREFERENCE_KEY, values)
-      return false
+    else if (purgePending(userId)) {
+      const purge = await purgeUserWithEpoch(userId)
+      if (!purge.ok) {
+        values[userId] = false
+        writeMap(storage, PREFERENCE_KEY, values)
+        return false
+      }
+      clearPurge(userId, purge.epoch)
     }
     return true
   }
 
   const readSnapshots = async (userId, resources = OFFLINE_RESOURCES) => {
     if (!userId || purgingUsers.has(userId) || !preferenceEnabled(userId)) return { data: null, fetchedAt: null, error: null }
-    if (purgePending(userId) && !await purgeUser(userId)) {
-      return { data: null, fetchedAt: null, error: 'purge' }
+    if (purgePending(userId)) {
+      const purge = await purgeUserWithEpoch(userId)
+      if (!purge.ok) return { data: null, fetchedAt: null, error: 'purge' }
+      clearPurge(userId, purge.epoch)
     }
     try {
       const db = await open()
@@ -257,13 +283,14 @@ export function createOfflineDb({
     if (!userId || purgingUsers.has(userId) || !preferenceEnabled(userId) || purgePending(userId) || !plainObject(values)) {
       return { ok: false, error: null }
     }
+    const capturedPurgeEpoch = purgeEpoch(userId)
     const records = Object.entries(values)
       .filter(([resource, value]) => validateOfflineValue(resource, value))
       .map(([resource, value]) => ({ userId, resource, value, fetchedAt, schemaVersion: 1 }))
     if (!records.length) return { ok: false, error: 'invalid' }
     try {
       const db = await open()
-      if (purgingUsers.has(userId) || purgePending(userId)) return { ok: false, error: null }
+      if (purgingUsers.has(userId) || purgePending(userId) || purgeEpoch(userId) !== capturedPurgeEpoch) return { ok: false, error: null }
       const transaction = db.transaction(SNAPSHOT_STORE, 'readwrite')
       for (const record of records) transaction.objectStore(SNAPSHOT_STORE).put(record)
       await transactionDone(transaction)

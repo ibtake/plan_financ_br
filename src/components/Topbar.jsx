@@ -114,6 +114,7 @@ export default function Topbar({
   onRefresh,
   isRefreshing = false,
   refreshState = 'idle',
+  showRefresh = true,
   showMonthNav = true,
 }) {
   const [profileOpen, setProfileOpen] = useState(false)
@@ -345,10 +346,10 @@ export default function Topbar({
         isCurrent={isCurrent}
         onMonthChange={onMonthChange}
       />
-      <button type="button" className={`btn refresh-month-btn mobile-month-refresh refresh-state-${refreshState}`} onClick={onRefresh} disabled={isRefreshing} aria-label="Atualizar dados">
+      {showRefresh && <button type="button" className={`btn refresh-month-btn mobile-month-refresh refresh-state-${refreshState}`} onClick={onRefresh} disabled={isRefreshing} aria-label="Atualizar dados">
         {refreshState === 'success' ? <Check size={16} strokeWidth={2.4} /> : refreshState === 'error' ? <X size={16} strokeWidth={2.4} /> : <RefreshCw size={16} strokeWidth={2} className={isRefreshing ? 'spin' : undefined} />}
         <span className="refresh-month-label">{refreshState === 'success' ? 'Atualizado' : refreshState === 'error' ? 'Ixi, deu erro!' : isRefreshing ? 'Atualizando...' : 'Atualizar'}</span>
-      </button>
+      </button>}
     </div>}
     </>
   )

@@ -150,6 +150,8 @@ function AuthenticatedApp() {
   const chartMonthly = useMonthlyData(finance.transactions, chartMonthKey)
   const theme = finance.theme === 'dark' || finance.theme === 'light' ? finance.theme : systemTheme
   const showMonthNav = !['budget', 'goals', 'pgbl'].includes(activeTab)
+  const showPageRefresh = ['budget', 'goals', 'pgbl'].includes(activeTab)
+  const showRefresh = ['overview', 'transactions'].includes(activeTab)
 
   const finishRefreshFeedback = useCallback((state) => {
     setRefreshState(state)
@@ -353,6 +355,7 @@ function AuthenticatedApp() {
           onRefresh={handleRefresh}
           isRefreshing={refreshState === 'loading' || finance.revalidating}
           refreshState={refreshState}
+          showRefresh={showRefresh}
           showMonthNav={showMonthNav}
         />
 
@@ -386,16 +389,15 @@ function AuthenticatedApp() {
               <h1 className="page-title">{page.title}</h1>
               <p className="page-sub">
                 {activeTab === 'overview' ? `${page.sub} • ${monthLabel(monthKey)}` : page.sub}
-                {finance.dataStatus === 'confirmed' && finance.lastUpdatedAt
-                  ? ` • Atualizado às ${new Date(finance.lastUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-                  : ''}
               </p>
             </div>
             <div className="page-actions">
-              <button type="button" className={`btn refresh-page-btn${showMonthNav ? ' desktop-month-refresh' : ''} refresh-state-${refreshState}`} onClick={handleRefresh} disabled={refreshState === 'loading' || finance.revalidating}>
-                {refreshState === 'success' ? <Check size={16} strokeWidth={2.4} /> : refreshState === 'error' ? <X size={16} strokeWidth={2.4} /> : <RefreshCw size={16} strokeWidth={2} className={finance.revalidating ? 'spin' : undefined} />}
-                {refreshState === 'success' ? 'Atualizado' : refreshState === 'error' ? 'Ixi, deu erro!' : refreshState === 'loading' || finance.revalidating ? 'Atualizando...' : 'Atualizar'}
-              </button>
+              {showPageRefresh && (
+                <button type="button" className={`btn refresh-page-btn refresh-state-${refreshState}`} onClick={handleRefresh} disabled={refreshState === 'loading' || finance.revalidating}>
+                  {refreshState === 'success' ? <Check size={16} strokeWidth={2.4} /> : refreshState === 'error' ? <X size={16} strokeWidth={2.4} /> : <RefreshCw size={16} strokeWidth={2} className={finance.revalidating ? 'spin' : undefined} />}
+                  <span className="refresh-page-label">{refreshState === 'success' ? 'Atualizado' : refreshState === 'error' ? 'Ixi, deu erro!' : refreshState === 'loading' || finance.revalidating ? 'Atualizando...' : 'Atualizar'}</span>
+                </button>
+              )}
               {!['budget', 'goals', 'pgbl'].includes(activeTab) && (
                 <button type="button" className="btn btn-primary add-main" onClick={openNew}>
                   <Plus size={16} strokeWidth={2.2} />

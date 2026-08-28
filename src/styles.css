@@ -614,7 +614,7 @@ canvas {
 .month-nav-scroll {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 14px 32px 0;
 }
@@ -624,9 +624,8 @@ canvas {
   white-space: nowrap;
 }
 
-.mobile-month-refresh { display: none; }
+.month-nav-scroll .mobile-month-refresh { display: flex; }
 
-.refresh-page-btn.desktop-month-refresh { display: flex; }
 
 .month-nav {
   display: flex;
@@ -3072,6 +3071,9 @@ dialog.modal-backdrop {
   .finance-loading-message { font-size: 11px; }
   .page-actions { width: 100%; justify-content: stretch; }
   .page-actions .btn { flex: 1; }
+  .page-actions { justify-content: flex-end; }
+  .refresh-page-btn { width: 40px; height: 40px; padding: 0; justify-content: center; flex: 0 0 auto !important; }
+  .refresh-page-label { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3736,17 +3738,17 @@ dialog.modal-backdrop {
   }
 
   .month-nav-scroll {
-    justify-content: center;
+    justify-content: space-between;
     padding: 12px 16px 0;
   }
 
   /* O seletor ocupa a própria linha, abaixo dos ícones */
   .month-nav {
     order: 1;
-    flex-basis: 100%;
-    width: 88%;
-    max-width: 460px;
-    margin: 0 auto;
+    flex: 1 1 auto;
+    width: auto;
+    max-width: none;
+    margin: 0;
     justify-content: center;
     /* Nesta posição pode ser um pouco maior */
     padding: 5px;
@@ -3777,8 +3779,6 @@ dialog.modal-backdrop {
 
   .refresh-month-label { display: none; }
 
-  .mobile-month-refresh { display: flex; }
-  .refresh-page-btn.desktop-month-refresh { display: none; }
 
   /* Espaçamento consistente entre o seletor e o título da página */
   .main-content {
