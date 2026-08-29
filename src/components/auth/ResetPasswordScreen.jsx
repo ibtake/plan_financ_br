@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth, validatePassword } from '../../contexts/AuthContext.jsx'
 import { recoveryCode } from '../../lib/recoveryCode.js'
 import CodeInput from './CodeInput.jsx'
@@ -24,6 +24,7 @@ import CodeInput from './CodeInput.jsx'
  */
 export default function ResetPasswordScreen() {
   const auth = useAuth()
+  const verifyMfaChallenge = auth.verifyMfaChallenge
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(true)
@@ -112,14 +113,14 @@ export default function ResetPasswordScreen() {
   // Mesmo comportamento do AuthScreen.jsx
   const submittedMfaCode = useRef(null)
 
-  const submitMfaCode = async (value) => {
+  const submitMfaCode = useCallback(async (value) => {
     const normalizedCode = String(value || '').replace(/\D/g, '').slice(0, 6)
     if (normalizedCode.length !== 6) return
     if (submittedMfaCode.current === normalizedCode) return
     submittedMfaCode.current = normalizedCode
     setBusy(true)
     setError('')
-    const result = await auth.verifyMfaChallenge(normalizedCode)
+    const result = await verifyMfaChallenge(normalizedCode)
     setBusy(false)
     if (result.error) {
       setError(result.error)
@@ -130,13 +131,13 @@ export default function ResetPasswordScreen() {
     setMfaCode('')
     setMfaRequired(false)
     setReady(true)
-  }
+  }, [verifyMfaChallenge])
 
-    useEffect(() => {
+  useEffect(() => {
     if (mfaRequired && mfaCode.length === 6 && !busy) {
       void submitMfaCode(mfaCode)
     }
-  }, [mfaRequired, mfaCode, busy])
+  }, [mfaRequired, mfaCode, busy, submitMfaCode])
 
   const submitMfa = async (event) => {
     event.preventDefault()

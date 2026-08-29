@@ -80,7 +80,7 @@ export function useAuthOperations({ refreshAssurance }) {
     const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' })
     if (signOutError) return { error: translateAuthError(signOutError) }
     return widgetWarning
-      ? { ok: true, warning: `Senha alterada, mas ${widgetWarning}. Revogue o widget nas configuraÃ§Ãµes e reinstale.` }
+      ? { ok: true, warning: `Senha alterada, mas ${widgetWarning}. Revogue o widget nas configurações e reinstale.` }
       : { ok: true }
   }, [])
 

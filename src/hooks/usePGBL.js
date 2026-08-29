@@ -148,10 +148,11 @@ export function usePGBL() {
   // (schema.sql:1019) devolve 42501 sem token. Gravar ali seria requisicao
   // recusada em todo logout com edicao pendente.
   useEffect(() => {
+    const pendingPlans = pending.current
     const flush = () => {
       if (document.visibilityState !== 'hidden') return
-      const entries = [...pending.current.values()]
-      pending.current.clear()
+      const entries = [...pendingPlans.values()]
+      pendingPlans.clear()
       for (const { timer, payload, previous, version } of entries) {
         window.clearTimeout(timer)
         void writePlan(payload, previous, version)
@@ -160,8 +161,8 @@ export function usePGBL() {
     document.addEventListener('visibilitychange', flush)
     return () => {
       document.removeEventListener('visibilitychange', flush)
-      for (const { timer } of pending.current.values()) window.clearTimeout(timer)
-      pending.current.clear()
+      for (const { timer } of pendingPlans.values()) window.clearTimeout(timer)
+      pendingPlans.clear()
     }
   }, [writePlan])
 

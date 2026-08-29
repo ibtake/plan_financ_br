@@ -767,7 +767,7 @@ canvas {
   color: var(--text);
 }
 
-/* O avatar jÃ¡ Ã© circular; o estado aberto nÃ£o deve desenhar um quadrado ao redor dele. */
+/* O avatar já é circular; o estado aberto não deve desenhar um quadrado ao redor dele. */
 .topbar-profile-btn,
 .topbar-profile-btn:hover,
 .topbar-profile-btn.active {
@@ -936,8 +936,8 @@ body:has(.modal-backdrop) .mobile-nav-dock {
   pointer-events: none;
 }
 
-/* O lanÃ§amento aberto assume o foco; o FAB volta apenas depois que o modal
-   termina de fechar, aproveitando a mesma transiÃ§Ã£o de entrada/saÃ­da. */
+/* O lançamento aberto assume o foco; o FAB volta apenas depois que o modal
+   termina de fechar, aproveitando a mesma transição de entrada/saída. */
 body:has(.modal-backdrop) .fab {
   opacity: 0;
   pointer-events: none;
@@ -2114,7 +2114,7 @@ dialog.modal-backdrop {
   color: var(--reinvest);
 }
 
-/* Contas do mÃªs: no mobile, descriÃ§Ã£o/valor e vencimento/status ocupam duas linhas. */
+/* Contas do mês: no mobile, descrição/valor e vencimento/status ocupam duas linhas. */
 .fixed-expense-status {
   display: contents;
 }
@@ -3589,6 +3589,14 @@ dialog.modal-backdrop {
     padding-left: 24px;
     padding-right: 24px;
   }
+
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kpi-savings-summary {
+    white-space: normal;
+  }
 }
 
 /* Tablet e abaixo: sidebar sai, navegação inferior entra */
@@ -3711,10 +3719,6 @@ dialog.modal-backdrop {
   .grid-2,
   .grid-3 {
     gap: 16px;
-  }
-
-  .grid-4 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .month-nav-label {
