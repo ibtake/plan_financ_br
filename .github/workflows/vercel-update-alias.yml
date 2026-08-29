@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Aguardar deploy da Vercel terminar
-        uses: patrickedqvist/wait-for-vercel-preview@v1.3.1
+        uses: patrickedqvist/wait-for-vercel-preview@v1.3.3
         id: waitForVercel
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
