@@ -2,7 +2,7 @@
 // Tela de autenticacao: login, recuperacao e desafio MFA
 // =====================================================================
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 import CodeInput from './CodeInput.jsx'
 import TurnstileCaptcha, { isTurnstileConfigured } from './TurnstileCaptcha.jsx'
@@ -24,6 +24,30 @@ export default function AuthScreen() {
 
   const missingConfig = auth.configurationProblem
   const captchaEnabled = isTurnstileConfigured()
+  const verifyMfaChallenge = auth.verifyMfaChallenge
+
+  const verifyMfaCode = useCallback(async (value) => {
+    const normalizedCode = String(value || '').replace(/\D/g, '').slice(0, 6)
+    setError('')
+    setNotice('')
+
+    if (normalizedCode.length !== 6) {
+      setError('Digite os 6 dígitos do código.')
+      return
+    }
+
+    if (submittedMfaCode.current === normalizedCode) return
+    submittedMfaCode.current = normalizedCode
+    setBusy(true)
+    const result = await verifyMfaChallenge(normalizedCode)
+    setBusy(false)
+
+    if (result.error) {
+      setError(result.error)
+      setCode('')
+      submittedMfaCode.current = null
+    }
+  }, [verifyMfaChallenge])
 
   useEffect(() => {
     if (auth.mfaStage === 'required') setMode('mfa')
@@ -33,12 +57,11 @@ export default function AuthScreen() {
   // Fica aqui, e nao junto de handleMfa, porque o early return de missingConfig
   // (:49) esta no meio do componente: hook depois de return condicional muda o
   // numero de hooks entre renders e quebra a tela. O guard do corpo cobre os
-  // demais modos. verifyMfaCode e' declarado abaixo e nao entra nas deps de
-  // proposito — no array ele seria lido durante o render, antes de existir.
-    useEffect(() => {
+  // demais modos.
+  useEffect(() => {
     if (mode !== 'mfa' || code.length !== 6 || busy) return
     void verifyMfaCode(code)
-  }, [mode, code, busy])
+  }, [mode, code, busy, verifyMfaCode])
 
   const set = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))
 
@@ -149,28 +172,6 @@ export default function AuthScreen() {
       'Se este e-mail estiver cadastrado, você receberá um link para redefinir a senha em ' +
         'alguns minutos. Verifique também a caixa de spam.',
     )
-  }
-
-  const verifyMfaCode = async (value) => {
-    const normalizedCode = String(value || '').replace(/\D/g, '').slice(0, 6)
-    resetMessages()
-
-    if (normalizedCode.length !== 6) {
-      setError('Digite os 6 dígitos do código.')
-      return
-    }
-
-    if (submittedMfaCode.current === normalizedCode) return
-    submittedMfaCode.current = normalizedCode
-    setBusy(true)
-    const result = await auth.verifyMfaChallenge(normalizedCode)
-    setBusy(false)
-
-    if (result.error) {
-      setError(result.error)
-      setCode('')
-      submittedMfaCode.current = null
-    }
   }
 
   const handleMfa = async (event) => {

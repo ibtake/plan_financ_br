@@ -116,7 +116,25 @@ export function useAuthSession() {
       if (!refreshed) scheduleRetryRef.current?.()
     }, delay)
   }, [requestSessionRefresh])
-  scheduleRetryRef.current = scheduleSessionRetry
+  useEffect(() => {
+    scheduleRetryRef.current = scheduleSessionRetry
+  }, [scheduleSessionRetry])
+
+  const signOutIdle = useCallback(async () => {
+    let error = null
+    try {
+      ({ error } = await supabase.auth.signOut())
+    } catch (caught) {
+      error = caught
+    }
+    if (!error) return
+    try {
+      const { data } = await supabase.auth.getSession()
+      if (data.session) scheduleSessionRetry()
+    } catch {
+      // Sem sessão confirmada, aguardar o próximo ciclo de visibilidade.
+    }
+  }, [scheduleSessionRetry])
 
   const setOfflineCache = useCallback(async (enabled) => {
     const userId = currentUserId.current
@@ -140,7 +158,7 @@ export function useAuthSession() {
       if (!active || version !== sessionVersion) return
       if (nextSession && isIdleSession(nextSession)) {
         clearUserActivity()
-        await supabase.auth.signOut()
+        await signOutIdle()
         nextSession = null
       }
       if (nextSession) await refreshAssurance()
@@ -186,7 +204,7 @@ export function useAuthSession() {
       }
       if (isIdleSession(current.session)) {
         clearUserActivity()
-        await supabase.auth.signOut()
+        await signOutIdle()
         const version = ++sessionVersion
         await applySession(null, version)
         return false
@@ -243,7 +261,7 @@ export function useAuthSession() {
       window.removeEventListener('focus', handleReturn)
       window.removeEventListener('online', handleReturn)
     }
-  }, [isIdleSession, markUserActivity, refreshAssurance, scheduleSessionRetry])
+  }, [isIdleSession, markUserActivity, refreshAssurance, scheduleSessionRetry, signOutIdle])
 
   useEffect(() => {
     if (!session) return
