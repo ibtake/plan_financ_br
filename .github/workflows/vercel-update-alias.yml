@@ -1,0 +1,35 @@
+name: Alias Preview to QA
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  alias-and-comment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aguardar deploy da Vercel terminar
+        uses: patrickedqvist/wait-for-vercel-preview@v1.3.1
+        id: waitForVercel
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          max_timeout: 300  # segundos; ajuste conforme o tempo de build
+
+      - name: Instalar Vercel CLI
+        run: npm i -g vercel
+
+      - name: Fixar alias QA
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel alias set "${{ steps.waitForVercel.outputs.url }}" dindin-10-qa.vercel.app --token=$VERCEL_TOKEN
+
+      - name: Comentar na PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          message: |
+            🔗 **Ambiente de QA atualizado para esta PR**
+            Acesse: https://dindin-10-qa.vercel.app
