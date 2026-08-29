@@ -17,6 +17,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           max_timeout: 300  # segundos; ajuste conforme o tempo de build
+          vercel_protection_bypass_header: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
 
       - name: Instalar Vercel CLI
         run: npm i -g vercel
