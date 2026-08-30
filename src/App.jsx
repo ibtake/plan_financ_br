@@ -126,6 +126,7 @@ export default function App() {
 function AuthenticatedApp() {
   const auth = useAuth()
   const finance = useSupabaseFinance()
+  const { deleteTransaction: removeTransaction } = finance
   const pgbl = usePGBL()
   const [monthKey, setMonthKey] = useState(currentMonthKey())
   const [isMonthPending, startMonthTransition] = useTransition()
@@ -232,9 +233,9 @@ function AuthenticatedApp() {
       // Segue `sourceId || id`: e a raiz da serie, e o hook ainda corta o `#`
       // por conta propria (useFinanceOperations.js:35). Nao ha exclusao de
       // ocorrencia isolada no app - todo delete apaga a serie inteira.
-      finance.deleteTransaction(occurrence.sourceId || occurrence.id)
+      removeTransaction(occurrence.sourceId || occurrence.id)
     }
-  }, [finance.deleteTransaction])
+  }, [removeTransaction])
 
   const pending = useMemo(
     () => monthly.occurrences.filter((item) => !item.paid),

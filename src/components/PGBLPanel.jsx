@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BookOpen, Calculator, CircleAlert, CircleCheck, Settings2, Table2 } from 'lucide-react'
 import { amountToInput, formatAmountInput, parseAmount } from '../utils/format.js'
 
@@ -92,7 +92,7 @@ export default function PGBLPanel({ pgbl }) {
   const latestYear = Math.max(...Object.keys(years).map(Number))
   const selectedPlan = years[selectedYear] || { months: blankMonths(), premise: { contribuiInss: true, dependentes: 0, educacao: 0 }, params: years[latestYear]?.params }
   const data = { ...selectedPlan, year: selectedYear, params: normalizeParams(selectedPlan.params) }
-  const result = useMemo(() => calculatePGBL(data.months, data.premise, normalizeParams(data.params)), [data])
+  const result = calculatePGBL(data.months, data.premise, normalizeParams(data.params))
   const update = (next) => {
     if (next.year) return changeYear(next.year)
     savePlan({ ...data, ...next, params: normalizeParams({ ...data.params, ...(next.params || {}) }) })

@@ -34,7 +34,7 @@ function corsHeaders(request: Request) {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
-  const allowOrigin = configured.includes(origin) ? origin : configured[0] || ''
+  const allowOrigin = configured.includes(origin) ? origin : ''
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     // x-application-name e x-client-info sao injetados pelo cliente Supabase
@@ -283,6 +283,7 @@ Deno.serve(async (request) => {
       })
     }
     const users: Array<{ id: string; email: string; fullName: string; createdAt: string }> = []
+    let truncated = false
     for (let page = 1; page <= 10; page += 1) {
       const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 })
       if (error) return response(request, 500, { error: 'Não foi possível listar os usuários.' })
@@ -295,9 +296,14 @@ Deno.serve(async (request) => {
         })),
       )
       if (data.users.length < 100) break
+      if (page === 10) {
+        const { data: probe, error: probeError } = await admin.auth.admin.listUsers({ page: 11, perPage: 1 })
+        if (probeError) return response(request, 500, { error: 'NÃ£o foi possÃ­vel listar os usuÃ¡rios.' })
+        truncated = probe.users.length > 0
+      }
     }
     users.sort((a, b) => a.email.localeCompare(b.email, 'pt-BR'))
-    return response(request, 200, { users })
+    return response(request, 200, { users, truncated })
   }
 
   if (action === 'widget-metrics') {

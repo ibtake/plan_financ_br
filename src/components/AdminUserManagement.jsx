@@ -1,31 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth, validatePassword } from '../contexts/AuthContext.jsx'
 import { callAdminApi } from '../lib/adminApi.js'
+import { generateTemporaryPassword } from '../utils/temporaryPassword.js'
 import CodeInput from './auth/CodeInput.jsx'
-
-function generateTemporaryPassword() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*?'
-  const required = ['A', 'a', '7', '!']
-  const limit = Math.floor((2 ** 32) / alphabet.length) * alphabet.length
-  const random = []
-  while (random.length < 14) {
-    const bytes = crypto.getRandomValues(new Uint32Array(14 - random.length))
-    for (const value of bytes) {
-      if (value < limit) random.push(alphabet[value % alphabet.length])
-      if (random.length === 14) break
-    }
-  }
-  return [...required, ...random]
-    .map((character) => ({ character, order: crypto.getRandomValues(new Uint32Array(1))[0] }))
-    .sort((a, b) => a.order - b.order)
-    .map((item) => item.character)
-    .join('')
-}
 
 export default function AdminUserManagement() {
   const auth = useAuth()
   const [status, setStatus] = useState('checking')
   const [users, setUsers] = useState([])
+  const [usersTruncated, setUsersTruncated] = useState(false)
   const [form, setForm] = useState({ fullName: '', email: '', password: '' })
   const [code, setCode] = useState('')
   const [message, setMessage] = useState(null)
@@ -39,6 +22,7 @@ export default function AdminUserManagement() {
       return
     }
     setUsers(result.data?.users || [])
+    setUsersTruncated(result.data?.truncated === true)
   }, [])
 
   const loadMetrics = useCallback(async () => {
@@ -118,6 +102,7 @@ export default function AdminUserManagement() {
           </form>
 
           <div className="admin-user-list">
+            {usersTruncated && <div className="notice warning" role="alert">A lista exibe apenas os primeiros 1.000 usuários. Refine a administração antes de continuar.</div>}
             <h3 className="panel-heading">Usuários ({users.length})</h3>
             {users.map((item) => (
               <div className="admin-user-row" key={item.id}>
