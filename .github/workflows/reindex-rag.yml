@@ -1,11 +1,24 @@
 # Reindex do RAG (fase 2; design-rag-fase0.md, D6) — rebuild da coleção
-# `codigo` a partir do código atual. Disparo manual (workflow_dispatch) e o
-# job de reindex só roda se o gate de paridade D1 passar (needs). O index é
-# cache: rodar de novo é sempre seguro (delete-by-filter + upsert).
+# `codigo` a partir do código da main. Disparo: push na main (o índice
+# acompanha a produção) + workflow_dispatch manual. Runs são serializados
+# por concurrency (delete-by-filter + upsert nunca correm em paralelo —
+# pushes em sequência viram fila). Branches/PR não disparam de propósito:
+# o valor `repo` no payload é único e o id do ponto é uuidv5(repo:caminho:
+# linha) — runs concorrentes de branches diferentes se apagariam mutuamente.
+# Torch CPU: a inferência já roda em CPU; instalar só o wheel CPU (~200 MB)
+# em vez do pacote default com CUDA (~3 GB) derruba o run de 6-10 para
+# 2-3 minutos. O job de reindex só roda se o gate de paridade D1 passar
+# (needs). O índice é cache: rodar de novo é sempre seguro.
 name: reindex-rag
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: reindex-rag
+  cancel-in-progress: false # fila, nunca corrida (o rebuild é delete+upsert)
 
 jobs:
   paridade:
@@ -22,6 +35,7 @@ jobs:
       - name: Instalar os dois lados do embedder
         run: |
           npm install --no-save @huggingface/transformers
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install "sentence-transformers>=3,<4"
       - name: Gate de paridade Node x Python (D1)
         run: node scripts/rag/parity.mjs
@@ -45,6 +59,7 @@ jobs:
           QDRANT_URL: ${{ secrets.QDRANT_URL }}
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
         run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install "sentence-transformers>=3,<4"
           node scripts/rag/chunk.mjs --json rag-chunks.json
           python scripts/rag/embed.py rag-chunks.json rag-pontos.json
