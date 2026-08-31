@@ -4,10 +4,11 @@
  * Entrada: pontos.json produzido pelo embed.py — [{ id, vector, payload }],
  * id já UUID v5 determinístico do chunker.
  *
- * Rebuild (D6): primeiro delete-by-filter de tudo que tem o `repo` do run
- * (wait=true), depois upsert em lotes de 100 (wait=true) — idempotente, o
- * workflow `reindex-rag` pode rodar quantas vezes for preciso. O index é
- * cache: nunca é fonte de verdade.
+ * Rebuild (D6): primeiro garante o índice keyword em `repo` (exigido pelo
+ * filtro com a coleção vazia), depois delete-by-filter de tudo que tem o
+ * `repo` do run (wait=true) e upsert em lotes de 100 (wait=true) —
+ * idempotente, o workflow `reindex-rag` pode rodar quantas vezes for
+ * preciso. O index é cache: nunca é fonte de verdade.
  *
  * Credenciais: QDRANT_URL/QDRANT_API_KEY via env (no Actions, secrets) com
  * fallback ao registro local via qdrant-key.mjs — resolvidas e nunca
@@ -85,6 +86,17 @@ for (const p of pontos) {
 }
 
 try {
+  // Índice keyword em `repo`: o Qdrant exige índice para filtrar por esse
+  // campo enquanto a coleção está vazia (sem pontos, o tipo do campo não é
+  // inferível — aprendido no 2º run do reindex-rag: delete-by-filter → HTTP
+  // 400 "Index required but not found"). Cobre o delete e a contagem final.
+  // Idempotente: recriar índice existente é no-op.
+  await qdrant('PUT', `/collections/${COLECAO}/index`, {
+    field_name: 'repo',
+    field_schema: 'keyword',
+  });
+  console.log(`índice payload repo (keyword) garantido em ${COLECAO}`);
+
   await qdrant('POST', `/collections/${COLECAO}/points/delete?wait=true`, {
     filter: { must: [{ key: 'repo', match: { value: REPO } }] },
   });
