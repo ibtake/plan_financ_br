@@ -4,6 +4,16 @@ dist-ssr
 *.local
 .vite
 
+# Artefatos temporarios de manutencao (higiene 16/08)
+*.bak
+*.bak-*
+scripts/tmp-*
+
+# Ambiente Python local do RAG (fase 4): deps + cache de modelo HuggingFace
+.rag-libs
+.rag-cache
+.rag-wheels
+
 # Segredos - NUNCA versionar
 .env
 .env.*
@@ -31,3 +41,4 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+.env*
