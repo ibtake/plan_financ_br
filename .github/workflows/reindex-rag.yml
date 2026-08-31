@@ -1,0 +1,52 @@
+# Reindex do RAG (fase 2; design-rag-fase0.md, D6) — rebuild da coleção
+# `codigo` a partir do código atual. Disparo manual (workflow_dispatch) e o
+# job de reindex só roda se o gate de paridade D1 passar (needs). O index é
+# cache: rodar de novo é sempre seguro (delete-by-filter + upsert).
+name: reindex-rag
+
+on:
+  workflow_dispatch:
+
+jobs:
+  paridade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar os dois lados do embedder
+        run: |
+          npm install --no-save @huggingface/transformers
+          pip install "sentence-transformers>=3,<4"
+      - name: Gate de paridade Node x Python (D1)
+        run: node scripts/rag/parity.mjs
+
+  reindex:
+    needs: paridade
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # sha_arquivo/data_commit precisam do histórico do git
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Chunk, embed e upsert da coleção codigo
+        env:
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+        run: |
+          pip install "sentence-transformers>=3,<4"
+          node scripts/rag/chunk.mjs --json rag-chunks.json
+          python scripts/rag/embed.py rag-chunks.json rag-pontos.json
+          node scripts/rag/upsert.mjs rag-pontos.json
+          rm -f rag-chunks.json rag-pontos.json
