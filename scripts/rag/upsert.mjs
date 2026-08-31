@@ -110,16 +110,19 @@ try {
     console.log(`upsert: ${Math.min(i + LOTE, pontos.length)}/${pontos.length}`);
   }
 
+  // O Qdrant embrulha a resposta em "result": { result: { count: N }, status }.
+  // (3º run do reindex-rag: ler contagem.count direto dava undefined.)
   const contagem = await qdrant('POST', `/collections/${COLECAO}/points/count`, {
     exact: true,
     filter: { must: [{ key: 'repo', match: { value: REPO } }] },
   });
-  if (contagem.count !== pontos.length) {
+  const contados = contagem?.result?.count ?? contagem?.count;
+  if (contados !== pontos.length) {
     throw new Error(
-      `verificação falhou: ${contagem.count} pontos de ${REPO} em ${COLECAO}, esperado ${pontos.length}`
+      `verificação falhou: ${contados} pontos de ${REPO} em ${COLECAO}, esperado ${pontos.length}`
     );
   }
-  console.log(`OK: ${COLECAO} com ${contagem.count} pontos de ${REPO}`);
+  console.log(`OK: ${COLECAO} com ${contados} pontos de ${REPO}`);
 } catch (e) {
   console.error('FALHOU: ' + String(e && e.message ? e.message : e));
   process.exit(1);
