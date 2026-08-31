@@ -18,7 +18,6 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { resolveQdrantEnv } from '../qdrant-key.mjs';
 
 const [arquivo] = process.argv.slice(2);
 if (!arquivo) {
@@ -26,7 +25,26 @@ if (!arquivo) {
   process.exit(1);
 }
 
-const { url, apiKey } = resolveQdrantEnv();
+// Credenciais: env primeiro (no Actions, secrets). Sem env, tenta o fallback
+// local do qdrant-key.mjs (registro do Windows). Import DINÂMICO porque esse
+// arquivo pode não existir no repo do CI — lá o env sempre está completo
+// (aprendido no primeiro run do reindex-rag: import estático quebrou o job).
+async function credenciais() {
+  if (process.env.QDRANT_URL && process.env.QDRANT_API_KEY) {
+    return { url: process.env.QDRANT_URL, apiKey: process.env.QDRANT_API_KEY };
+  }
+  try {
+    const { resolveQdrantEnv } = await import('../qdrant-key.mjs');
+    return resolveQdrantEnv();
+  } catch {
+    console.error(
+      'FALHOU: QDRANT_URL/QDRANT_API_KEY ausentes no ambiente e scripts/qdrant-key.mjs não encontrado'
+    );
+    process.exit(1);
+  }
+}
+
+const { url, apiKey } = await credenciais();
 const base = String(url).replace(/\/+$/, '');
 const REPO = process.env.GITHUB_REPOSITORY || 'local/planejador';
 const COLECAO = 'codigo';
