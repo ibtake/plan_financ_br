@@ -1,14 +1,16 @@
 /**
- * Backfill one-shot das memórias do RAG (fase 4; design-rag-fase0.md, D7 §Cold start).
+ * Backfill one-shot das memórias do RAG (fase 4→5; design-rag-fase0.md, D7 §Cold start).
  *
  * Exporta os cards Done existentes no Linear (projetos Dones-N) via GraphQL
  * READ-ONLY, deriva a entrada de memória do comentário de fechamento 8.f/8.c
- * (nada é inventado), gera embeddings com o MESMO modelo da indexação
- * (scripts/rag/embed.py, D3) e faz upsert em bugs_resolvidos e
- * decisoes_arquitetura. Id de ponto determinístico = UUID v5 de
- * "memoria:<card_id>" no mesmo namespace do chunker (chunk.mjs:38-46) —
- * re-executar SUBSTITUI o ponto, nunca duplica (D7). Upsert puro: sem
- * delete-by-filter (diferente do reindex de código, que zera a coleção).
+ * (nada é inventado) e faz upsert em bugs_resolvidos e decisoes_arquitetura.
+ * Fase 5 (revisão d): o embedding é gerado SERVER-SIDE pelo Qdrant Cloud
+ * Inference — o vetor vai como Inference Object { text, model } (modelo em
+ * scripts/rag/modelo.mjs; prefixos e5 injetados pelo serviço, texto cru).
+ * Id de ponto determinístico = UUID v5 de "memoria:<card_id>" no mesmo
+ * namespace do chunker (chunk.mjs:38-46) — re-executar SUBSTITUI o ponto,
+ * nunca duplica (D7). Upsert puro: sem delete-by-filter (diferente do
+ * reindex de código, que zera a coleção).
  *
  * Roteamento D7 por PREFIXO do id: BUG-/TASK- → bugs_resolvidos;
  * IMPR-/AUDT-/SUPB- → decisoes_arquitetura. `tipo` vem da label tipo:* com
@@ -17,32 +19,25 @@
  *
  * Uso:
  *   node scripts/rag/backfill-memorias.mjs --dry-run   # GraphQL read + resumo, zero escrita
- *   node scripts/rag/backfill-memorias.mjs             # dry-run + embed + upsert real
+ *   node scripts/rag/backfill-memorias.mjs             # dry-run + upsert real (inference)
  *
  * Credenciais: LINEAR_API_KEY e QDRANT_URL/QDRANT_API_KEY via env ou registro
  * HKCU (mesmo padrão de linear-key.mjs / qdrant-key.mjs) — nunca impressas.
  * Nenhum segredo ou dado de usuário entra na entrada de memória (D3/D7).
  *
- * Ambiente Python do embed: o script semeia PYTHONPATH=.rag-libs e
- * HF_HOME=.rag-cache (dirs gitignored na raiz) ao chamar embed.py, mantendo a
- * instalação one-time e o download do modelo (~470 MB, 1ª execução) dentro do
- * workspace — o site-packages global da Store Python quebra o torch com
- * WinError 206 (caminho > 260 chars).
- *
  * Importável para teste (rag-memoria.test.js): as funções puras
  * (secoesDoComentario, textoEntrada, colecaoEtipo, uuidV5) ficam no top-level;
- * o pipeline (rede, embed, upsert) só executa quando o script é invocado
+ * o pipeline (rede, upsert) só executa quando o script é invocado
  * diretamente — importar o módulo não dispara nada.
  */
 
-import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { resolveApiKey } from '../linear-key.mjs';
 import { resolveQdrantEnv } from '../qdrant-key.mjs';
+import { MODELO_EMBED } from './modelo.mjs';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const RAIZ = resolve(import.meta.dirname, '..', '..');
@@ -271,84 +266,67 @@ async function main() {
     process.exit(0);
   }
 
-  // ---------------------------------------------------------- embed (modelo D3)
+  // ------------------------------------------------- upsert (embedding server-side)
+  // Fase 5 (revisão d): nada de embed local — cada ponto vai com Inference
+  // Object { text, model } e o Qdrant Cloud Inference gera o vetor no cluster
+  // (mesmo modelo da query do webhook; prefixos e5 automáticos, texto cru).
   const qdrant = resolveQdrantEnv();
   if (!qdrant) {
     console.error('FALHOU: QDRANT_URL/QDRANT_API_KEY ausentes (env ou registro HKCU).');
     process.exit(1);
   }
-  const headersQ = { 'api-key': qdrant.apiKey, 'Content-Type': 'application/json' };
+  const baseQ = String(qdrant.url).replace(/\/+$/, '');
+  const LOTE = 100;
 
-  const dirTemp = mkdtempSync(join(tmpdir(), 'rag-backfill-'));
-  try {
-    const arquivoEntrada = join(dirTemp, 'entradas.json');
-    const arquivoSaida = join(dirTemp, 'pontos.json');
-    const conteudo = Object.values(porColecao).flat();
-    // embed.py espera chunks no formato [{ id, text, payload }] e devolve
-    // [{ id, vector, payload }] preservando o payload (D2/D3).
-    const paraEmbed = conteudo.map((e) => ({
-      id: e.id,
-      text: e.texto_entrada,
-      payload: {
-        card_id: e.card_id,
-        tipo: e.tipo,
-        titulo: e.titulo,
-        texto_entrada: e.texto_entrada,
-        release_real: e.release_real,
-        data: e.data,
-      },
-    }));
-    writeFileSync(arquivoEntrada, JSON.stringify(paraEmbed), 'utf8');
-    // Ambiente Python local do repositório: deps em .rag-libs (PYTHONPATH) e
-    // cache de modelo HuggingFace em .rag-cache (HF_HOME) — nada gravado fora
-    // do workspace (o site-packages da Store Python derruba o wheel do torch
-    // por WinError 206, caminho > 260 chars). Ambos são gitignored.
-    const py = spawnSync('python', ['scripts/rag/embed.py', arquivoEntrada, arquivoSaida], {
-      cwd: RAIZ,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        PYTHONPATH: join(RAIZ, '.rag-libs'),
-        HF_HOME: join(RAIZ, '.rag-cache'),
-      },
-    });
-    if (py.status !== 0) {
-      console.error((py.stderr || py.stdout || 'embed.py falhou sem stderr').slice(-1500));
-      process.exit(1);
-    }
-    console.log((py.stdout || '').trim().split('\n').pop());
-    const pontos = JSON.parse(readFileSync(arquivoSaida, 'utf8'));
-
-    // --------------------------------------------------------- upsert por coleção
-    const contar = async (colecao) => {
-      const r = await fetch(`${qdrant.url}/collections/${colecao}/points/count`, {
-        method: 'POST',
-        headers: headersQ,
-        body: JSON.stringify({ exact: true }),
+  async function qdrantFetch(metodo, caminho, corpo, tentativas = 3) {
+    for (let i = 1; i <= tentativas; i++) {
+      const r = await fetch(`${baseQ}${caminho}`, {
+        method: metodo,
+        headers: { 'api-key': qdrant.apiKey, 'Content-Type': 'application/json' },
+        body: corpo === undefined ? undefined : JSON.stringify(corpo),
       });
-      const j = await r.json();
-      return j.result?.count ?? j.count;
-    };
-    for (const [colecao, lista] of Object.entries(porColecao)) {
-      const ids = new Set(lista.map((e) => e.id));
-      const pontosColecao = pontos.filter((p) => ids.has(p.id));
-      if (pontosColecao.length !== lista.length) {
-        throw new Error(`${colecao}: embed retornou ${pontosColecao.length}/${lista.length} pontos`);
+      const t = await r.text();
+      // 429/5xx no caminho de inferência são transientes (rate limit do
+      // serviço de embedding): retries com espera crescente antes de falhar.
+      if ((r.status === 429 || r.status >= 500) && i < tentativas) {
+        const espera = i * 5000;
+        console.error(`HTTP ${r.status} em ${caminho} — retry ${i}/${tentativas - 1} em ${espera}ms`);
+        await new Promise((res) => setTimeout(res, espera));
+        continue;
       }
-      const r = await fetch(`${qdrant.url}/collections/${colecao}/points?wait=true`, {
-        method: 'PUT',
-        headers: headersQ,
-        body: JSON.stringify({ points: pontosColecao }),
+      if (!r.ok) throw new Error(`${metodo} ${caminho} → HTTP ${r.status}: ${t.slice(0, 300)}`);
+      return t ? JSON.parse(t) : {};
+    }
+  }
+
+  const contar = async (colecao) => {
+    const j = await qdrantFetch('POST', `/collections/${colecao}/points/count`, { exact: true });
+    return j.result?.count ?? j.count;
+  };
+
+  for (const [colecao, lista] of Object.entries(porColecao)) {
+    for (let i = 0; i < lista.length; i += LOTE) {
+      const lote = lista.slice(i, i + LOTE).map((e) => ({
+        id: e.id,
+        vector: { text: e.texto_entrada, model: MODELO_EMBED },
+        payload: {
+          card_id: e.card_id,
+          tipo: e.tipo,
+          titulo: e.titulo,
+          texto_entrada: e.texto_entrada,
+          release_real: e.release_real,
+          data: e.data,
+        },
+      }));
+      const j = await qdrantFetch('PUT', `/collections/${colecao}/points?wait=true`, {
+        points: lote,
       });
-      const j = await r.json();
       if (j.result?.status !== 'completed') {
         throw new Error(`${colecao}: upsert não completou: ${JSON.stringify(j.status || j)}`);
       }
-      const total = await contar(colecao);
-      console.log(`${colecao}: ${lista.length} pontos upsertados (total na coleção: ${total})`);
     }
-  } finally {
-    rmSync(dirTemp, { recursive: true, force: true });
+    const total = await contar(colecao);
+    console.log(`${colecao}: ${lista.length} pontos upsertados (total na coleção: ${total})`);
   }
   console.log('backfill concluído.');
 }
