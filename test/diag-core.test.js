@@ -211,6 +211,44 @@ test('cadeiaDiag: overrides por env são respeitados', () => {
   assert.equal(cfg.base, 'https://exemplo.invalid');
 });
 
+// ── v2.29: slot de fallback do DIAG (fix do TPM do DIN-49) ──────────────────
+
+test('cadeiaDiag: fallback entra só com DIAG_LLM_FALLBACK_API_KEY, com o mesmo orçamento', () => {
+  const sem = cadeiaDiag({ DIAG_LLM_FALLBACK_MODEL: 'x' });
+  assert.equal(sem.length, 1);
+  const com = cadeiaDiag({
+    DIAG_LLM_API_KEY: 'kd',
+    DIAG_LLM_FALLBACK_API_KEY: 'kf',
+    DIAG_LLM_FALLBACK_MODEL: 'gpt-oss-120b'
+  });
+  assert.equal(com.length, 2);
+  assert.equal(com[1].provedor, 'openai-compat');
+  assert.equal(com[1].key, 'kf');
+  assert.equal(com[1].model, 'gpt-oss-120b');
+  assert.equal(com[1].base, 'https://api.groq.com/openai/v1');
+  assert.equal(com[1].maxTokens, 3500);
+  assert.equal(com[1].temperature, 0);
+  // overrides de base/provedor do fallback também valem
+  const custom = cadeiaDiag({
+    DIAG_LLM_FALLBACK_API_KEY: 'kf',
+    DIAG_LLM_FALLBACK_PROVIDER: 'cerebras',
+    DIAG_LLM_FALLBACK_BASE_URL: 'https://api.cerebras.ai/v1'
+  });
+  assert.equal(custom[1].provedor, 'cerebras');
+  assert.equal(custom[1].base, 'https://api.cerebras.ai/v1');
+});
+
+test('cadeiaDiag: guarda anti-Gemini — fallback Gemini é ignorado, cadeia segue só com o primário', () => {
+  const cadeia = cadeiaDiag({
+    DIAG_LLM_API_KEY: 'kd',
+    DIAG_LLM_FALLBACK_PROVIDER: 'gemini',
+    DIAG_LLM_FALLBACK_API_KEY: 'kg',
+    DIAG_LLM_FALLBACK_MODEL: 'gemini-3.5-flash-lite'
+  });
+  assert.equal(cadeia.length, 1); // slot ignorado, nunca código no Gemini
+  assert.equal(cadeia[0].key, 'kd');
+});
+
 test('constantes de orçamento têm os valores do contrato v2.20', () => {
   assert.equal(JANELA_LINHAS, 100);
   assert.equal(CAP_LINHAS, 300);

@@ -106,3 +106,25 @@ test('chunkRepositorio produz chunks com payload do contrato 2.1 e ids determin�
   const deNovo = chunkRepositorio(RAIZ)
   assert.deepEqual(deNovo.map((c) => c.id), chunks.map((c) => c.id))
 })
+
+// v2.29 (fix DIN-49): `sha_arquivo` é o BLOB sha (hash do conteúdo) — o mesmo
+// valor que a API `contents` devolve em `dados.sha` no webhook. Antes era o
+// commit sha (`git log %H`), que nunca confere com o blob: 100% dos trechos
+// de código morriam no check "sha divergente" (6/6 no DIN-49). Fora de um
+// repo git (workspace local não é repo), o sha fica vazio — e o webhook
+// descarta ponto sem sha honestamente.
+test('sha_arquivo: blob sha de 40 hex quando há git, vazio quando não há', () => {
+  const chunks = chunkRepositorio(RAIZ)
+  const algumVazio = chunks.some((c) => c.payload.sha_arquivo === '')
+  if (algumVazio) {
+    // Workspace sem repo (nosso caso): TODOS vazios — nunca um mix mentiroso.
+    for (const c of chunks) {
+      assert.equal(c.payload.sha_arquivo, '', `sha inesperado sem git: ${c.payload.path}`)
+    }
+  } else {
+    // No repo real (Actions): blob sha válido em todo ponto.
+    for (const c of chunks) {
+      assert.match(c.payload.sha_arquivo, /^[0-9a-f]{40}$/, `sha inválido: ${c.payload.path}`)
+    }
+  }
+})
