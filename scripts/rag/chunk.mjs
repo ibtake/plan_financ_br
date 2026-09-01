@@ -181,19 +181,50 @@ function cartaoDe(caminho, simbolo, linhas, inicio) {
   return `caminho: ${caminho} | símbolo: ${simbolo} | doc: ${doc} | assinatura: ${assinatura}`;
 }
 
-// Último commit que tocou cada arquivo: UM subprocesso (redirect para arquivo
-// temporário — capturar stdout por pipe é EPERM no sandbox Windows, mesmo
-// padrão do qdrant-key.mjs). Fora de um repo git devolve mapa vazio.
+// Blob sha + data do último commit de cada arquivo: UM subprocesso por comando
+// (redirect para arquivo temporário — capturar stdout por pipe é EPERM no
+// sandbox Windows, mesmo padrão do qdrant-key.mjs).
+// v2.29 (fix do sha divergente, DIN-49): o payload `sha_arquivo` agora é o
+// BLOB sha (hash do conteúdo do arquivo) — é isso que a API `contents` devolve
+// em `dados.sha` no webhook; antes indexávamos o COMMIT sha (`git log
+// --pretty=%H`), que nunca casa com o blob sha, e 100% dos trechos de código
+// morriam no check `sha divergente` (6/6 no DIN-49). `ls-tree -r HEAD` lista
+// (modo, blob sha, caminho) por arquivo; `log` segue trazendo a data do último
+// commit que tocou cada arquivo. Fora de um repo git devolve mapa vazio.
 function mapaGit(raiz) {
   const mapa = new Map();
-  const tmp = join(tmpdir(), `rag-git-${process.pid}.tmp`);
+  const tmpLs = join(tmpdir(), `rag-ls-${process.pid}.tmp`);
+  const tmpLog = join(tmpdir(), `rag-log-${process.pid}.tmp`);
+  try {
+    execSync(`git -C "${raiz}" ls-tree -r HEAD > "${tmpLs}"`, {
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    for (const bruta of readFileSync(tmpLs, 'utf8').split('\n')) {
+      const linha = bruta.trimEnd();
+      if (!linha) continue;
+      // Formato: <mode> SP <type> SP <sha> TAB <caminho>
+      const m = linha.match(/^[0-9]+ \w+ ([0-9a-f]{40})\t(.+)$/);
+      if (m) {
+        const atual = mapa.get(m[2]) || { sha: '', data: '' };
+        mapa.set(m[2], { sha: m[1], data: atual.data });
+      }
+    }
+  } catch {
+    /* sem git local (workspace não é repo) — sha fica vazio */
+  } finally {
+    try {
+      unlinkSync(tmpLs);
+    } catch {
+      /* já removido */
+    }
+  }
   try {
     execSync(
-      `git -C "${raiz}" log --pretty=format:%H%x09%cI --name-only > "${tmp}"`,
-      { stdio: ['ignore', 'ignore', 'ignore'] }
+      `git -C "${raiz}" log --pretty=format:%H%x09%cI --name-only > "${tmpLog}"`,
+      { stdio: ['ignore', 'ignore', 'ignore'] },
     );
     let commit = null;
-    for (const bruta of readFileSync(tmp, 'utf8').split('\n')) {
+    for (const bruta of readFileSync(tmpLog, 'utf8').split('\n')) {
       const linha = bruta.trimEnd();
       if (!linha) continue;
       if (/^[0-9a-f]{40}\t/.test(linha)) {
@@ -201,13 +232,16 @@ function mapaGit(raiz) {
         commit = { sha, data };
         continue;
       }
-      if (commit && !mapa.has(linha)) mapa.set(linha, commit);
+      if (commit && !mapa.get(linha)?.data) {
+        const atual = mapa.get(linha) || { sha: '', data: '' };
+        mapa.set(linha, { sha: atual.sha, data: commit.data });
+      }
     }
   } catch {
-    /* sem git local (workspace não é repo) — sha/data ficam vazios */
+    /* sem git local — data fica vazia */
   } finally {
     try {
-      unlinkSync(tmp);
+      unlinkSync(tmpLog);
     } catch {
       /* já removido */
     }
