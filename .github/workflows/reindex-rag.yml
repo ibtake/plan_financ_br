@@ -1,14 +1,20 @@
-# Reindex do RAG (fase 2; design-rag-fase0.md, D6) — rebuild da coleção
-# `codigo` a partir do código da main. Disparo: push na main (o índice
+# Reindex do RAG (fase 5, revisão d; design-rag-fase0.md, D6) — rebuild da
+# coleção `codigo` a partir do código da main. Disparo: push na main (o índice
 # acompanha a produção) + workflow_dispatch manual. Runs são serializados
 # por concurrency (delete-by-filter + upsert nunca correm em paralelo —
 # pushes em sequência viram fila). Branches/PR não disparam de propósito:
 # o valor `repo` no payload é único e o id do ponto é uuidv5(repo:caminho:
 # linha) — runs concorrentes de branches diferentes se apagariam mutuamente.
-# Torch CPU: a inferência já roda em CPU; instalar só o wheel CPU (~200 MB)
-# em vez do pacote default com CUDA (~3 GB) derruba o run de 6-10 para
-# 2-3 minutos. O job de reindex só roda se o gate de paridade D1 passar
-# (needs). O índice é cache: rodar de novo é sempre seguro.
+#
+# Revisão d: o embedding é SERVER-SIDE (Qdrant Cloud Inference, modelo
+# intfloat/multilingual-e5-small via Inference Object { text, model }) — não
+# há mais job de paridade Node x Python (D1 obsoleto: um único embedder) nem
+# instalação de torch/sentence-transformers. O job é só chunk → upsert e roda
+# em ~1 minuto. O gate de paridade da fase 2 (scripts/rag/parity.mjs) saiu do
+# pipeline ativo junto com embed.py (mantidos no repo como fallback
+# documentado — ver scripts/rag/modelo.mjs).
+#
+# O índice é cache: rodar de novo é sempre seguro (ids determinísticos).
 name: reindex-rag
 
 on:
@@ -21,29 +27,9 @@ concurrency:
   cancel-in-progress: false # fila, nunca corrida (o rebuild é delete+upsert)
 
 jobs:
-  paridade:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Instalar os dois lados do embedder
-        run: |
-          npm install --no-save @huggingface/transformers
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install "sentence-transformers>=3,<4"
-      - name: Gate de paridade Node x Python (D1)
-        run: node scripts/rag/parity.mjs
-
   reindex:
-    needs: paridade
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,17 +37,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Chunk, embed e upsert da coleção codigo
+      - name: Chunk e upsert da coleção codigo (inference server-side)
         env:
           QDRANT_URL: ${{ secrets.QDRANT_URL }}
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
         run: |
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install "sentence-transformers>=3,<4"
           node scripts/rag/chunk.mjs --json rag-chunks.json
-          python scripts/rag/embed.py rag-chunks.json rag-pontos.json
-          node scripts/rag/upsert.mjs rag-pontos.json
-          rm -f rag-chunks.json rag-pontos.json
+          node scripts/rag/upsert.mjs rag-chunks.json
+          rm -f rag-chunks.json
