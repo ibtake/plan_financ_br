@@ -6,7 +6,8 @@
  * crash × valor com os padrões exatos do design (D10), montagem da consulta
  * truncada, scrub de segredos (D3), teto de trechos, prompt com escape
  * SEM_CONTEXTO, extração/validação de citações `caminho:linha` e formatação
- * do comentário (marcador fixo, zero emoji).
+ * do comentário (marcador fixo, zero emoji) e, da integração D11, a lista de
+ * trechos do índice para o prompt integrado do §8.i.
  *
  * O linear-webhook.js não é importado aqui (tem efeito colateral de servidor);
  * o sincronismo do MODELO_EMBED copiado em rag-core.js contra a fonte canônica
@@ -33,6 +34,7 @@ import {
   tetoTrechos,
   RAG_SISTEMA,
   montarPromptLLM,
+  listarTrechosIndice,
   extrairCitacoes,
   formatarComentario,
   linhaHonesto
@@ -247,4 +249,34 @@ test('PISO_SCORE calibrado na fase 5 (sondas): dentro da banda medida', () => {
   // do pior relevante com margem e corta a faixa degenerada.
   assert.ok(PISO_SCORE > 0.8 && PISO_SCORE < 0.87);
   assert.equal(PISO_SCORE, 0.83);
+});
+
+// ───────────────────────────── lista de trechos do prompt integrado (D11)
+
+test('listarTrechosIndice: formato numerado com rótulo por trecho (D11)', () => {
+  const lista = listarTrechosIndice([
+    { rotulo: '`BUG-010` (memória: bug anterior)', texto: 'texto da memória' },
+    { rotulo: '`src/x.js:10-20`', texto: 'const a = 1;' }
+  ]);
+  const blocos = lista.split('\n\n');
+  assert.equal(blocos.length, 2);
+  assert.match(blocos[0], /^\[1\] `BUG-010` \(memória: bug anterior\)\ntexto da memória$/);
+  assert.match(blocos[1], /^\[2\] `src\/x\.js:10-20`\nconst a = 1;$/);
+});
+
+test('listarTrechosIndice: scrub de segredos e teto de 8 trechos (D11)', () => {
+  const muitos = Array.from({ length: 12 }, (_, i) => ({
+    rotulo: '`arquivo' + i + '.js:1-2`',
+    texto: 'trecho ' + i + ' ghp_abcdef0123456789abcdef0123456789abcd'
+  }));
+  const lista = listarTrechosIndice(muitos);
+  assert.ok(!lista.includes('ghp_')); // scrub D3 aplicado
+  assert.match(lista, /^\[8\]/m); // teto D3: no máximo 8
+  assert.ok(!/\[9\]/m.test(lista));
+});
+
+test('listarTrechosIndice: vazio e entradas inválidas devolvem string vazia (D11)', () => {
+  assert.equal(listarTrechosIndice([]), '');
+  assert.equal(listarTrechosIndice(), '');
+  assert.equal(listarTrechosIndice([null, { rotulo: '', texto: '' }]), '');
 });
