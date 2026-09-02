@@ -194,7 +194,7 @@ test('cadeiaDiag: Groq único, sem fallback, orçamento fixo', () => {
   assert.equal(cadeia.length, 1);
   assert.equal(cadeia[0].provedor, 'openai-compat');
   assert.equal(cadeia[0].base, 'https://api.groq.com/openai/v1');
-  assert.equal(cadeia[0].maxTokens, 3500);
+  assert.equal(cadeia[0].maxTokens, 8000);
   assert.equal(cadeia[0].temperature, 0);
   assert.ok(cadeia[0].model.length > 0);
 });
@@ -227,7 +227,7 @@ test('cadeiaDiag: fallback entra só com DIAG_LLM_FALLBACK_API_KEY, com o mesmo 
   assert.equal(com[1].key, 'kf');
   assert.equal(com[1].model, 'gpt-oss-120b');
   assert.equal(com[1].base, 'https://api.groq.com/openai/v1');
-  assert.equal(com[1].maxTokens, 3500);
+  assert.equal(com[1].maxTokens, 8000);
   assert.equal(com[1].temperature, 0);
   // overrides de base/provedor do fallback também valem
   const custom = cadeiaDiag({
@@ -297,6 +297,42 @@ test('conteudoResposta: content preenchido passa limpo, com ou sem raciocínio',
     () => conteudoResposta({ choices: [{ message: { content: '   \n  ' } }] }),
     /content vazio/
   );
+});
+
+// ── v2.29.2: separador de blocos tolerante a espaços (achado DIN-51) ─────────
+// A Groq separa os blocos com "---  " + hard-break markdown (2 espaços antes
+// da quebra); o parser do webhook usa este regex literal. Este teste ancora o
+// CONTRATO do separador: qualquer mudança no regex do webhook falha aqui se
+// deixar de aceitar as variantes reais vistas em produção.
+test('separador ---: regex do parse casa limpo, com 2 espaços (Groq/DIN-51) e com TAB', () => {
+  const SEPARADOR = /\n-{3,}[ \t]*\n/; // literal idêntico ao do linear-webhook.js
+  // DIN-51 (produção, Groq): "---  \n" com hard-break markdown
+  assert.deepEqual(
+    'bloco1\n---  \nbloco2'.split(SEPARADOR).map((p) => p.trim()),
+    ['bloco1', 'bloco2']
+  );
+  // probe CF (medium): separador limpo
+  assert.deepEqual(
+    'bloco1\n---\nbloco2'.split(SEPARADOR).map((p) => p.trim()),
+    ['bloco1', 'bloco2']
+  );
+  // tab residual
+  assert.deepEqual(
+    'bloco1\n---\t\nbloco2'.split(SEPARADOR).map((p) => p.trim()),
+    ['bloco1', 'bloco2']
+  );
+  // não pode casar --- INLINE dentro de linha (fora do fim de linha)
+  assert.equal('a --- b'.split(SEPARADOR).length, 1);
+});
+
+test('cadeiaDiag: teto de saída v2.29.2 cobre raciocínio + resposta (8000, era 3500)', () => {
+  // DIN-51: saída real somou 1.078 tokens na Groq (raciocínio + resposta
+  // dividem o mesmo max_tokens — content vazio com finish length é o
+  // sintoma documentado da comunidade). 8.000 = margem 2,3× sem custo
+  // extra (cobra-se por token usado).
+  for (const cfg of cadeiaDiag({ DIAG_LLM_API_KEY: 'kd', DIAG_LLM_FALLBACK_API_KEY: 'kf' })) {
+    assert.equal(cfg.maxTokens, 8000);
+  }
 });
 
 test('constantes de orçamento têm os valores do contrato v2.20', () => {
