@@ -35,6 +35,10 @@ import {
   RAG_SISTEMA,
   montarPromptLLM,
   listarTrechosIndice,
+  colecaoDaMemoria,
+  ehCardPadronizado,
+  comentarioDeFechamento8f,
+  textoEntradaMemoria,
   extrairCitacoes,
   formatarComentario,
   linhaHonesto
@@ -280,3 +284,50 @@ test('listarTrechosIndice: vazio e entradas inválidas devolvem string vazia (D1
   assert.equal(listarTrechosIndice(), '');
   assert.equal(listarTrechosIndice([null, { rotulo: '', texto: '' }]), '');
 });
+
+// ─────────────────────── captura no fechamento (fase 6, D5/D7)
+
+test('colecaoDaMemoria: prefixo → coleção/tipo, mesma tabela do backfill', () => {
+  assert.deepEqual(colecaoDaMemoria('BUG-003'), { colecao: 'bugs_resolvidos', tipo: 'bug' });
+  assert.deepEqual(colecaoDaMemoria('TASK-004'), { colecao: 'bugs_resolvidos', tipo: 'task' });
+  assert.deepEqual(colecaoDaMemoria('IMPR-007'), { colecao: 'decisoes_arquitetura', tipo: 'improvement' });
+  assert.deepEqual(colecaoDaMemoria('AUDT-019'), { colecao: 'decisoes_arquitetura', tipo: 'auditoria' });
+  assert.deepEqual(colecaoDaMemoria('SUPB-001'), { colecao: 'decisoes_arquitetura', tipo: 'supabase' });
+  assert.deepEqual(colecaoDaMemoria('DIN-54'), { colecao: null, tipo: null }); // sem prefixo canônico
+  assert.deepEqual(colecaoDaMemoria(''), { colecao: null, tipo: null });
+});
+
+test('ehCardPadronizado: só título com prefixo [<id>] passa', () => {
+  assert.ok(ehCardPadronizado('[BUG-003] Reset de senha falha no Safari'));
+  assert.ok(ehCardPadronizado('  [IMPR-007] RAG')); // trim tolerante
+  assert.ok(!ehCardPadronizado('Reset de senha falha no Safari')); // card humano
+  assert.ok(!ehCardPadronizado(''));
+  assert.ok(!ehCardPadronizado(null));
+});
+
+test('comentarioDeFechamento8f: o 8.f MAIS RECENTE com "## " vence; sem 8.f → null', () => {
+  const comentarios = [
+    { body: 'comentário cru do meio', createdAt: '2026-09-02T10:00:00Z' },
+    { body: '## Implementação validada: primeira versão', createdAt: '2026-09-02T11:00:00Z' },
+    { body: '## Implementação validada: versão final da adoção', createdAt: '2026-09-02T12:00:00Z' },
+  ];
+  const achado = comentarioDeFechamento8f(comentarios);
+  assert.ok(achado.corpo.includes('versão final'));
+  assert.equal(achado.data, '2026-09-02');
+  // sem nenhum estruturado
+  assert.equal(comentarioDeFechamento8f([{ body: 'só texto', createdAt: '2026-09-02T10:00:00Z' }]), null);
+  assert.equal(comentarioDeFechamento8f([]), null);
+  assert.equal(comentarioDeFechamento8f(null), null);
+});
+
+test('textoEntradaMemoria: título + 8.f com scrub D3 e teto de 2k chars', () => {
+  const texto = textoEntradaMemoria(
+    '[BUG-003] Reset de senha falha no Safari',
+    '## Implementação validada\n\nCausa: token via hash. Key de teste sk-abcdef1234567890abcdef1234567890 no meio. ' + 'x'.repeat(3000)
+  );
+  assert.ok(texto.startsWith('[BUG-003] Reset de senha falha no Safari'));
+  assert.ok(!texto.includes('sk-abcdef')); // scrub D3: segredo nunca entra no índice
+  assert.ok(texto.length <= 2000); // teto D7
+});
+
+// ─────────────────────── sincronismo do modelo (fronteira de deploy)

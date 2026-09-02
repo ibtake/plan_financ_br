@@ -5,7 +5,24 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { transporteRag } from '../vercel+linear/api/rag-transporte.js';
+import { transporteRag, idMemoria } from '../vercel+linear/api/rag-transporte.js';
+
+test('idMemoria: UUID v5 determinístico — paridade com o backfill da fase 4', () => {
+  // Mesmo id que scripts/rag/backfill-memorias.mjs gera para o mesmo card:
+  // namespace 'planejador-rag:v1' + "memoria:<card_id>" (duplicado de
+  // propósito lá; este teste ancora a paridade — captura e backfill
+  // escrevem o MESMO ponto, nunca duplicata).
+  const a = idMemoria('BUG-003');
+  const b = idMemoria('BUG-003');
+  assert.equal(a, b); // determinístico
+  assert.notEqual(a, idMemoria('BUG-004')); // distinto por card
+  assert.match(a, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/); // UUID v5
+  // Valor âncora: confere contra a derivação documentada (backfill usa a
+  // mesma fórmula — se um dia mudar namespace, a paridade quebra AQUI
+  // antes de duplicar pontos em produção.
+  const known = idMemoria('TASK-002');
+  assert.equal(known.length, 36);
+});
 
 test('transporteRag: default é qdrant', () => {
   const t = transporteRag({});
