@@ -11,6 +11,7 @@ import {
   janelaDoTrecho,
   cadeiaLlm,
   cadeiaDiag,
+  cadeiaPesquisa,
   conteudoResposta,
   termosDeBusca,
   queryBuscaCodigo,
@@ -333,6 +334,45 @@ test('cadeiaDiag: teto de saída v2.29.2 cobre raciocínio + resposta (8000, era
   for (const cfg of cadeiaDiag({ DIAG_LLM_API_KEY: 'kd', DIAG_LLM_FALLBACK_API_KEY: 'kf' })) {
     assert.equal(cfg.maxTokens, 8000);
   }
+});
+
+// ── v2.30 (Nível 2): cadeia da pesquisa com modelo próprio ───────────────────
+
+test('cadeiaPesquisa: sem LLM_PESQUISA_MODEL, idêntica à cadeia do webhook', () => {
+  const env = { LLM_PROVIDER: 'openai-compat', LLM_API_KEY: 'k1', LLM_MODEL: 'm1', LLM_FALLBACK_API_KEY: 'k2', LLM_FALLBACK_MODEL: 'm2' };
+  assert.deepEqual(cadeiaPesquisa(env), cadeiaLlm(env));
+});
+
+test('cadeiaPesquisa: override aplica LLM_PESQUISA_MODEL em todos os slots não-Gemini', () => {
+  const cadeia = cadeiaPesquisa({
+    LLM_PROVIDER: 'openai-compat',
+    LLM_API_KEY: 'k1',
+    LLM_MODEL: '@cf/openai/gpt-oss-120b',
+    LLM_FALLBACK_PROVIDER: 'openai-compat', // sem isto o default do fallback é gemini (e é filtrado)
+    LLM_FALLBACK_API_KEY: 'k2',
+    LLM_FALLBACK_MODEL: 'gpt-oss-120b',
+    LLM_PESQUISA_MODEL: '@cf/qwen/qwen3-30b-a3b-fp8'
+  });
+  assert.equal(cadeia.length, 2);
+  for (const cfg of cadeia) {
+    assert.equal(cfg.model, '@cf/qwen/qwen3-30b-a3b-fp8');
+    assert.notEqual(cfg.provedor, 'gemini');
+  }
+  // keys e bases preservadas (só o modelo muda)
+  assert.equal(cadeia[0].key, 'k1');
+  assert.equal(cadeia[1].key, 'k2');
+});
+
+test('cadeiaPesquisa: guarda anti-Gemini — override que deixar só Gemini cai fora', () => {
+  // cadeia só com Gemini + override: slots gemini são filtrados; resta a
+  // cadeia original (não vira cadeia vazia nem manda backlog ao Gemini)
+  const env = {
+    LLM_PROVIDER: 'gemini',
+    LLM_API_KEY: 'kg',
+    LLM_MODEL: 'gemini-3.5-flash-lite',
+    LLM_PESQUISA_MODEL: '@cf/qwen/qwen3-30b-a3b-fp8'
+  };
+  assert.deepEqual(cadeiaPesquisa(env), cadeiaLlm(env));
 });
 
 test('constantes de orçamento têm os valores do contrato v2.20', () => {
