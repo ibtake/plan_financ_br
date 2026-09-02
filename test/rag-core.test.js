@@ -305,16 +305,26 @@ test('ehCardPadronizado: só título com prefixo [<id>] passa', () => {
   assert.ok(!ehCardPadronizado(null));
 });
 
-test('comentarioDeFechamento8f: o 8.f MAIS RECENTE com "## " vence; sem 8.f → null', () => {
+test('comentarioDeFechamento8f: só o 8.f real (âncora "Implementação local concluída") vence; comentário do webhook NÃO é 8.f', () => {
+  // Cenário real do BUG-001 (pré-teste fase 6): último "## " do card era o
+  // §8.h do webhook — sem a âncora exata, a captura gravaria pesquisa de
+  // contexto como memória.
   const comentarios = [
-    { body: 'comentário cru do meio', createdAt: '2026-09-02T10:00:00Z' },
-    { body: '## Implementação validada: primeira versão', createdAt: '2026-09-02T11:00:00Z' },
-    { body: '## Implementação validada: versão final da adoção', createdAt: '2026-09-02T12:00:00Z' },
+    { body: '## Primeira leitura do código (webhook)\n\nleitura automática', createdAt: '2026-09-02T10:00:00Z' },
+    { body: '## Pesquisa de contexto (webhook)\n\nfontes da web', createdAt: '2026-09-02T11:00:00Z' },
   ];
-  const achado = comentarioDeFechamento8f(comentarios);
-  assert.ok(achado.corpo.includes('versão final'));
+  assert.equal(comentarioDeFechamento8f(comentarios), null); // sem 8.f → não captura
+
+  // com o 8.f real presente (mesmo entre comentários do webhook), o mais recente vence
+  const com8f = [
+    ...comentarios,
+    { body: '## Implementação local concluída em 2026-09-01\n\nCausa confirmada.', createdAt: '2026-09-02T12:00:00Z' },
+    { body: '## Implementação local concluída em 2026-09-02\n\nRetificação final.', createdAt: '2026-09-02T13:00:00Z' },
+  ];
+  const achado = comentarioDeFechamento8f(com8f);
+  assert.ok(achado.corpo.includes('Retificação final')); // mais recente
   assert.equal(achado.data, '2026-09-02');
-  // sem nenhum estruturado
+  // sem nenhum
   assert.equal(comentarioDeFechamento8f([{ body: 'só texto', createdAt: '2026-09-02T10:00:00Z' }]), null);
   assert.equal(comentarioDeFechamento8f([]), null);
   assert.equal(comentarioDeFechamento8f(null), null);
