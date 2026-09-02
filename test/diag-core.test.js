@@ -11,6 +11,7 @@ import {
   janelaDoTrecho,
   cadeiaLlm,
   cadeiaDiag,
+  conteudoResposta,
   termosDeBusca,
   queryBuscaCodigo,
   consultasDeBusca,
@@ -247,6 +248,55 @@ test('cadeiaDiag: guarda anti-Gemini — fallback Gemini é ignorado, cadeia seg
   });
   assert.equal(cadeia.length, 1); // slot ignorado, nunca código no Gemini
   assert.equal(cadeia[0].key, 'kd');
+});
+
+// ── v2.29.1: extração resiliente da resposta (pós-DIN-50) ────────────────────
+
+test('conteudoResposta: 402 de quota vira erro descritivo, não "ok vazio"', () => {
+  const corpo402 = {
+    message: 'Payment required to access this resource. Visit your billing tab.',
+    type: 'payment_required_error',
+    param: 'quota',
+    code: 'payment_required'
+  };
+  assert.throws(
+    () => conteudoResposta(corpo402),
+    /payment_required_error — Payment required/
+  );
+});
+
+test('conteudoResposta: content vazio com/sem raciocínio vira erro; a cadeia engaja o fallback', () => {
+  // só raciocínio, sem texto final (doença do DIN-50 na Cerebras)
+  assert.throws(
+    () => conteudoResposta({ choices: [{ message: { content: '', reasoning_content: 'deliberação interna...' }, finish_reason: 'stop' }] }),
+    /só raciocínio/
+  );
+  // nada em lugar nenhum
+  assert.throws(
+    () => conteudoResposta({ choices: [{ message: { content: null }, finish_reason: 'length' }] }),
+    /content vazio \(finish length\)/
+  );
+  // corpo fora do contrato
+  assert.throws(() => conteudoResposta(null), /sem JSON/);
+});
+
+test('conteudoResposta: content preenchido passa limpo, com ou sem raciocínio', () => {
+  assert.equal(
+    conteudoResposta({ choices: [{ message: { content: 'hipótese limpa' } }] }),
+    'hipótese limpa'
+  );
+  // Cloudflare devolve reasoning_content junto do content — o content vence
+  assert.equal(
+    conteudoResposta({
+      choices: [{ message: { content: 'texto final', reasoning_content: 'raciocínio que ficou no campo próprio' } }]
+    }),
+    'texto final'
+  );
+  // whitespace não conta como conteúdo
+  assert.throws(
+    () => conteudoResposta({ choices: [{ message: { content: '   \n  ' } }] }),
+    /content vazio/
+  );
 });
 
 test('constantes de orçamento têm os valores do contrato v2.20', () => {
