@@ -37,7 +37,9 @@ const TRANSPORTE = String(process.env.RAG_TRANSPORTE || 'qdrant').trim().toLower
 const REPO = process.env.GITHUB_REPOSITORY || 'local/planejador';
 const COLECAO = 'codigo';
 const NAMESPACE = 'codigo'; // Pinecone: namespace da coleção lógica
-const LOTE = 100;
+const LOTE = 90; // Pinecone records: máximo 96 records/request (erro canônico
+                 // "Batch size exceeds 96" achado no run real, 2026-09-02);
+                 // 90 dá folga. O Qdrant aceita esse lote tranquilo.
 const MODELO = MODELO_EMBED; // qdrant: fonte única scripts/rag/modelo.mjs
 
 // Credenciais: env primeiro (no Actions, secrets). Sem env, tenta o fallback

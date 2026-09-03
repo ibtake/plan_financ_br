@@ -285,7 +285,8 @@ async function main() {
   // Fase 5 (rev d): nada de embed local. IMPR-008: dual-transporte —
   // Qdrant (Inference Object { text, model }) ou Pinecone (texto direto,
   // integrated inference do modelo do índice = multilingual-e5-large).
-  const LOTE = 100;
+  const LOTE = 90; // Pinecone records: máximo 96/request ("Batch size exceeds
+                   // 96", run real 2026-09-02); 90 dá folga. Qdrant aceita igual.
 
   if (TRANSPORTE === 'pinecone') {
     const host = String(process.env.PINECONE_INDEX_HOST || '')
