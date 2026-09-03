@@ -47,7 +47,11 @@ async function credenciais() {
   if (TRANSPORTE === 'pinecone') {
     if (process.env.PINECONE_INDEX_HOST && process.env.PINECONE_API_KEY) {
       return {
-        host: String(process.env.PINECONE_INDEX_HOST).replace(/\/+$/, ''),
+        // à prova de secret colado com esquema: "https://host/" → "host"
+        host: String(process.env.PINECONE_INDEX_HOST)
+          .trim()
+          .replace(/^https?:\/\//, '')
+          .replace(/\/+$/, ''),
         apiKey: process.env.PINECONE_API_KEY,
       };
     }
@@ -84,15 +88,22 @@ function idChunkPinecone(payload) {
 async function upsertPinecone() {
   const { host, apiKey } = cred;
   const reqJson = async (caminho, corpo) => {
-    const resp = await fetch(`https://${host}${caminho}`, {
-      method: 'POST',
-      headers: {
-        'Api-Key': apiKey,
-        'Content-Type': 'application/json',
-        'X-Pinecone-Api-Version': '2025-04',
-      },
-      body: JSON.stringify(corpo),
-    });
+    let resp;
+    try {
+      resp = await fetch(`https://${host}${caminho}`, {
+        method: 'POST',
+        headers: {
+          'Api-Key': apiKey,
+          'Content-Type': 'application/json',
+          'X-Pinecone-Api-Version': '2025-04',
+        },
+        body: JSON.stringify(corpo),
+      });
+    } catch (e) {
+      // fetch mudo é inaceitável em CI: a cause traz DNS/URL/TLS reais
+      const causa = e?.cause?.code || e?.cause?.message || String(e && e.message ? e.message : e);
+      throw new Error(`POST ${caminho} → rede falhou (host "${host}"): ${causa}`);
+    }
     const texto = await resp.text();
     if (!resp.ok) throw new Error(`POST ${caminho} → HTTP ${resp.status}: ${texto.slice(0, 300)}`);
     return texto ? JSON.parse(texto) : {};
@@ -100,10 +111,14 @@ async function upsertPinecone() {
 
   // Rebuild idempotente: apaga o namespace inteiro e regrava (o índice é
   // cache, D6). NOTA: deletion_protection (a UI liga por padrão) pode
-  // bloquear deleteAll — se falhar aqui, desligar no console ou usar
-  // namespace novo. O /vectors/delete clássico cobre a limpeza.
-  await reqJson('/vectors/delete', { namespace: NAMESPACE, deleteAll: true });
-  console.log(`rebuild: namespace ${NAMESPACE} apagado`);
+  // bloquear deleteAll — NÃO é fatal: os ids determinísticos fazem o
+  // upsert substituir os pontos antigos; o deleteAll é só higiene.
+  try {
+    await reqJson('/vectors/delete', { namespace: NAMESPACE, deleteAll: true });
+    console.log(`rebuild: namespace ${NAMESPACE} apagado`);
+  } catch (e) {
+    console.log(`rebuild: deleteAll indisponível (${String(e && e.message ? e.message : e).slice(0, 120)}) — seguindo por upsert idempotente`);
+  }
 
   for (let i = 0; i < chunks.length; i += LOTE) {
     const lote = chunks.slice(i, i + LOTE);
