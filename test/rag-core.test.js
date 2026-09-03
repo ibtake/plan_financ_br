@@ -39,6 +39,7 @@ import {
   ehCardPadronizado,
   comentarioDeFechamento8f,
   textoEntradaMemoria,
+  formatarRotuloComLink,
   extrairCitacoes,
   formatarComentario,
   linhaHonesto
@@ -93,6 +94,15 @@ test('classificarBug: sem padrão de crash → valor (default conservador, D10)'
   assert.equal(classificarBug('saldo do mês fecha errado'), 'valor');
   assert.equal(classificarBug(''), 'valor');
   assert.equal(classificarBug(null), 'valor');
+});
+
+// ── UX4 (relatório v2.0): "stack" solto não é crash — crash exige stack trace/call stack
+test('classificarBug: "stack" em prosa técnica NÃO é crash; stack trace é', () => {
+  assert.equal(classificarBug('Revisar a stack de build do Vite'), 'valor');
+  assert.equal(classificarBug('Arquitetura full stack para o app'), 'valor');
+  assert.equal(classificarBug('Migrar para stack de observabilidade OpenTelemetry'), 'valor');
+  assert.equal(classificarBug('TypeError: x is not a function\n  at foo (stack trace acima)'), 'crash');
+  assert.equal(classificarBug('Erro com call stack apontando para o login'), 'crash');
 });
 
 // ───────────────────────────────────────────── consulta e trechos (D3)
@@ -247,12 +257,14 @@ test('MODELO_EMBED/DIM_EMBED copiados em rag-core.js = fonte canônica modelo.mj
   assert.equal(DIM_EMBED, 384);
 });
 
-test('PISO_SCORE calibrado na fase 5 (sondas): dentro da banda medida', () => {
-  // Relevante (piso medido ~0.867 em codigo) vs lixo degenerado (teto ~0.873,
-  // casos coerentes fora de domínio chegam a ~0.91): o piso 0.83 fica abaixo
-  // do pior relevante com margem e corta a faixa degenerada.
-  assert.ok(PISO_SCORE > 0.8 && PISO_SCORE < 0.87);
-  assert.equal(PISO_SCORE, 0.83);
+test('PISO_SCORE recalibrado no IMPR-008 (sondas no Pinecone/e5-large): dentro da banda medida', () => {
+  // Sondas do e5-large (14 no Pinecone, 2026-09-02): relevante 0.8309-0.8946,
+  // degenerada 0.7913-0.8381. O piso 0.84 corta toda a banda degenerada
+  // observada e mantém 7/8 relevantes (o outlier IMPR-001 0.8309 — tema mais
+  // distante — é o preço conhecido; mismatch semântico segue pro LLM).
+  assert.ok(PISO_SCORE > 0.8381 && PISO_SCORE < 0.85);
+  assert.equal(PISO_SCORE, 0.84);
+  // RECALIBRAR SEMPRE que mudar modelo/banco: o número é do par, não universal.
 });
 
 // ───────────────────────────── lista de trechos do prompt integrado (D11)
@@ -341,3 +353,35 @@ test('textoEntradaMemoria: título + 8.f com scrub D3 e teto de 2k chars', () =>
 });
 
 // ─────────────────────── sincronismo do modelo (fronteira de deploy)
+
+// -- S5 (relat�rio v2.0): PII no scrub � CPF e e-mail mascarados
+test('scrubTrecho: CPF e e-mail removidos (PII de caso de suporte no t�tulo/relogio)', () => {
+  const texto = scrubTrecho('contato: joao.silva@empresa.com.br | CPF 123.456.789-00 do titular');
+  assert.ok(!texto.includes('joao.silva@empresa.com.br'));
+  assert.ok(texto.includes('[email removido]'));
+  assert.ok(!texto.includes('123.456.789-00'));
+  assert.ok(texto.includes('[cpf removido]'));
+  // e-mail dentro de c�digo indexado tamb�m sai mascarado (comportamento desejado)
+  assert.ok(scrubTrecho('suporte@x.com' ).includes('[email removido]'));
+  // sem PII, texto intacto
+  assert.equal(scrubTrecho('saldo do cartao com token abc'), 'saldo do cartao com token abc');
+});
+
+// -- UX7 (relat�rio v2.0): r�tulo de c�digo vira link do GitHub; mem�ria n�o
+test('formatarRotuloComLink: link GitHub no caminho:linha; memória/card_id intactos; sem repo → intacto', () => {
+  const repo = 'ibtake/plan_financ_br';
+  assert.equal(
+    formatarRotuloComLink('`src/lib/supabase.js:23-33`', repo),
+    '[`src/lib/supabase.js:23-33`](https://github.com/ibtake/plan_financ_br/blob/main/src/lib/supabase.js#L23-L33)'
+  );
+  assert.equal(
+    formatarRotuloComLink('`src/lib/supabase.js:42`', repo),
+    '[`src/lib/supabase.js:42`](https://github.com/ibtake/plan_financ_br/blob/main/src/lib/supabase.js#L42)'
+  );
+  // memória: rótulo sem caminho.ext:linha volta intacto (com ou sem crases do chamador)
+  assert.equal(formatarRotuloComLink('`TASK-004` (memória: título)', repo), '`TASK-004` (memória: título)');
+  assert.equal(formatarRotuloComLink('`IMPR-006`', repo), '`IMPR-006`');
+  assert.equal(formatarRotuloComLink('IMPR-006', repo), 'IMPR-006');
+  // sem repo (não deveria ocorrer no webhook, mas é fail-safe)
+  assert.equal(formatarRotuloComLink('`src/x.js:1`', ''), '`src/x.js:1`');
+});

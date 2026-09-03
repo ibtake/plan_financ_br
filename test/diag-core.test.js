@@ -12,6 +12,8 @@ import {
   cadeiaLlm,
   cadeiaDiag,
   cadeiaPesquisa,
+  timestampValido,
+  JANELA_REPLAY_MS,
   conteudoResposta,
   termosDeBusca,
   queryBuscaCodigo,
@@ -334,6 +336,23 @@ test('cadeiaDiag: teto de saída v2.29.2 cobre raciocínio + resposta (8000, era
   for (const cfg of cadeiaDiag({ DIAG_LLM_API_KEY: 'kd', DIAG_LLM_FALLBACK_API_KEY: 'kf' })) {
     assert.equal(cfg.maxTokens, 8000);
   }
+});
+
+// ── S7 (relatório v2.0): anti-replay — webhookTimestamp dentro de 60s ────────
+
+test('timestampValido: aceita payload recente, rejeita replay (2min), ausente, malformado', () => {
+  const agora = Date.now();
+  assert.equal(timestampValido(JSON.stringify({ webhookTimestamp: agora }), agora), true);
+  assert.equal(timestampValido(JSON.stringify({ webhookTimestamp: agora - 30_000 }), agora), true); // dentro de 60s
+  // replay: timestamp de 2 minutos atrás (a reentrega de 1h/6h do Linear cai aqui)
+  assert.equal(timestampValido(JSON.stringify({ webhookTimestamp: agora - 120_000 }), agora), false);
+  // sem timestamp / malformado / corpo inválido
+  assert.equal(timestampValido(JSON.stringify({ type: 'Issue' }), agora), false);
+  assert.equal(timestampValido('{"webhookTimestamp":', agora), false);
+  assert.equal(timestampValido(null, agora), false);
+  // janela em constante nomeada (facilita afrouxar se clock skew aparecer)
+  assert.equal(typeof JANELA_REPLAY_MS, 'number');
+  assert.ok(JANELA_REPLAY_MS > 0);
 });
 
 // ── v2.30 (Nível 2): cadeia da pesquisa com modelo próprio ───────────────────
