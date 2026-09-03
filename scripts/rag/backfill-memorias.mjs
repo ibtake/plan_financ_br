@@ -32,7 +32,9 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { resolveApiKey } from '../linear-key.mjs';
@@ -226,11 +228,24 @@ async function main() {
       (naoPadronizados ? ` — ${naoPadronizados} sem prefixo [<id>], pulados` : '')
   );
 
+  // IMPR-008: dual-transporte (RAG_TRANSPORTE, default qdrant — mesma env do
+  // webhook e do reindex). O ID da memória depende do banco: uuidV5 no Qdrant,
+  // string 'memoria:<card_id>' no Pinecone — mesma chave que a CAPTURA DA FASE
+  // 6 usa em cada um (contrato de idempotência: backfill e captura gravam o
+  // MESMO ponto no mesmo banco, nunca duplicata).
+  const TRANSPORTE = String(process.env.RAG_TRANSPORTE || 'qdrant').trim().toLowerCase();
+  if (TRANSPORTE !== 'qdrant' && TRANSPORTE !== 'pinecone') {
+    console.error(`FALHOU: RAG_TRANSPORTE desconhecido "${TRANSPORTE}" (use qdrant ou pinecone)`);
+    process.exit(1);
+  }
+  const idDaMemoria = (cardId) =>
+    TRANSPORTE === 'pinecone' ? `memoria:${cardId}` : uuidV5(`memoria:${cardId}`);
+
   const entradas = cards.map((card) => {
     const ssot = dadosDoSsot(card);
     const { colecao, tipo } = colecaoEtipo(card);
     return {
-      id: uuidV5(`memoria:${card.card_id}`),
+      id: idDaMemoria(card.card_id),
       card_id: card.card_id,
       colecao,
       tipo,
@@ -267,16 +282,79 @@ async function main() {
   }
 
   // ------------------------------------------------- upsert (embedding server-side)
-  // Fase 5 (revisão d): nada de embed local — cada ponto vai com Inference
-  // Object { text, model } e o Qdrant Cloud Inference gera o vetor no cluster
-  // (mesmo modelo da query do webhook; prefixos e5 automáticos, texto cru).
+  // Fase 5 (rev d): nada de embed local. IMPR-008: dual-transporte —
+  // Qdrant (Inference Object { text, model }) ou Pinecone (texto direto,
+  // integrated inference do modelo do índice = multilingual-e5-large).
+  const LOTE = 100;
+
+  if (TRANSPORTE === 'pinecone') {
+    const host = String(process.env.PINECONE_INDEX_HOST || '')
+      .replace(/^https?:\/\//, '')
+      .replace(/\/+$/, '');
+    // Key: env primeiro (CI), fallback ao registro local (HKCU — mesmo
+    // padrão do pinecone-setup.mjs e do linear-key.mjs; nunca impressa).
+    let key = process.env.PINECONE_API_KEY || '';
+    if (!key) {
+      try {
+        const tmpKey = join(tmpdir(), `pinecone-key-${process.pid}.tmp`);
+        execSync(`reg query HKCU\\Environment /v PINECONE_API_KEY > "${tmpKey}"`, {
+          stdio: ['ignore', 'ignore', 'ignore'],
+        });
+        const m = readFileSync(tmpKey, 'utf8').match(/PINECONE_API_KEY\s+REG_SZ\s+(\S+)/);
+        key = m ? m[1] : '';
+        try { unlinkSync(tmpKey); } catch { /* já removido */ }
+      } catch {
+        key = '';
+      }
+    }
+    if (!host || !key) {
+      console.error('FALHOU: pinecone exige PINECONE_INDEX_HOST/PINECONE_API_KEY (env ou registro HKCU).');
+      process.exit(1);
+    }
+    // Índice-embed: endpoints de RECORDS com NDJSON (formato canônico
+    // validado 2026-09-02). Record: { id, text } + campos do contrato 2.1.
+    for (const [colecao, lista] of Object.entries(porColecao)) {
+      for (let i = 0; i < lista.length; i += LOTE) {
+        const lote = lista.slice(i, i + LOTE);
+        const ndjson = lote
+          .map((e) =>
+            JSON.stringify({
+              id: e.id,
+              text: e.texto_entrada,
+              card_id: e.card_id,
+              tipo: e.tipo,
+              titulo: e.titulo,
+              texto_entrada: e.texto_entrada,
+              // Pinecone: campos de record só aceitam string/number/boolean/
+              // array-de-strings (null rejeitado) — release_real (objeto
+              // {banco,app,tag} no SSOT) vira string JSON; vazios viram ''.
+              release_real: e.release_real ? JSON.stringify(e.release_real) : '',
+              data: e.data || '',
+            })
+          )
+          .join('\n') + '\n';
+        const r = await fetch(`https://${host}/records/namespaces/${colecao}/upsert`, {
+          method: 'POST',
+          headers: { 'Api-Key': key, 'Content-Type': 'application/x-ndjson' },
+          body: ndjson,
+        });
+        const t = await r.text();
+        if (!r.ok) throw new Error(`${colecao}: upsert records → HTTP ${r.status}: ${t.slice(0, 300)}`);
+        console.log(`${colecao}: upsert ${Math.min(i + LOTE, lista.length)}/${lista.length}`);
+      }
+      console.log(`${colecao}: ${lista.length} memórias upsertadas (namespace Pinecone)`);
+    }
+    console.log('backfill concluído (pinecone).');
+    return;
+  }
+
+  // Qdrant (fases 1-6, inalterado)
   const qdrant = resolveQdrantEnv();
   if (!qdrant) {
     console.error('FALHOU: QDRANT_URL/QDRANT_API_KEY ausentes (env ou registro HKCU).');
     process.exit(1);
   }
   const baseQ = String(qdrant.url).replace(/\/+$/, '');
-  const LOTE = 100;
 
   async function qdrantFetch(metodo, caminho, corpo, tentativas = 3) {
     for (let i = 1; i <= tentativas; i++) {

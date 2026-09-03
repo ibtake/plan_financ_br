@@ -1,26 +1,24 @@
 /**
- * Upsert da coleção `codigo` no Qdrant (fase 5, revisão d; design-rag-fase0.md,
- * D2 + D6 + D1-rev).
+ * Upsert da coleção `codigo` (fase 5, revisão d; IMPR-008: dual-transporte).
  *
- * Entrada: chunks.json produzido pelo chunk.mjs — [{ id, text, payload }],
- * id já UUID v5 determinístico do chunker. O embedding é gerado SERVER-SIDE
- * pelo Qdrant Cloud Inference (modelo `intfloat/multilingual-e5-small`, 384d,
- * free tier — verificado por canário local em 2026-09-XX): o vetor é enviado
- * como Inference Object `{ text, model }` e os prefixos e5 (`passage: `/
- * `query: `) são injetados pelo serviço (canário: cos(A,B)=1.000000) — o texto
- * vai CRU nos dois lados. Paridade D1 deixa de existir como risco; embed.py
- * fica no repo como fallback documentado (exige prefixos manuais), fora do
- * pipeline ativo.
+ * Entrada: chunks.json produzido pelo chunk.mjs — [{ id, text, payload }].
+ * Transporte por RAG_TRANSPORTE (default qdrant), mesma env do webhook:
  *
- * Rebuild (D6): primeiro garante o índice keyword em `repo` (exigido pelo
- * filtro com a coleção vazia), depois delete-by-filter de tudo que tem o
- * `repo` do run (wait=true) e upsert em lotes de 100 (wait=true) —
- * idempotente, o workflow `reindex-rag` pode rodar quantas vezes for
- * preciso. O index é cache: nunca é fonte de verdade.
+ *   qdrant:   id UUID v5 do chunker; embedding server-side (Qdrant Cloud
+ *             Inference, e5-small 384d — texto cru, prefixos injetados pelo
+ *             serviço, canário cos=1.000000); rebuild delete-by-filter repo.
  *
- * Credenciais: QDRANT_URL/QDRANT_API_KEY via env (no Actions, secrets) com
- * fallback ao registro local via qdrant-key.mjs — resolvidas e nunca
- * impressas (regra 6 do AGENTS).
+ *   pinecone: id STRING do chunk ('codigo:<repo>:<caminho>:<linha>' — a
+ *             sonda do namespace), namespace 'codigo' do índice único
+ *             (modelo de embedding configurado NA CRIAÇÃO do índice:
+ *             multilingual-e5-large — decisão IMPR-008; embedding por texto
+ *             direto, integrated inference, cota própria de 5M tokens);
+ *             rebuild idempotente = apagar namespace e regravar (o índice é
+ *             cache, D6 — o reindex pode rodar quantas vezes for preciso).
+ *
+ * Credenciais: env primeiro (no Actions, secrets), fallback ao registro
+ * local (qdrant-key.mjs / pinecone-key.mjs) — resolvidas e nunca impressas
+ * (regra 6 do AGENTS).
  *
  * Uso: node scripts/rag/upsert.mjs <chunks.json>
  */
@@ -35,11 +33,27 @@ if (!arquivo) {
   process.exit(1);
 }
 
+const TRANSPORTE = String(process.env.RAG_TRANSPORTE || 'qdrant').trim().toLowerCase();
+const REPO = process.env.GITHUB_REPOSITORY || 'local/planejador';
+const COLECAO = 'codigo';
+const NAMESPACE = 'codigo'; // Pinecone: namespace da coleção lógica
+const LOTE = 100;
+const MODELO = MODELO_EMBED; // qdrant: fonte única scripts/rag/modelo.mjs
+
 // Credenciais: env primeiro (no Actions, secrets). Sem env, tenta o fallback
-// local do qdrant-key.mjs (registro do Windows). Import DINÂMICO porque esse
-// arquivo pode não existir no repo do CI — lá o env sempre está completo
-// (aprendido no primeiro run do reindex-rag: import estático quebrou o job).
+// local do registro (qdrant-key.mjs — só existe para o qdrant; no CI o env
+// sempre está completo). Import DINÂMICO (aprendido no 1º run do reindex-rag).
 async function credenciais() {
+  if (TRANSPORTE === 'pinecone') {
+    if (process.env.PINECONE_INDEX_HOST && process.env.PINECONE_API_KEY) {
+      return {
+        host: String(process.env.PINECONE_INDEX_HOST).replace(/\/+$/, ''),
+        apiKey: process.env.PINECONE_API_KEY,
+      };
+    }
+    console.error('FALHOU: pinecone exige PINECONE_INDEX_HOST/PINECONE_API_KEY (env ou secrets do Actions)');
+    process.exit(1);
+  }
   if (process.env.QDRANT_URL && process.env.QDRANT_API_KEY) {
     return { url: process.env.QDRANT_URL, apiKey: process.env.QDRANT_API_KEY };
   }
@@ -54,12 +68,83 @@ async function credenciais() {
   }
 }
 
-const { url, apiKey } = await credenciais();
-const base = String(url).replace(/\/+$/, '');
-const REPO = process.env.GITHUB_REPOSITORY || 'local/planejador';
-const COLECAO = 'codigo';
-const LOTE = 100;
-const MODELO = MODELO_EMBED; // fonte única: scripts/rag/modelo.mjs (revisão d)
+const cred = await credenciais();
+
+// ── Pinecone (IMPR-008, formato canônico validado 2026-09-02) ────────────────
+// Índice-embed usa endpoints de RECORDS, não o REST clássico de vectors:
+//   upsert: POST /records/namespaces/{ns}/upsert com NDJSON (1 record/linha,
+//           Content-Type application/x-ndjson) — record: { id, text } + os
+//           campos do payload do chunk (voltam como `fields` na busca).
+//   delete: o /vectors/delete clássico continua válido para limpeza por id.
+// Id string do chunk (mesma chave da memória): 'codigo:<repo>:<caminho>:<linha>'.
+function idChunkPinecone(payload) {
+  return `codigo:${payload.repo}:${payload.path}:${payload.inicio}`;
+}
+
+async function upsertPinecone() {
+  const { host, apiKey } = cred;
+  const reqJson = async (caminho, corpo) => {
+    const resp = await fetch(`https://${host}${caminho}`, {
+      method: 'POST',
+      headers: {
+        'Api-Key': apiKey,
+        'Content-Type': 'application/json',
+        'X-Pinecone-Api-Version': '2025-04',
+      },
+      body: JSON.stringify(corpo),
+    });
+    const texto = await resp.text();
+    if (!resp.ok) throw new Error(`POST ${caminho} → HTTP ${resp.status}: ${texto.slice(0, 300)}`);
+    return texto ? JSON.parse(texto) : {};
+  };
+
+  // Rebuild idempotente: apaga o namespace inteiro e regrava (o índice é
+  // cache, D6). NOTA: deletion_protection (a UI liga por padrão) pode
+  // bloquear deleteAll — se falhar aqui, desligar no console ou usar
+  // namespace novo. O /vectors/delete clássico cobre a limpeza.
+  await reqJson('/vectors/delete', { namespace: NAMESPACE, deleteAll: true });
+  console.log(`rebuild: namespace ${NAMESPACE} apagado`);
+
+  for (let i = 0; i < chunks.length; i += LOTE) {
+    const lote = chunks.slice(i, i + LOTE);
+    const ndjson = lote
+      .map((c) =>
+        JSON.stringify({
+          id: idChunkPinecone(c.payload),
+          text: c.text,
+          ...c.payload,
+        })
+      )
+      .join('\n') + '\n';
+    const resp = await fetch(`https://${host}/records/namespaces/${NAMESPACE}/upsert`, {
+      method: 'POST',
+      headers: { 'Api-Key': apiKey, 'Content-Type': 'application/x-ndjson' },
+      body: ndjson,
+    });
+    const texto = await resp.text();
+    if (!resp.ok) {
+      throw new Error(`upsert records → HTTP ${resp.status}: ${texto.slice(0, 300)}`);
+    }
+    console.log(`upsert: ${Math.min(i + LOTE, chunks.length)}/${chunks.length}`);
+  }
+
+  // Contagem de verificação: describeIndexStats traz total vectors do namespace.
+  const stats = await fetch(`https://${host}/describe_index_stats`, {
+    method: 'POST',
+    headers: { 'Api-Key': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  const dados = await stats.json();
+  const contados = dados?.namespaces?.[NAMESPACE]?.vectorCount;
+  if (contados !== chunks.length) {
+    throw new Error(`verificação falhou: ${contados} pontos em ${NAMESPACE}, esperado ${chunks.length}`);
+  }
+  console.log(`OK: namespace ${NAMESPACE} com ${contados} pontos de ${REPO}`);
+}
+
+// ── Qdrant (fases 1-6, inalterado) ──────────────────────────────────────────
+const base = String(cred.url || '').replace(/\/+$/, '');
+const apiKey = cred.apiKey;
 
 async function qdrant(metodo, caminho, corpo, tentativas = 3) {
   for (let i = 1; i <= tentativas; i++) {
@@ -105,43 +190,47 @@ for (const c of chunks) {
 }
 
 try {
-  // Índice keyword em `repo`: o Qdrant exige índice para filtrar por esse
-  // campo enquanto a coleção está vazia (sem pontos, o tipo do campo não é
-  // inferível — aprendido no 2º run do reindex-rag: delete-by-filter → HTTP
-  // 400 "Index required but not found"). Cobre o delete e a contagem final.
-  // Idempotente: recriar índice existente é no-op.
-  await qdrant('PUT', `/collections/${COLECAO}/index`, {
-    field_name: 'repo',
-    field_schema: 'keyword',
-  });
-  console.log(`índice payload repo (keyword) garantido em ${COLECAO}`);
+  if (TRANSPORTE === 'pinecone') {
+    await upsertPinecone();
+  } else {
+    // Índice keyword em `repo`: o Qdrant exige índice para filtrar por esse
+    // campo enquanto a coleção está vazia (sem pontos, o tipo do campo não é
+    // inferível — aprendido no 2º run do reindex-rag: delete-by-filter → HTTP
+    // 400 "Index required but not found"). Cobre o delete e a contagem final.
+    // Idempotente: recriar índice existente é no-op.
+    await qdrant('PUT', `/collections/${COLECAO}/index`, {
+      field_name: 'repo',
+      field_schema: 'keyword',
+    });
+    console.log(`índice payload repo (keyword) garantido em ${COLECAO}`);
 
-  await qdrant('POST', `/collections/${COLECAO}/points/delete?wait=true`, {
-    filter: { must: [{ key: 'repo', match: { value: REPO } }] },
-  });
-  console.log(`rebuild: pontos anteriores de ${REPO} apagados de ${COLECAO}`);
+    await qdrant('POST', `/collections/${COLECAO}/points/delete?wait=true`, {
+      filter: { must: [{ key: 'repo', match: { value: REPO } }] },
+    });
+    console.log(`rebuild: pontos anteriores de ${REPO} apagados de ${COLECAO}`);
 
-  for (let i = 0; i < chunks.length; i += LOTE) {
-    const lote = chunks
-      .slice(i, i + LOTE)
-      .map((c) => ({ id: c.id, vector: { text: c.text, model: MODELO }, payload: c.payload }));
-    await qdrant('PUT', `/collections/${COLECAO}/points?wait=true`, { points: lote });
-    console.log(`upsert: ${Math.min(i + LOTE, chunks.length)}/${chunks.length}`);
+    for (let i = 0; i < chunks.length; i += LOTE) {
+      const lote = chunks
+        .slice(i, i + LOTE)
+        .map((c) => ({ id: c.id, vector: { text: c.text, model: MODELO }, payload: c.payload }));
+      await qdrant('PUT', `/collections/${COLECAO}/points?wait=true`, { points: lote });
+      console.log(`upsert: ${Math.min(i + LOTE, chunks.length)}/${chunks.length}`);
+    }
+
+    // O Qdrant embrulha a resposta em "result": { result: { count: N }, status }.
+    // (3º run do reindex-rag: ler contagem.count direto dava undefined.)
+    const contagem = await qdrant('POST', `/collections/${COLECAO}/points/count`, {
+      exact: true,
+      filter: { must: [{ key: 'repo', match: { value: REPO } }] },
+    });
+    const contados = contagem?.result?.count ?? contagem?.count;
+    if (contados !== chunks.length) {
+      throw new Error(
+        `verificação falhou: ${contados} pontos de ${REPO} em ${COLECAO}, esperado ${chunks.length}`
+      );
+    }
+    console.log(`OK: ${COLECAO} com ${contados} pontos de ${REPO}`);
   }
-
-  // O Qdrant embrulha a resposta em "result": { result: { count: N }, status }.
-  // (3º run do reindex-rag: ler contagem.count direto dava undefined.)
-  const contagem = await qdrant('POST', `/collections/${COLECAO}/points/count`, {
-    exact: true,
-    filter: { must: [{ key: 'repo', match: { value: REPO } }] },
-  });
-  const contados = contagem?.result?.count ?? contagem?.count;
-  if (contados !== chunks.length) {
-    throw new Error(
-      `verificação falhou: ${contados} pontos de ${REPO} em ${COLECAO}, esperado ${chunks.length}`
-    );
-  }
-  console.log(`OK: ${COLECAO} com ${contados} pontos de ${REPO}`);
 } catch (e) {
   console.error('FALHOU: ' + String(e && e.message ? e.message : e));
   process.exit(1);
