@@ -7,6 +7,39 @@ async function hash(value: string) {
 }
 const MAX_BODY_BYTES = 16_384
 
+// TASK-005: teto no Upstash ANTES da RPC. Sob flood a requisicao morre aqui e
+// nao gasta ida ao Postgres nem escrita em widget_rate_limits; quando o Redis
+// PERMITE, a RPC continua sendo chamada e segue a fonte de verdade.
+// REST API por fetch, sem cliente npm: o Deno 2 resolve `npm:` pelo node_modules
+// do app (ha package.json na raiz), entao `npm:@upstash/redis` exigiria entrar no
+// package.json - proibido pelo card. `EXPIRE ... NX` marca o TTL so na primeira
+// requisicao da janela, reproduzindo a janela fixa da RPC numa unica ida HTTP; o
+// TTL da mesma resposta vira o Retry-After. Segredo ausente, timeout ou erro
+// devolvem null e a decisao volta a ser exclusivamente da RPC.
+// Copia de widget-data/index.ts (a terceira esta em admin-users): o deploy e por
+// colagem no painel e `_shared/` exige CLI (backlog B34).
+async function consumeRedisLimit(key: string, limit: number, windowSeconds: number) {
+  const base = Deno.env.get('UPSTASH_REDIS_REST_URL') || ''
+  const token = Deno.env.get('UPSTASH_REDIS_REST_TOKEN') || ''
+  if (!base || !token) return null
+  try {
+    const res = await fetch(`${base}/pipeline`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify([['INCR', key], ['EXPIRE', key, windowSeconds, 'NX'], ['TTL', key]]),
+      signal: AbortSignal.timeout(1500),
+    })
+    if (!res.ok) return null
+    const rows = await res.json() as Array<{ result?: unknown }>
+    const count = Number(rows[0]?.result)
+    if (!Number.isFinite(count) || count < 1) return null
+    const ttl = Number(rows[2]?.result)
+    return { allowed: count <= limit, retryAfter: ttl > 0 ? ttl : windowSeconds }
+  } catch {
+    return null
+  }
+}
+
 // Copia literal de admin-users/index.ts:11; a terceira copia esta em
 // widget-data/index.ts e difere de proposito, checando content-length dentro da
 // funcao. Aqui e no admin-users a checagem barata fica no handler, ANTES da
@@ -158,7 +191,14 @@ Deno.serve(async (request) => {
   // Fail-open igual ao widget-data:38-41: quem chega aqui tem sessao valida,
   // senha ja trocada e AAL2 quando ha MFA, entao falha do contador nao pode
   // impedir a configuracao do widget.
-  const { data: rateLimit, error: rateError } = await admin.rpc('consume_widget_rate_limit', { p_key_hash: await hash(data.user.id), p_operation: 'install' })
+  const installKeyHash = await hash(data.user.id)
+  // Teto do Redis antes da RPC. Limite 5/min, o mesmo de 'install' na RPC
+  // (schema.sql:1128). Fail-open igual: Redis fora do ar nao bloqueia.
+  const redisLimit = await consumeRedisLimit(`wrl:install:${installKeyHash}`, 5, 60)
+  if (redisLimit && !redisLimit.allowed) {
+    return response(request, 429, { error: 'Muitas solicitações. Aguarde um instante antes de gerar outro código.' }, { 'Retry-After': String(redisLimit.retryAfter) })
+  }
+  const { data: rateLimit, error: rateError } = await admin.rpc('consume_widget_rate_limit', { p_key_hash: installKeyHash, p_operation: 'install' })
   const rateRow = Array.isArray(rateLimit) ? rateLimit[0] : rateLimit
   if (!rateError && rateRow && !rateRow.allowed) {
     return response(request, 429, { error: 'Muitas solicitações. Aguarde um instante antes de gerar outro código.' }, { 'Retry-After': String(rateRow.retry_after_seconds || 60) })

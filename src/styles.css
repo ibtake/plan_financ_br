@@ -2680,6 +2680,11 @@ dialog.modal-backdrop {
 .expense-distribution-card,
 .expense-analysis-card { min-width: 0; }
 .expense-distribution-card { position: relative; }
+/* BUG-001: a tabela de análise tem largura mínima fixa de 596px (556 de colunas
+   + 40 de gaps) e o card recebe 3fr de 5, então ela só cabia acima de ~1424px de
+   viewport. O container-type faz o layout de cards abríveis decidir pela largura
+   real do card, não pelo viewport. */
+.expense-analysis-card { container-type: inline-size; }
 .expense-donut-wrap,
 .expense-hex-wrap { position: relative; height: 320px; min-width: 0; }
 .expense-hex-grid { position: absolute; top: 50%; left: 50%; display: grid; width: min(100%, 380px); height: auto; aspect-ratio: 1.45; grid-template-columns: repeat(13, minmax(0, 1fr)); grid-template-rows: repeat(9, minmax(0, 1fr)); gap: 0; transform: translate(-50%, -50%); }
@@ -2723,6 +2728,14 @@ dialog.modal-backdrop {
   .expense-donut-wrap,
   .expense-hex-wrap { height: 276px; }
   .expense-hex-grid { width: min(100%, 280px); gap: 0; }
+  .expense-legend-row { grid-template-columns: 9px minmax(0, 1fr) auto 34px; font-size: 10.5px; }
+}
+
+/* BUG-001: os cards abríveis entram quando a coluna do card fica estreita demais
+   para a tabela, não quando o viewport encolhe. Assim a mesma regra cobre iPad
+   vertical e horizontal, notebook de 1280/1366, Split View e zoom. O limiar fica
+   acima dos 614px que a tabela exige (596 de grid + 18 do padding da linha). */
+@container (max-width: 640px) {
   .expense-analysis-head { display: none; }
   .expense-analysis-row { display: block; min-height: 94px; padding: 0; text-align: left; }
   .expense-analysis-row > .expense-category-cell,
@@ -2738,9 +2751,10 @@ dialog.modal-backdrop {
   .is-expanded .mobile-category-details { display: grid; }
   .mobile-category-details > span { display: grid; min-width: 0; gap: 2px; }.mobile-category-details small { color: var(--text-muted); font-size: 9.5px; }.mobile-category-details strong { overflow-wrap: anywhere; font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
   .mobile-detail-status strong { display: inline-flex; align-items: center; gap: 4px; }
-  .expense-category-copy { width: 100%; }.expense-category-copy strong { white-space: normal; }.expense-legend-row { grid-template-columns: 9px minmax(0, 1fr) auto 34px; font-size: 10.5px; }
-  @keyframes mobile-category-expand { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  .expense-category-copy { width: 100%; }.expense-category-copy strong { white-space: normal; }
 }
+
+@keyframes mobile-category-expand { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ============================================================
    Estados e utilitários
@@ -3302,14 +3316,44 @@ dialog.modal-backdrop {
   white-space: nowrap;
 }
 
-/* Entrada de etapa da tela de login. O @media vem depois da declaracao: nao
-   soma especificidade, so vence pela ordem no cascade. */
+/* Etapa da tela de login em passo a passo lateral: a atual sai pela esquerda,
+   a seguinte entra pela direita. O deslocamento (28px) e menor que o padding
+   do .auth-card (30px), entao nada vaza pela borda e dispensa overflow.
+   O @media vem depois da declaracao: nao soma especificidade, so vence pela
+   ordem no cascade. */
 .auth-step {
-  animation: popIn 0.22s ease both;
+  animation: auth-step-in 0.18s ease both;
+}
+
+.auth-step.is-leaving {
+  animation: auth-step-out 0.16s ease both;
+}
+
+@keyframes auth-step-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+
+@keyframes auth-step-out {
+  to {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+
+/* Conta escolhida: identificacao de quem vai entrar, sem campo em volta. */
+.auth-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .auth-step {
+  .auth-step,
+  .auth-step.is-leaving {
     animation: none;
   }
 }

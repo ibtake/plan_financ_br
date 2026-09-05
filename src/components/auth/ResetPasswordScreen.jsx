@@ -37,13 +37,17 @@ export default function ResetPasswordScreen() {
   const settled = useRef(false)
 
   useEffect(() => {
-    let active = true
-
+    // BUG-003 (retrabalho): este effect nao tem mecanismo de cancelamento de
+    // proposito. A troca da CAMADA 2 chama setSession, que dispara
+    // onAuthStateChange -> applySession -> novo value do AuthContext -> novo
+    // objeto auth -> este effect re-executa. O cleanup que existia aqui zerava
+    // um flag `active` e a passada em voo abortava logo antes do setBusy(false),
+    // deixando o spinner eterno (a sessao ja estava criada, so a tela nao
+    // refletia). `settled` ja garante passada unica e setState pos-desmonte e
+    // no-op no React 18, entao o flag so cancelava a si mesmo.
     const settle = async () => {
-      if (!active) return
       if (settled.current) return
       if (!auth.loading) settled.current = true
-      if (!active) return
 
       // Remove o code/access_token da URL imediatamente, em qualquer caminho
       // (sucesso ou erro). O valor ja foi capturado no modulo recoveryCode.js,
@@ -59,7 +63,6 @@ export default function ResetPasswordScreen() {
       if (auth.session) {
         setBusy(false)
         const factors = await auth.listFactors()
-        if (!active) return
         if (factors.length) setMfaRequired(true)
         else setReady(true)
         // Limpa a URL apos sucesso
@@ -73,7 +76,6 @@ export default function ResetPasswordScreen() {
       // (capturado antes que o Supabase client removesse da URL)
       if (recoveryCode) {
         const result = await auth.exchangeRecoveryCode(recoveryCode)
-        if (!active) return
         if (result && result.error) {
           setBusy(false)
           setError(result.error)
@@ -81,7 +83,6 @@ export default function ResetPasswordScreen() {
         }
         if (result && result.data) {
           const factors = await auth.listFactors()
-          if (!active) return
           setBusy(false)
           if (factors.length) setMfaRequired(true)
           else setReady(true)
@@ -98,11 +99,14 @@ export default function ResetPasswordScreen() {
       setError('Link de recuperação inválido ou expirado.')
     }
 
-    settle()
-
-    return () => {
-      active = false
-    }
+    // settle() rodava sem catch: qualquer excecao no fetch da troca ou do
+    // listFactors virava unhandled rejection e o busy nunca desligava - mesmo
+    // spinner eterno, por outro caminho. O code e de uso unico, entao aqui nao
+    // se tenta de novo: o usuario precisa de um link novo.
+    settle().catch(() => {
+      setBusy(false)
+      setError('Não foi possível validar o link de recuperação. Tente novamente.')
+    })
   }, [auth, auth.loading])
   // Depende de auth e auth.loading para garantir que re-executa
   // quando loading muda (primitivo) e quando auth muda (objeto).

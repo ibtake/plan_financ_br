@@ -3,6 +3,9 @@ project_id = "planejador-financeiro"
 [auth]
 enable_signup = false
 
+# O verify_jwt abaixo vale so para deploy por CLI. Publicacao por colagem no
+# painel religa o toggle Verify JWT: reconferir depois de cada colagem.
+# Tabela por function e sintomas: AGENTS.md, secao Publicacao e rollback.
 [functions.admin-users]
 verify_jwt = true
 

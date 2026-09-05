@@ -37,10 +37,56 @@ async function hash(value: string) {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+// TASK-005: teto no Upstash ANTES das RPCs. Sob flood, a requisicao morre aqui
+// e nao gasta ida ao Postgres nem escrita em widget_rate_limits - o custo que o
+// plano gratuito sente. Quando o Redis PERMITE, a RPC continua sendo chamada:
+// ela segue a fonte de verdade, este gate so absorve o excesso.
+//
+// REST API por fetch, sem cliente npm de proposito: o Deno 2 resolve `npm:`
+// pelo node_modules do app (ha package.json na raiz), entao `npm:@upstash/redis`
+// so passaria no `deno check` entrando no package.json - proibido pelo card, e
+// arrastaria dependencia de frontend por codigo que nunca roda no navegador.
+//
+// `EXPIRE ... NX` marca o TTL apenas na primeira requisicao da janela, o que
+// reproduz a janela fixa das RPCs (comeca na primeira chamada, nao alinhada ao
+// relogio) numa unica ida HTTP; o TTL da mesma resposta vira o Retry-After.
+// Segredo ausente, timeout ou erro devolvem null e a decisao volta a ser
+// exclusivamente da RPC - o comportamento anterior a este gate.
+// Terceira copia deste bloco (widget-setup e admin-users tem as outras): o
+// deploy e por colagem no painel e `_shared/` exige CLI (backlog B34).
+const REDIS_WIDGET_LIMITS = { token: 60, refresh: 10, install: 5 }
+
+async function consumeRedisLimit(key: string, limit: number, windowSeconds: number) {
+  const base = Deno.env.get('UPSTASH_REDIS_REST_URL') || ''
+  const token = Deno.env.get('UPSTASH_REDIS_REST_TOKEN') || ''
+  if (!base || !token) return null
+  try {
+    const res = await fetch(`${base}/pipeline`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify([['INCR', key], ['EXPIRE', key, windowSeconds, 'NX'], ['TTL', key]]),
+      signal: AbortSignal.timeout(1500),
+    })
+    if (!res.ok) return null
+    const rows = await res.json() as Array<{ result?: unknown }>
+    const count = Number(rows[0]?.result)
+    if (!Number.isFinite(count) || count < 1) return null
+    const ttl = Number(rows[2]?.result)
+    return { allowed: count <= limit, retryAfter: ttl > 0 ? ttl : windowSeconds }
+  } catch {
+    return null
+  }
+}
+
 // Limite por credencial: so e chamado com credencial ja validada. A
 // entropia do token (256 bits) e a protecao real contra adivinhacao, por
 // isso falha do contador NAO bloqueia o usuario legitimo (fail-open).
 async function enforceRateLimit(admin: AdminClient, keyHash: string, operation: 'token' | 'refresh' | 'install') {
+  const redis = await consumeRedisLimit(`wrl:${operation}:${keyHash}`, REDIS_WIDGET_LIMITS[operation], 60)
+  if (redis && !redis.allowed) {
+    authLog({ rateLimit: 'redis_blocked', operation })
+    return response(429, { error: 'Muitas tentativas. Tente novamente mais tarde.' }, { 'Retry-After': String(redis.retryAfter) })
+  }
   const { data, error } = await admin.rpc('consume_widget_rate_limit', { p_key_hash: keyHash, p_operation: operation })
   if (error) {
     authLog({ rateLimit: 'error', operation, errorCode: error.code || null })
@@ -57,6 +103,13 @@ async function enforceRateLimit(admin: AdminClient, keyHash: string, operation: 
 // estado para valores nao verificados. Sem resposta do contador, credencial
 // invalida NAO passa (fail-closed) - protege o armazenamento do plano gratuito.
 async function enforceInvalidAttemptLimit(admin: AdminClient) {
+  // Chave unica para toda a instalacao, como a key_hash constante da RPC
+  // (schema.sql:1157). Janela de 1 hora, teto 600.
+  const redis = await consumeRedisLimit('wial', 600, 3600)
+  if (redis && !redis.allowed) {
+    authLog({ rateLimit: 'redis_blocked', operation: 'invalid' })
+    return response(429, { error: 'Muitas tentativas. Tente novamente mais tarde.' }, { 'Retry-After': String(redis.retryAfter) })
+  }
   const { data, error } = await admin.rpc('consume_widget_invalid_attempt_limit')
   if (error) return response(503, { error: 'Serviço indisponível.' })
   const result = Array.isArray(data) ? data[0] : data

@@ -56,9 +56,37 @@ export default function AuthScreen() {
     }
   }, [verifyMfaChallenge])
 
+  // Troca de etapa em duas fases: a atual sai pela esquerda e so depois o
+  // conteudo novo monta e entra pela direita. Duas etapas montadas ao mesmo
+  // tempo estao fora de cogitacao: o TurnstileCaptcha nao pode existir em dobro.
+  const [leaving, setLeaving] = useState(false)
+  const stepTimer = useRef(null)
+  const pendingMode = useRef(null)
+
+  const slideTo = useCallback((next) => {
+    // pendingMode cobre o disparo duplo para mfa (handleLogin e o effect de
+    // auth.mfaStage chegam quase juntos); sem ele o timer reagenda e a troca
+    // demora o dobro.
+    if (pendingMode.current ? pendingMode.current === next : next === mode) return
+    pendingMode.current = next
+    // Sem animacao, sem espera. O atraso existe para caber o movimento; usar
+    // onAnimationEnd no lugar do timer travaria a tela em
+    // prefers-reduced-motion, onde o evento nunca chega.
+    const delay = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 170
+    setLeaving(true)
+    window.clearTimeout(stepTimer.current)
+    stepTimer.current = window.setTimeout(() => {
+      pendingMode.current = null
+      setMode(next)
+      setLeaving(false)
+    }, delay)
+  }, [mode])
+
+  useEffect(() => () => window.clearTimeout(stepTimer.current), [])
+
   useEffect(() => {
-    if (auth.mfaStage === 'required') setMode('mfa')
-  }, [auth.mfaStage])
+    if (auth.mfaStage === 'required') slideTo('mfa')
+  }, [auth.mfaStage, slideTo])
 
   // Auto-submit do codigo MFA quando atinge 6 digitos (colagem ou autofill).
   // Fica aqui, e nao junto de handleMfa, porque o early return de missingConfig
@@ -82,7 +110,7 @@ export default function AuthScreen() {
     setCode('')
     submittedMfaCode.current = null
     setCaptchaToken(null)
-    setMode(next)
+    slideTo(next)
   }
 
   const selectAccount = (email) => {
@@ -179,7 +207,7 @@ export default function AuthScreen() {
       return
     }
     if (result.mfaRequired) {
-      setMode('mfa')
+      slideTo('mfa')
       setCode('')
     }
     // Sem MFA, o AuthContext atualiza a sessao e o App troca de tela
@@ -223,7 +251,7 @@ export default function AuthScreen() {
 
   const titles = {
     accounts: { title: 'Escolha uma conta', sub: 'Contas usadas neste navegador' },
-    login: { title: 'Entrar na sua conta' },
+    login: { title: selected ? 'Digite sua senha' : 'Entrar na sua conta' },
     forgot: { title: 'Recuperar senha', sub: 'Enviaremos um link por e-mail' },
     mfa: { title: 'Verificação em duas etapas', sub: 'Abra seu aplicativo autenticador' },
   }
@@ -259,7 +287,7 @@ export default function AuthScreen() {
 
         {/* ----- Contas reconhecidas ----- */}
         {mode === 'accounts' && (
-          <div className="stack auth-step" style={{ gap: 14, marginTop: 18 }}>
+          <div className={`stack auth-step${leaving ? ' is-leaving' : ''}`} style={{ gap: 14, marginTop: 18 }}>
             <div className="auth-accounts">
               {accounts.map((account) => (
                 <div className="auth-account" key={account.email}>
@@ -291,24 +319,45 @@ export default function AuthScreen() {
 
         {/* ----- Login ----- */}
         {mode === 'login' && (
-          <form className="stack auth-step" style={{ gap: 14, marginTop: 18 }} onSubmit={handleLogin}>
-            <div className="field">
-              <label className="label" htmlFor="login-email">
-                E-mail
-              </label>
-              <input
-                id="login-email"
-                className="input"
-                type="email"
-                autoComplete="email"
-                inputMode="email"
-                required
-                value={form.email}
-                onChange={set('email')}
-                readOnly={!!selected}
-                placeholder="voce@exemplo.com"
-              />
-            </div>
+          <form className={`stack auth-step${leaving ? ' is-leaving' : ''}`} style={{ gap: 14, marginTop: 18 }} onSubmit={handleLogin}>
+            {selected ? (
+              <>
+                {/* Conta escolhida na etapa anterior: o e-mail identifica quem
+                    vai entrar, sem virar campo. O input de usuario continua no
+                    DOM, oculto, porque sem ele o gerenciador de senhas (o
+                    Keychain do iOS incluido) nao casa a credencial e para de
+                    oferecer a senha salva nesta segunda etapa. */}
+                <div className="auth-identity">
+                  <span className="avatar">{selected.slice(0, 2)}</span>
+                  <span className="auth-account-email">{selected}</span>
+                </div>
+                <input
+                  type="email"
+                  name="email"
+                  autoComplete="username"
+                  value={form.email}
+                  readOnly
+                  hidden
+                />
+              </>
+            ) : (
+              <div className="field">
+                <label className="label" htmlFor="login-email">
+                  E-mail
+                </label>
+                <input
+                  id="login-email"
+                  className="input"
+                  type="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  required
+                  value={form.email}
+                  onChange={set('email')}
+                  placeholder="voce@exemplo.com"
+                />
+              </div>
+            )}
 
             <div className="field">
               <label className="label" htmlFor="login-password">
@@ -348,7 +397,7 @@ export default function AuthScreen() {
 
         {/* ----- Recuperacao ----- */}
         {mode === 'forgot' && (
-          <form className="stack auth-step" style={{ gap: 14, marginTop: 18 }} onSubmit={handleForgot}>
+          <form className={`stack auth-step${leaving ? ' is-leaving' : ''}`} style={{ gap: 14, marginTop: 18 }} onSubmit={handleForgot}>
             <div className="field">
               <label className="label" htmlFor="forgot-email">
                 E-mail da conta
@@ -382,7 +431,7 @@ export default function AuthScreen() {
 
         {/* ----- Desafio MFA ----- */}
         {mode === 'mfa' && (
-          <form className="stack auth-step" style={{ gap: 16, marginTop: 18 }} onSubmit={handleMfa}>
+          <form className={`stack auth-step${leaving ? ' is-leaving' : ''}`} style={{ gap: 16, marginTop: 18 }} onSubmit={handleMfa}>
             <div className="notice info">
               Digite o código de 6 dígitos exibido no seu aplicativo autenticador.
             </div>
