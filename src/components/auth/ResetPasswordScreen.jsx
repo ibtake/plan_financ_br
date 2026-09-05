@@ -95,7 +95,7 @@ export default function ResetPasswordScreen() {
 
       // CAMADA 3: nada funcionou
       setBusy(false)
-      setError('Link de recuperacao invalido ou expirado.')
+      setError('Link de recuperação inválido ou expirado.')
     }
 
     settle()
@@ -189,7 +189,7 @@ export default function ResetPasswordScreen() {
 
         {!done && mfaRequired && (
           <form className="stack" style={{ gap: 14, marginTop: 18 }} onSubmit={submitMfa}>
-            <div className="field"><span className="label" id="reset-mfa-label">Codigo do autenticador</span><CodeInput value={mfaCode} onChange={setMfaCode} disabled={busy} errorId={error ? 'reset-error' : undefined} labelledBy="reset-mfa-label" /></div>
+            <div className="field"><span className="label" id="reset-mfa-label">Código do autenticador</span><CodeInput value={mfaCode} onChange={setMfaCode} disabled={busy} errorId={error ? 'reset-error' : undefined} labelledBy="reset-mfa-label" /></div>
             <button className="btn btn-primary btn-block" type="submit" disabled={busy}>{busy ? 'Validando...' : 'Confirmar identidade'}</button>
           </form>
         )}

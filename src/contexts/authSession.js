@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase, isSupabaseConfigured } from '../lib/supabase.js'
 import { offlineDb, OFFLINE_CACHE_PREFERENCE_KEY } from '../lib/offlineDb.js'
 import { createRefreshCoordinator, isRetryableConnectionError, retryDelay } from '../lib/offlineRevalidation.js'
+import { rememberedAccounts } from '../lib/rememberedAccounts.js'
 import { AUTH_EVENTS, logAuthEvent } from './authAudit.js'
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000
@@ -171,6 +172,10 @@ export function useAuthSession() {
       const nextUserId = nextSession?.user?.id || null
       if (previousUserId && previousUserId !== nextUserId) await offlineDb.purgeUser(previousUserId)
       currentUserId.current = nextUserId
+      // Reconhecimento na proxima visita (IMPR-009): grava so o e-mail, e a
+      // partir de sessao real. Vale tambem para a etapa aal1 com MFA pendente,
+      // que ja provou a senha. Ponto unico: senha, MFA e reset passam aqui.
+      if (nextUserId) rememberedAccounts.remember(nextSession.user.email)
       setSession(nextSession || null)
       setUser((current) => (
         current?.id === nextSession?.user?.id && current?.updated_at === nextSession?.user?.updated_at

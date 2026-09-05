@@ -1,11 +1,26 @@
 import { useCallback, useMemo } from 'react'
 import { supabase, translateAuthError } from '../lib/supabase.js'
+import { generateVerifier, deriveChallenge } from '../lib/pkce.js'
+import { recoveryVerifier } from '../lib/recoveryCode.js'
 import { AUTH_EVENTS, logAuthEvent } from './authAudit.js'
 import {
   registerFailedLogin,
   clearLoginAttempts,
   getLoginLock,
 } from './loginAttempts.js'
+
+// O reset de senha fala direto com o GoTrue em vez de usar o SDK (BUG-003):
+// resetPasswordForEmail amarra o code_verifier ao storage de quem pediu, e o
+// link do e-mail abre em outro navegador. Aqui o verifier vai no proprio link.
+// A anon key e publica por natureza no bundle - mesmo padrao de widgetApi.js.
+const AUTH_URL = `${import.meta.env.VITE_SUPABASE_URL}/auth/v1`
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const AUTH_HEADERS = { apikey: ANON_KEY, 'Content-Type': 'application/json' }
+
+/** Normaliza o erro do GoTrue no formato que translateAuthError espera. */
+function gotrueError(response, body) {
+  return { message: body?.msg || body?.error_description || body?.error || `HTTP ${response.status}` }
+}
 
 export function validatePassword(password) {
   const value = String(password || '')
@@ -23,7 +38,7 @@ export function validatePassword(password) {
 
 export function useAuthOperations({ refreshAssurance }) {
   const signIn = useCallback(async ({ email, password, captchaToken }) => {
-    if (!supabase) return { error: 'Supabase nao configurado.' }
+    if (!supabase) return { error: 'Supabase não configurado.' }
     const lock = getLoginLock()
     if (lock.locked) {
       const minutes = Math.ceil(lock.remainingMs / 60000)
@@ -39,7 +54,7 @@ export function useAuthOperations({ refreshAssurance }) {
       await logAuthEvent(AUTH_EVENTS.LOGIN_FAILED, 'warning', { attempts: attempt.attempts })
       const restantes = attempt.max - attempt.attempts
       const aviso = !attempt.locked && restantes > 0 && restantes <= 2
-        ? ` Restam ${restantes} tentativa(s) antes do bloqueio temporario.`
+        ? ` Restam ${restantes} tentativa(s) antes do bloqueio temporário.`
         : ''
       return { error: translateAuthError(error) + aviso }
     }
@@ -53,26 +68,49 @@ export function useAuthOperations({ refreshAssurance }) {
   }, [refreshAssurance])
 
   const resetPassword = useCallback(async (email, captchaToken) => {
-    if (!supabase) return { error: 'Supabase nao configurado.' }
-    const { error } = await supabase.auth.resetPasswordForEmail(
-      String(email || '').trim().toLowerCase(),
-      { redirectTo: `${window.location.origin}/reset-password`, ...(captchaToken ? { captchaToken } : {}) },
-    )
-    if (error) return { error: translateAuthError(error) }
+    if (!supabase) return { error: 'Supabase não configurado.' }
+    const verifier = generateVerifier()
+    const challenge = await deriveChallenge(verifier)
+    // O verifier viaja no redirect_to. O GoTrue preserva a query string do
+    // redirect_to (o proprio SDK depende disso para o seu sb_flow_id).
+    const redirectTo = `${window.location.origin}/reset-password?v=${verifier}`
+    try {
+      const response = await fetch(
+        `${AUTH_URL}/recover?redirect_to=${encodeURIComponent(redirectTo)}`,
+        {
+          method: 'POST',
+          headers: AUTH_HEADERS,
+          body: JSON.stringify({
+            email: String(email || '').trim().toLowerCase(),
+            code_challenge: challenge,
+            code_challenge_method: 's256',
+            ...(captchaToken ? { gotrue_meta_security: { captcha_token: captchaToken } } : {}),
+          }),
+        },
+      )
+      // O GoTrue responde 200 tambem para e-mail inexistente, de proposito:
+      // confirmar a existencia da conta permitiria enumerar usuarios.
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        return { error: translateAuthError(gotrueError(response, body)) }
+      }
+    } catch (networkError) {
+      return { error: translateAuthError(networkError) }
+    }
     await logAuthEvent(AUTH_EVENTS.PASSWORD_RESET, 'warning', {})
     return { ok: true }
   }, [])
 
   const updatePassword = useCallback(async (newPassword) => {
-    if (!supabase) return { error: 'Supabase nao configurado.' }
+    if (!supabase) return { error: 'Supabase não configurado.' }
     const strength = validatePassword(newPassword)
-    if (!strength.valid) return { error: 'A nova senha nao atende a politica de seguranca.' }
+    if (!strength.valid) return { error: 'A nova senha não atende à política de segurança.' }
     let widgetWarning = null
     try {
       const { error: revokeError } = await supabase.functions.invoke('widget-setup', { body: { action: 'revoke' } })
-      if (revokeError) widgetWarning = 'nao foi possivel revogar o widget'
+      if (revokeError) widgetWarning = 'não foi possível revogar o widget'
     } catch {
-      widgetWarning = 'nao foi possivel revogar o widget'
+      widgetWarning = 'não foi possível revogar o widget'
     }
     const { error } = await supabase.auth.updateUser({ password: newPassword })
     if (error) return { error: translateAuthError(error), code: error.code || null }
@@ -85,11 +123,36 @@ export function useAuthOperations({ refreshAssurance }) {
   }, [])
 
   const exchangeRecoveryCode = useCallback(async (code) => {
-    if (!supabase) return { error: 'Supabase nao configurado.' }
+    if (!supabase) return { error: 'Supabase não configurado.' }
     const normalizedCode = String(code || '').trim()
-    if (!normalizedCode) return { error: 'Link de recuperacao invalido ou expirado.' }
+    if (!normalizedCode) return { error: 'Link de recuperação inválido ou expirado.' }
+    const invalido = 'Link de recuperação inválido ou expirado.'
+    // Caminho novo: o verifier veio no link, entao a troca nao depende do
+    // storage do navegador onde o reset nasceu.
+    if (recoveryVerifier) {
+      try {
+        const response = await fetch(`${AUTH_URL}/token?grant_type=pkce`, {
+          method: 'POST',
+          headers: AUTH_HEADERS,
+          body: JSON.stringify({ auth_code: normalizedCode, code_verifier: recoveryVerifier }),
+        })
+        const body = await response.json().catch(() => null)
+        if (!response.ok || !body?.access_token) {
+          return { error: translateAuthError(gotrueError(response, body)) || invalido }
+        }
+        const { data, error } = await supabase.auth.setSession({
+          access_token: body.access_token,
+          refresh_token: body.refresh_token,
+        })
+        if (error || !data?.session) return { error: translateAuthError(error) || invalido }
+        return { data }
+      } catch (networkError) {
+        return { error: translateAuthError(networkError) || invalido }
+      }
+    }
+    // Fallback: link sem ?v= (e-mail antigo ainda em transito).
     const { data, error } = await supabase.auth.exchangeCodeForSession(normalizedCode)
-    if (error || !data?.session) return { error: translateAuthError(error) || 'Link de recuperacao invalido ou expirado.' }
+    if (error || !data?.session) return { error: translateAuthError(error) || invalido }
     return { data }
   }, [])
 
@@ -101,7 +164,7 @@ export function useAuthOperations({ refreshAssurance }) {
   }, [])
 
   const enrollMfa = useCallback(async () => {
-    if (!supabase) return { error: 'Supabase nao configurado.' }
+    if (!supabase) return { error: 'Supabase não configurado.' }
     const { data, error } = await supabase.auth.mfa.enroll({
       factorType: 'totp',
       issuer: 'DinDin 10!',
@@ -112,7 +175,7 @@ export function useAuthOperations({ refreshAssurance }) {
   }, [])
 
   const verifyMfaEnrollment = useCallback(async (factorId, code) => {
-    if (!supabase) return { error: 'Supabase nao configurado.' }
+    if (!supabase) return { error: 'Supabase não configurado.' }
     const { error } = await supabase.auth.mfa.challengeAndVerify({
       factorId,
       code: String(code || '').replace(/\D/g, ''),
@@ -123,13 +186,13 @@ export function useAuthOperations({ refreshAssurance }) {
     }
     await logAuthEvent(AUTH_EVENTS.MFA_ENROLLED, 'warning', {})
     const { error: refreshError } = await supabase.auth.refreshSession()
-    if (refreshError) return { error: 'MFA ativado, mas nao foi possivel atualizar a sessao. Faca login novamente.' }
+    if (refreshError) return { error: 'MFA ativado, mas não foi possível atualizar a sessão. Faça login novamente.' }
     await refreshAssurance()
     return { ok: true }
   }, [refreshAssurance])
 
   const verifyMfaChallenge = useCallback(async (code) => {
-    if (!supabase) return { error: 'Supabase nao configurado.' }
+    if (!supabase) return { error: 'Supabase não configurado.' }
     const factors = await listFactors()
     if (!factors.length) return { error: 'Nenhum aplicativo autenticador configurado.' }
     const { error } = await supabase.auth.mfa.challengeAndVerify({
@@ -147,7 +210,7 @@ export function useAuthOperations({ refreshAssurance }) {
   }, [listFactors, refreshAssurance])
 
   const disableMfa = useCallback(async (code) => {
-    if (!supabase) return { error: 'Supabase nao configurado.' }
+    if (!supabase) return { error: 'Supabase não configurado.' }
     const factors = await listFactors()
     if (!factors.length) return { error: 'Nenhum fator ativo.' }
     const verify = await supabase.auth.mfa.challengeAndVerify({
