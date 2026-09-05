@@ -93,6 +93,56 @@ function hasFreshMfa(payload: Record<string, unknown>) {
   return latest > 0 && Math.floor(Date.now() / 1000) - latest <= MFA_FRESHNESS_SECONDS
 }
 
+// TASK-005: teto no Upstash ANTES da RPC. Sob flood a requisicao morre aqui e
+// nao gasta ida ao Postgres nem escrita em admin_action_rate_limits; quando o
+// Redis PERMITE, a RPC continua sendo chamada e segue a fonte de verdade.
+// REST API por fetch, sem cliente npm: o Deno 2 resolve `npm:` pelo node_modules
+// do app (ha package.json na raiz), entao `npm:@upstash/redis` exigiria entrar no
+// package.json - proibido pelo card. `EXPIRE ... NX` marca o TTL so na primeira
+// requisicao da janela, reproduzindo a janela fixa de 1 minuto da RPC numa unica
+// ida HTTP; o TTL da mesma resposta vira o Retry-After, que aqui era estatico.
+// Segredo ausente, timeout ou erro devolvem null e a decisao volta a ser
+// exclusivamente da RPC - fail-open no gate, o 503 da RPC segue fail-closed.
+// Copia de widget-data/index.ts (a terceira esta em widget-setup): o deploy e por
+// colagem no painel e `_shared/` exige CLI (backlog B34).
+async function consumeRedisLimit(key: string, limit: number, windowSeconds: number) {
+  const base = Deno.env.get('UPSTASH_REDIS_REST_URL') || ''
+  const token = Deno.env.get('UPSTASH_REDIS_REST_TOKEN') || ''
+  if (!base || !token) return null
+  try {
+    const res = await fetch(`${base}/pipeline`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify([['INCR', key], ['EXPIRE', key, windowSeconds, 'NX'], ['TTL', key]]),
+      signal: AbortSignal.timeout(1500),
+    })
+    if (!res.ok) return null
+    const rows = await res.json() as Array<{ result?: unknown }>
+    const count = Number(rows[0]?.result)
+    if (!Number.isFinite(count) || count < 1) return null
+    const ttl = Number(rows[2]?.result)
+    return { allowed: count <= limit, retryAfter: ttl > 0 ? ttl : windowSeconds }
+  } catch {
+    return null
+  }
+}
+
+// Espelha o `case` de consume_admin_rate_limit (schema.sql:402); 'status' cai no
+// default 60. Duas chamadas no handler compartilham este gate.
+const ADMIN_REDIS_LIMITS: Record<string, number> = {
+  'create-user': 5,
+  'list-users': 30,
+  'widget-metrics': 30,
+  'complete-password-change': 10,
+}
+
+async function enforceAdminRedisLimit(request: Request, adminId: string, action: string) {
+  const redis = await consumeRedisLimit(`arl:${action}:${adminId}`, ADMIN_REDIS_LIMITS[action] ?? 60, 60)
+  return redis && !redis.allowed
+    ? response(request, 429, { error: 'Muitas solicitações. Aguarde um minuto.' }, { 'Retry-After': String(redis.retryAfter) })
+    : null
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     const headers = corsHeaders(request)
@@ -171,6 +221,8 @@ Deno.serve(async (request) => {
     }
     // v42: unica acao mutante atendida antes da checagem administrativa
     // (usuario comum em primeiro login); exige o mesmo teto server-side.
+    const redisBlocked = await enforceAdminRedisLimit(request, user.id, action)
+    if (redisBlocked) return redisBlocked
     const { data: allowed, error: rateError } = await admin.rpc('consume_admin_rate_limit', {
       p_admin_id: user.id,
       p_action: action,
@@ -254,6 +306,8 @@ Deno.serve(async (request) => {
   }
 
   if (['status', 'list-users', 'create-user', 'widget-metrics'].includes(action)) {
+    const redisBlocked = await enforceAdminRedisLimit(request, user.id, action)
+    if (redisBlocked) return redisBlocked
     const { data: allowed, error: rateError } = await admin.rpc('consume_admin_rate_limit', {
       p_admin_id: user.id,
       p_action: action,
