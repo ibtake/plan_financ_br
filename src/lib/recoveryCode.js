@@ -26,3 +26,13 @@ const implicitToken = hashParams.get('access_token')
  * Usado como fallback manual em ResetPasswordScreen.
  */
 export const recoveryCode = pkceCode || implicitToken
+
+/**
+ * Verifier PKCE que viaja no proprio link (?v=), capturado junto com o code.
+ *
+ * O Supabase guardaria o verifier no localStorage de quem pediu o reset.
+ * Quando o link abre em outro navegador (PWA do iOS -> Safari) esse storage
+ * nao existe, a troca falha e o usuario ve um erro sem causa aparente.
+ * Com o verifier no link, a troca funciona em qualquer contexto.
+ */
+export const recoveryVerifier = url.searchParams.get('v')

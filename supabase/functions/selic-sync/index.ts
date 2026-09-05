@@ -4,6 +4,11 @@ const BCB_SERIES_URL = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.4390/dados
 const FETCH_TIMEOUT_MS = 8_000
 const MAX_MONTHS_FROM_BCB = 240
 const SUPPORTED_HISTORY_MONTHS = 228
+// AUDT-008: teto de bytes do corpo do BCB. Cada item da serie ocupa cerca de
+// 50 bytes no pior caso (`{"data":"01/12/2025","valor":"12.345678"},` - o
+// `parseRate` aceita ate 6 decimais), entao os 240 meses de
+// MAX_MONTHS_FROM_BCB cabem em ~12 KB. 64 KiB deixa ~5x de folga.
+const MAX_UPSTREAM_BYTES = 65_536
 
 function response(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -49,12 +54,12 @@ function formatBcbDate(isoDate: string) {
 
 // Mes corrente no fuso de Brasilia, nao em UTC. O `new Date().toISOString()`
 // anterior lia UTC, que das 21:00 as 23:59 de SP ja esta no dia seguinte: no
-// ultimo dia do mes isso adiantava o mes inteiro. Como `completedMonth` (`:124`)
-// existe justamente para descartar o mes ainda aberto no filtro de `:131`,
+// ultimo dia do mes isso adiantava o mes inteiro. Como `completedMonth` (`:175`)
+// existe justamente para descartar o mes ainda aberto no filtro de `:171`,
 // adiantar um mes fazia o mes corrente PASSAR pelo filtro e ser gravado com a
-// taxa parcial. E `upsert` roda com `ignoreDuplicates: true` (`:152`), entao esse
+// taxa parcial. E `upsert` roda com `ignoreDuplicates: true` (`:203`), entao esse
 // valor nunca seria reescrito quando o mes fechasse - `rebuild_all_reverse_goals`
-// (`:155`) o espalharia para as metas reversas de todos os usuarios. Serie mensal
+// (`:206`) o espalharia para as metas reversas de todos os usuarios. Serie mensal
 // do BCB e do calendario brasileiro; alinha com `widget-data/index.ts:74` (B40).
 function currentMonth() {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).formatToParts(new Date())
@@ -69,6 +74,41 @@ function supportedStartDate(startDate: string) {
   limit.setUTCMonth(limit.getUTCMonth() - SUPPORTED_HISTORY_MONTHS)
   const minimum = limit.toISOString().slice(0, 10)
   return startDate < minimum ? minimum : startDate
+}
+
+// AUDT-008: le o corpo do BCB contando bytes em vez de `upstream.json()`, que
+// materializava e parseava a resposta inteira antes do teto de `:171` - o limite
+// existia, mas atuava depois do custo. Teto medido no STREAM, nao no header,
+// entao `chunked` ou content-length ausente tambem ficam limitados. Quarta
+// copia do mesmo leitor (`widget-data/index.ts:139` e as outras duas): copia
+// deliberada, nao sobra - o deploy destas funcoes e por colagem de um arquivo
+// no painel do Supabase, onde `_shared/` nao existe (backlog B34), e mexer
+// aqui obriga a mexer nas irmas. Diferenca de proposito: le uma `Response` de
+// upstream, nao a `Request` do cliente, e cancela o reader ao estourar para
+// nao deixar a conexao pendurada.
+async function readUpstreamJsonWithinLimit(upstream: Response): Promise<unknown> {
+  const declaredLength = Number(upstream.headers.get('content-length') || 0)
+  if (declaredLength > MAX_UPSTREAM_BYTES) {
+    throw new Error('bcb_payload_too_large', { cause: { code: `content_length_${declaredLength}` } })
+  }
+  const reader = upstream.body?.getReader()
+  if (!reader) throw new Error('invalid_bcb_payload', { cause: { code: 'no_body' } })
+  const chunks: Uint8Array[] = []
+  let size = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > MAX_UPSTREAM_BYTES) {
+      await reader.cancel()
+      throw new Error('bcb_payload_too_large', { cause: { code: `stream_${size}` } })
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+  return JSON.parse(new TextDecoder().decode(bytes))
 }
 
 Deno.serve(async (request) => {
@@ -127,7 +167,7 @@ Deno.serve(async (request) => {
       clearTimeout(timeout)
     }
     if (!upstream.ok) throw new Error('bcb_unavailable', { cause: { status: upstream.status } })
-    const payload: unknown = await upstream.json()
+    const payload: unknown = await readUpstreamJsonWithinLimit(upstream)
     if (!Array.isArray(payload) || payload.length > MAX_MONTHS_FROM_BCB) {
       throw new Error('invalid_bcb_payload', { cause: { code: Array.isArray(payload) ? `length_${payload.length}` : 'not_array' } })
     }

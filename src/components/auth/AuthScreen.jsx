@@ -3,14 +3,21 @@
 // =====================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext.jsx'
+import { rememberedAccounts } from '../../lib/rememberedAccounts.js'
 import CodeInput from './CodeInput.jsx'
 import TurnstileCaptcha, { isTurnstileConfigured } from './TurnstileCaptcha.jsx'
 
 export default function AuthScreen() {
   const auth = useAuth()
-  // login | forgot | mfa
-  const [mode, setMode] = useState('login')
+  // Contas ja usadas neste navegador (IMPR-009). Lidas uma vez, no primeiro
+  // render; como todo hook, ficam acima do early return de missingConfig.
+  const [accounts, setAccounts] = useState(() => rememberedAccounts.list())
+  // accounts | login | forgot | mfa
+  const [mode, setMode] = useState(() => (accounts.length ? 'accounts' : 'login'))
+  // E-mail escolhido na etapa de contas; null = formulario tradicional.
+  const [selected, setSelected] = useState(null)
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -76,6 +83,32 @@ export default function AuthScreen() {
     submittedMfaCode.current = null
     setCaptchaToken(null)
     setMode(next)
+  }
+
+  const selectAccount = (email) => {
+    setSelected(email)
+    setForm({ email, password: '' })
+    switchMode('login')
+  }
+
+  const pickAnotherAccount = () => {
+    setSelected(null)
+    setForm({ email: '', password: '' })
+    switchMode('login')
+  }
+
+  const backToAccounts = () => {
+    setForm((prev) => ({ ...prev, password: '' }))
+    switchMode('accounts')
+  }
+
+  const forgetAccount = (email) => {
+    rememberedAccounts.forget(email)
+    const restantes = rememberedAccounts.list()
+    setAccounts(restantes)
+    if (selected === email) setSelected(null)
+    // Sem conta sobrando nao existe etapa de contas: cai no formulario vazio.
+    if (!restantes.length) pickAnotherAccount()
   }
 
   // ---------- Configuracao ausente ----------
@@ -181,12 +214,15 @@ export default function AuthScreen() {
 
   const cancelMfa = async () => {
     await auth.signOut('mfa_cancelled')
+    // Sair no meio do MFA nao deixa a senha preenchida na volta ao login.
+    setForm((prev) => ({ ...prev, password: '' }))
     switchMode('login')
   }
 
   // ---------- Formularios ----------
 
   const titles = {
+    accounts: { title: 'Escolha uma conta', sub: 'Contas usadas neste navegador' },
     login: { title: 'Entrar na sua conta' },
     forgot: { title: 'Recuperar senha', sub: 'Enviaremos um link por e-mail' },
     mfa: { title: 'Verificação em duas etapas', sub: 'Abra seu aplicativo autenticador' },
@@ -221,9 +257,41 @@ export default function AuthScreen() {
           </output>
         )}
 
+        {/* ----- Contas reconhecidas ----- */}
+        {mode === 'accounts' && (
+          <div className="stack auth-step" style={{ gap: 14, marginTop: 18 }}>
+            <div className="auth-accounts">
+              {accounts.map((account) => (
+                <div className="auth-account" key={account.email}>
+                  <button
+                    type="button"
+                    className="auth-account-pick"
+                    onClick={() => selectAccount(account.email)}
+                  >
+                    <span className="avatar">{account.email.slice(0, 2)}</span>
+                    <span className="auth-account-email">{account.email}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => forgetAccount(account.email)}
+                    aria-label={`Remover ${account.email} das contas deste navegador`}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button type="button" className="btn btn-ghost btn-block" onClick={pickAnotherAccount}>
+              Usar outra conta
+            </button>
+          </div>
+        )}
+
         {/* ----- Login ----- */}
         {mode === 'login' && (
-          <form className="stack" style={{ gap: 14, marginTop: 18 }} onSubmit={handleLogin}>
+          <form className="stack auth-step" style={{ gap: 14, marginTop: 18 }} onSubmit={handleLogin}>
             <div className="field">
               <label className="label" htmlFor="login-email">
                 E-mail
@@ -237,6 +305,7 @@ export default function AuthScreen() {
                 required
                 value={form.email}
                 onChange={set('email')}
+                readOnly={!!selected}
                 placeholder="voce@exemplo.com"
               />
             </div>
@@ -250,6 +319,7 @@ export default function AuthScreen() {
                 className="input"
                 type="password"
                 autoComplete="current-password"
+                autoFocus={!!selected}
                 required
                 value={form.password}
                 onChange={set('password')}
@@ -267,13 +337,18 @@ export default function AuthScreen() {
               <button type="button" className="link-btn" onClick={() => switchMode('forgot')}>
                 Esqueci minha senha
               </button>
+              {accounts.length > 0 && (
+                <button type="button" className="link-btn" onClick={backToAccounts}>
+                  {selected ? 'Trocar de conta' : 'Contas reconhecidas'}
+                </button>
+              )}
             </div>
           </form>
         )}
 
         {/* ----- Recuperacao ----- */}
         {mode === 'forgot' && (
-          <form className="stack" style={{ gap: 14, marginTop: 18 }} onSubmit={handleForgot}>
+          <form className="stack auth-step" style={{ gap: 14, marginTop: 18 }} onSubmit={handleForgot}>
             <div className="field">
               <label className="label" htmlFor="forgot-email">
                 E-mail da conta
@@ -307,7 +382,7 @@ export default function AuthScreen() {
 
         {/* ----- Desafio MFA ----- */}
         {mode === 'mfa' && (
-          <form className="stack" style={{ gap: 16, marginTop: 18 }} onSubmit={handleMfa}>
+          <form className="stack auth-step" style={{ gap: 16, marginTop: 18 }} onSubmit={handleMfa}>
             <div className="notice info">
               Digite o código de 6 dígitos exibido no seu aplicativo autenticador.
             </div>

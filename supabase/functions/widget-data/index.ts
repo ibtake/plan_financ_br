@@ -160,6 +160,12 @@ async function readJsonWithinLimit(request: Request): Promise<Record<string, any
 
 Deno.serve(async (request) => {
   if (request.method !== 'POST') return response(405, { error: 'Método não permitido.' })
+  // Recusa barata antes de ler o corpo e antes do contador global de invalidas:
+  // text/plain e CORS-safelisted, logo POST cross-origin sem preflight queimaria
+  // a cota do plano gratuito. Exigir application/json obriga o preflight, que o
+  // 405 acima recusa. Header e declarativo: quem mentir cai no 400 do parse.
+  const mediaType = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
+  if (mediaType !== 'application/json') return response(415, { error: 'Tipo de conteúdo não suportado.' })
   const url = Deno.env.get('SUPABASE_URL') || ''
   const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
   if (!url || !serviceRole) return response(503, { error: 'Serviço indisponível.' })
@@ -285,7 +291,24 @@ Deno.serve(async (request) => {
     return response(401, { error: 'Widget não autorizado.' })
   }
 
-  const { data: rows, error } = await admin.from('transactions').select('description,amount,date,paid,recurrence,recurrence_end,installments,paid_occurrences,type').eq('user_id', userId).eq('type', 'expense')
+  // AUDT-009: o filtro espelha occurrenceDate() em SQL - antes a query lia o
+  // historico inteiro de despesas do usuario a cada request (O(total)), mesmo
+  // com so o dia de hoje saindo na resposta. Lancamento avulso (recurrence
+  // 'none' e installments 1) so importa no dia exato (linha 118); recorrente
+  // ou parcelado com inicio <= hoje entra e o JS decide a ocorrencia. Ambos
+  // `not null` com default no schema (schema.sql:679-681), entao o predicado
+  // e null-safe. `date` vem de saoPauloDate(), nunca do cliente - sem
+  // superficie de injecao no filtro.
+  // ponytail: o teto de 1.000 corta as regras recorrentes mais antigas se
+  // alguem passar disso; virar paginacao se acontecer.
+  const { data: rows, error } = await admin.from('transactions')
+    .select('description,amount,date,paid,recurrence,recurrence_end,installments,paid_occurrences,type')
+    .eq('user_id', userId)
+    .eq('type', 'expense')
+    .lte('date', date)
+    .or(`date.eq.${date},recurrence.neq.none,installments.gt.1`)
+    .order('date', { ascending: false })
+    .range(0, 999)
   if (error) return response(503, { error: 'Não foi possível consultar as contas.' })
   const bills = (rows || []).flatMap((tx) => {
     const index = occurrenceDate(tx, date)

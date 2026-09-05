@@ -2712,7 +2712,7 @@ dialog.modal-backdrop {
 .mobile-category-summary,
 .mobile-category-details { display: none; }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .expense-cards-layout { grid-template-columns: minmax(0, 1fr); }
   .expense-donut-wrap { height: 300px; }
 }
@@ -3257,6 +3257,61 @@ dialog.modal-backdrop {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* Contas reconhecidas neste navegador (IMPR-009) */
+.auth-accounts {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.auth-account {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.auth-account:hover {
+  border-color: var(--primary);
+  background: var(--surface-2);
+}
+
+.auth-account-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.auth-account-email {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Entrada de etapa da tela de login. O @media vem depois da declaracao: nao
+   soma especificidade, so vence pela ordem no cascade. */
+.auth-step {
+  animation: popIn 0.22s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-step {
+    animation: none;
+  }
 }
 
 .turnstile-wrap {

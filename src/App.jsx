@@ -332,7 +332,7 @@ function AuthenticatedApp() {
           <div className="sync-overlay-card">
             <div className="spinner" />
             <strong>Excluindo meta...</strong>
-            <span>Enviando a solicitacao de exclusao com seguranca.</span>
+            <span>Enviando a solicitação de exclusão com segurança.</span>
           </div>
         </div>
       )}

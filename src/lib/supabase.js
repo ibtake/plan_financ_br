@@ -42,7 +42,7 @@ export function configurationProblem() {
 // Aviso claro no console durante o desenvolvimento
 if (!isSupabaseConfigured && import.meta.env.DEV) {
   console.warn(
-    '[DinDin 10!] Supabase nao configurado. Defina VITE_SUPABASE_URL e ' +
+    '[DinDin 10!] Supabase não configurado. Defina VITE_SUPABASE_URL e ' +
       'VITE_SUPABASE_ANON_KEY no arquivo .env (veja .env.example).',
   )
 }
@@ -87,41 +87,41 @@ export function translateAuthError(error) {
   if (raw.includes('invalid login credentials')) return 'E-mail ou senha incorretos.'
   if (raw.includes('email not confirmed')) return 'E-mail ou senha incorretos.'
   if (raw.includes('user already registered') || raw.includes('already been registered')) {
-    return 'Nao foi possivel concluir o cadastro com estes dados.'
+    return 'Não foi possível concluir o cadastro com estes dados.'
   }
   if (raw.includes('password should be at least')) {
-    return 'A senha e muito curta. Use pelo menos 10 caracteres.'
+    return 'A senha é muito curta. Use pelo menos 10 caracteres.'
   }
   if (raw.includes('invalid totp') || raw.includes('invalid code') || raw.includes('invalid mfa')) {
-    return 'Codigo de verificacao invalido ou expirado. Tente o codigo atual do app.'
+    return 'Código de verificação inválido ou expirado. Tente o código atual do app.'
   }
   if (raw.includes('mfa_factor_name_conflict')) {
-    return 'Ja existe uma configuracao MFA com este nome. Tente ativar novamente.'
+    return 'Já existe uma configuração MFA com este nome. Tente ativar novamente.'
   }
   if (raw.includes('insufficient_aal')) {
-    return 'Confirme o codigo do seu aplicativo autenticador para continuar.'
+    return 'Confirme o código do seu aplicativo autenticador para continuar.'
   }
   if (raw.includes('too_many_enrolled_mfa_factors')) {
     return 'O limite de fatores MFA foi atingido. Remova um fator antigo e tente novamente.'
   }
   if (raw.includes('mfa_totp_enroll_not_enabled')) {
-    return 'A ativacao de MFA por aplicativo esta desabilitada no Supabase.'
+    return 'A ativação de MFA por aplicativo está desabilitada no Supabase.'
   }
   if (raw.includes('mfa_ip_address_mismatch')) {
-    return 'A ativacao precisa ser concluida no mesmo dispositivo e rede em que foi iniciada.'
+    return 'A ativação precisa ser concluída no mesmo dispositivo e rede em que foi iniciada.'
   }
   if (raw.includes('rate limit') || raw.includes('too many requests')) {
     return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos.'
   }
   if (raw.includes('failed to fetch') || raw.includes('networkerror')) {
-    return 'Falha de conexao. Verifique sua internet e tente novamente.'
+    return 'Falha de conexão. Verifique sua internet e tente novamente.'
   }
   if (raw.includes('row-level security') || raw.includes('permission denied')) {
-    return 'Acesso negado pelas regras de seguranca do banco de dados.'
+    return 'Acesso negado pelas regras de segurança do banco de dados.'
   }
   if (raw.includes('email address') && raw.includes('invalid')) {
-    return 'Endereco de e-mail invalido.'
+    return 'Endereço de e-mail inválido.'
   }
 
-  return 'Nao foi possivel concluir a operacao. Tente novamente.'
+  return 'Não foi possível concluir a operação. Tente novamente.'
 }
