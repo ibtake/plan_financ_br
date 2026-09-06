@@ -397,7 +397,14 @@ export default function AuthScreen() {
                     <span className="auth-account-email">{selected}</span>
                     <span className="auth-identity-hint">Toque para entrar com a chave de acesso</span>
                   </button>
-                ) : (
+                ) : null}
+                {crachaMode && (
+                  // Escape sem esperar a passkey falhar: revela a senha ja.
+                  <button type="button" className="link-btn auth-use-password" onClick={() => setPasskeyFailed(true)}>
+                    Usar senha
+                  </button>
+                )}
+                {!crachaMode && (
                   <div className="auth-identity">
                     <span className="avatar" aria-hidden="true">{selected.slice(0, 2)}</span>
                     <h1 className="auth-account-email">{selected}</h1>

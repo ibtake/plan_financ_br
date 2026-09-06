@@ -20,14 +20,7 @@ export function takeFreshLogin() {
   return value
 }
 
-// Aleatoria e nunca toda vez: ~1 em cada 3 logins novos.
+// Oferta de registro aleatoria e nunca toda vez: ~1 em cada 3 logins novos. O
+// pre-requisito (login novo, suporte, sem marca) fica no App.jsx; o sorteio e a
+// escolha sync-vs-registro ficam no PasskeyOffer, que precisa do listPasskeys().
 export const OFFER_PROBABILITY = 1 / 3
-
-/**
- * Decide se o cartao "Habilite ja o seu Passkeys" aparece apos o login.
- * Puro e testavel: `random` e injetavel.
- */
-export function shouldOfferPasskey({ supported, hasLocalMark, freshLogin, random = Math.random }) {
-  if (!supported || hasLocalMark || !freshLogin) return false
-  return random() < OFFER_PROBABILITY
-}

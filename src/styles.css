@@ -3423,6 +3423,11 @@ dialog.modal-backdrop {
   color: var(--text-muted);
 }
 
+.auth-use-password {
+  display: block;
+  margin: 12px auto 0;
+}
+
 /* Oferta de passkey pos-login: icone grande e chamativo no topo do cartao. */
 .passkey-offer-hero {
   display: flex;

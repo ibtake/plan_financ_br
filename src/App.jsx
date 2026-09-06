@@ -21,7 +21,7 @@ import RequiredPasswordChange from './components/auth/RequiredPasswordChange.jsx
 import PasskeyOffer from './components/auth/PasskeyOffer.jsx'
 import { useAuth } from './contexts/AuthContext.jsx'
 import { rememberedAccounts } from './lib/rememberedAccounts.js'
-import { shouldOfferPasskey, takeFreshLogin } from './lib/passkeyOffer.js'
+import { takeFreshLogin } from './lib/passkeyOffer.js'
 import { useMonthlyData } from './hooks/useFinance.js'
 import { useLocalStorage } from './hooks/useLocalStorage.js'
 import { useSupabaseFinance } from './hooks/useSupabaseFinance.js'
@@ -152,10 +152,13 @@ export default function App() {
   // Interstitio pos-login, apos os gates de sessao/MFA/troca-de-senha para o
   // sinal de login novo ser consumido so quando o app de fato entraria. Decidido
   // uma vez (ref) para o takeFreshLogin() one-shot nao reavaliar a cada render.
+  // Aqui so o pre-requisito barato (login novo, suporte, sem marca local); o
+  // PasskeyOffer decide async o que mostrar (sync Apple, oferta de registro ou
+  // nada) - so ele pode chamar listPasskeys().
   if (offerDecision.current === null) {
     const email = auth.session.user?.email
     const hasLocalMark = !!email && rememberedAccounts.list().some((a) => a.email === email && a.hasPasskey)
-    offerDecision.current = shouldOfferPasskey({ supported: suportaWebAuthn, hasLocalMark, freshLogin: takeFreshLogin() })
+    offerDecision.current = suportaWebAuthn && !hasLocalMark && takeFreshLogin()
   }
   if (offerDecision.current && !offerDismissed) {
     const dismiss = () => setOfferDismissed(true)
