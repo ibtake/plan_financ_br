@@ -3,6 +3,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase.js'
 import { offlineDb, OFFLINE_CACHE_PREFERENCE_KEY } from '../lib/offlineDb.js'
 import { createRefreshCoordinator, isRetryableConnectionError, retryDelay } from '../lib/offlineRevalidation.js'
 import { rememberedAccounts } from '../lib/rememberedAccounts.js'
+import { markFreshLogin } from '../lib/passkeyOffer.js'
 import { AUTH_EVENTS, logAuthEvent } from './authAudit.js'
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000
@@ -69,8 +70,14 @@ export function useAuthSession() {
 
   const refreshAssurance = useCallback(async () => {
     if (!supabase) return null
+    // IMPR-010: falha de leitura do nivel de garantia nao pode virar aal1
+    // silencioso. Antes, o catch devolvia null igual ao caso sem sessao, e
+    // signIn tratava null como "sem MFA" e liberava o login. Agora o erro sai
+    // como { error } distinto de null, o mfaStage nao e rebaixado, e quem chama
+    // decide sem confundir "leitura falhou" com "aal1 confirmado".
     try {
-      const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+      const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+      if (error) return { error }
       setAssuranceLevel(data || null)
       if (data?.nextLevel === 'aal2' && data.nextLevel !== data.currentLevel) {
         setMfaStage('required')
@@ -78,8 +85,8 @@ export function useAuthSession() {
         setMfaStage(data?.currentLevel === 'aal2' ? 'verified' : 'none')
       }
       return data
-    } catch {
-      return null
+    } catch (error) {
+      return { error }
     }
   }, [])
 
@@ -189,7 +196,9 @@ export function useAuthSession() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
       authEventReceived = true
       const version = ++sessionVersion
-      if (event === 'SIGNED_IN') markUserActivity()
+      // SIGNED_IN = login real; recarga com sessao salva dispara INITIAL_SESSION.
+      // markFreshLogin sinaliza a oferta de passkey a so aparecer em login novo.
+      if (event === 'SIGNED_IN') { markUserActivity(); markFreshLogin() }
       void applySession(newSession, version)
     })
 

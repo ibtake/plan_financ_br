@@ -3,7 +3,7 @@
 // =====================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { KeyRound, X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 import { initialLoginStep, rememberedAccounts } from '../../lib/rememberedAccounts.js'
 import CodeInput from './CodeInput.jsx'
@@ -31,6 +31,10 @@ export default function AuthScreen() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [captchaToken, setCaptchaToken] = useState(null)
+  // Conta com passkey abre so no cracha; qualquer falha do passkey revela a
+  // senha (inclusive cancelar o Face ID/PIN), terminando como a tela de hoje.
+  const [passkeyFailed, setPasskeyFailed] = useState(false)
+  const passwordRef = useRef(null)
   const submittedMfaCode = useRef(null)
 
   const missingConfig = auth.configurationProblem
@@ -102,6 +106,11 @@ export default function AuthScreen() {
     void verifyMfaCode(code)
   }, [mode, code, busy, verifyMfaCode])
 
+  // Passkey falhou: a senha sobe e recebe o foco, para o teclado seguir aberto.
+  useEffect(() => {
+    if (passkeyFailed) passwordRef.current?.focus()
+  }, [passkeyFailed])
+
   const set = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))
 
   const resetMessages = () => {
@@ -114,6 +123,7 @@ export default function AuthScreen() {
     setCode('')
     submittedMfaCode.current = null
     setCaptchaToken(null)
+    setPasskeyFailed(false)
     slideTo(next)
   }
 
@@ -122,6 +132,14 @@ export default function AuthScreen() {
     setForm({ email, password: '' })
     switchMode('login')
   }
+
+  // So oferece passkey na conta que registrou passkey NESTE navegador (marca
+  // local). Sem marca, a tela e identica a de antes.
+  const selectedHasPasskey = !!selected && accounts.some((a) => a.email === selected && a.hasPasskey)
+  // Enquanto o passkey nao falha, a conta marcada mostra so o cracha clicavel e
+  // esconde a senha. Conta sem marca: senha visivel de sempre, sem cracha.
+  const crachaMode = selectedHasPasskey && !passkeyFailed
+  const mostrarSenha = !selectedHasPasskey || passkeyFailed
 
   const pickAnotherAccount = () => {
     setSelected(null)
@@ -208,6 +226,25 @@ export default function AuthScreen() {
 
     if (result.error) {
       setError(result.error)
+      return
+    }
+    if (result.mfaRequired) {
+      slideTo('mfa')
+      setCode('')
+    }
+    // Sem MFA, o AuthContext atualiza a sessao e o App troca de tela
+  }
+
+  const handlePasskeyLogin = async () => {
+    resetMessages()
+    setBusy(true)
+    const result = await auth.signInWithPasskey({ captchaToken })
+    setBusy(false)
+    if (result.error) {
+      // Qualquer falha revela a senha. Cancelar o Face ID/PIN (NotAllowedError)
+      // e escolha do usuario, nao erro: revela em silencio, sem alarme vermelho.
+      setPasskeyFailed(true)
+      if (result.name !== 'NotAllowedError') setError(result.error)
       return
     }
     if (result.mfaRequired) {
@@ -335,10 +372,29 @@ export default function AuthScreen() {
                     DOM, oculto, porque sem ele o gerenciador de senhas (o
                     Keychain do iOS incluido) nao casa a credencial e para de
                     oferecer a senha salva nesta segunda etapa. */}
-                <div className="auth-identity">
-                  <span className="avatar" aria-hidden="true">{selected.slice(0, 2)}</span>
-                  <h1 className="auth-account-email">{selected}</h1>
-                </div>
+                {crachaMode ? (
+                  // Conta com passkey: a identidade vira botao. Tocar inicia o
+                  // login por chave de acesso; a senha so aparece se ele falhar.
+                  <button
+                    type="button"
+                    className="auth-identity auth-identity-passkey"
+                    onClick={handlePasskeyLogin}
+                    disabled={busy || (captchaEnabled && !captchaToken)}
+                    aria-label={`Entrar com chave de acesso de ${selected}`}
+                  >
+                    <span className="auth-identity-avatar-wrap">
+                      <span className="avatar" aria-hidden="true">{selected.slice(0, 2)}</span>
+                      <span className="auth-identity-key" aria-hidden="true"><KeyRound size={16} strokeWidth={2} /></span>
+                    </span>
+                    <span className="auth-account-email">{selected}</span>
+                    <span className="auth-identity-hint">Toque para entrar com a chave de acesso</span>
+                  </button>
+                ) : (
+                  <div className="auth-identity">
+                    <span className="avatar" aria-hidden="true">{selected.slice(0, 2)}</span>
+                    <h1 className="auth-account-email">{selected}</h1>
+                  </div>
+                )}
                 <input
                   type="email"
                   name="email"
@@ -367,28 +423,33 @@ export default function AuthScreen() {
               </div>
             )}
 
-            <div className="field">
-              <label className="label" htmlFor="login-password">
-                Senha
-              </label>
-              <input
-                id="login-password"
-                className="input"
-                type="password"
-                autoComplete="current-password"
-                autoFocus={!!selected}
-                required
-                value={form.password}
-                onChange={set('password')}
-                placeholder="••••••••••"
-              />
-            </div>
+            {mostrarSenha && (
+              <div className={`field${passkeyFailed ? ' auth-password-reveal' : ''}`}>
+                <label className="label" htmlFor="login-password">
+                  Senha
+                </label>
+                <input
+                  ref={passwordRef}
+                  id="login-password"
+                  className="input"
+                  type="password"
+                  autoComplete="current-password"
+                  autoFocus={!!selected}
+                  required
+                  value={form.password}
+                  onChange={set('password')}
+                  placeholder="••••••••••"
+                />
+              </div>
+            )}
 
             <TurnstileCaptcha onTokenChange={setCaptchaToken} />
 
-            <button className="btn btn-primary btn-block" type="submit" disabled={busy || (captchaEnabled && !captchaToken)}>
-              {busy ? 'Entrando...' : 'Entrar'}
-            </button>
+            {mostrarSenha && (
+              <button className="btn btn-primary btn-block" type="submit" disabled={busy || (captchaEnabled && !captchaToken)}>
+                {busy ? 'Entrando...' : 'Entrar'}
+              </button>
+            )}
 
             <div className="auth-links">
               <button type="button" className="link-btn" onClick={() => switchMode('forgot')}>
