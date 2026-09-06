@@ -31,6 +31,11 @@ export default function AuthScreen() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [captchaToken, setCaptchaToken] = useState(null)
+  // Turnstile emite token de uso unico: numa falha, o servidor ja o consumiu e
+  // reenviar o mesmo so repete o erro. Bumpar o nonce remonta o widget (via key),
+  // que zera o token no cleanup e emite um novo - sem esperar a expiracao.
+  const [captchaNonce, setCaptchaNonce] = useState(0)
+  const resetCaptcha = () => { setCaptchaToken(null); setCaptchaNonce((n) => n + 1) }
   // Conta com passkey abre so no cracha; qualquer falha do passkey revela a
   // senha (inclusive cancelar o Face ID/PIN), terminando como a tela de hoje.
   const [passkeyFailed, setPasskeyFailed] = useState(false)
@@ -226,6 +231,7 @@ export default function AuthScreen() {
 
     if (result.error) {
       setError(result.error)
+      resetCaptcha()
       return
     }
     if (result.mfaRequired) {
@@ -245,6 +251,7 @@ export default function AuthScreen() {
       // e escolha do usuario, nao erro: revela em silencio, sem alarme vermelho.
       setPasskeyFailed(true)
       if (result.name !== 'NotAllowedError') setError(result.error)
+      resetCaptcha()
       return
     }
     if (result.mfaRequired) {
@@ -267,6 +274,7 @@ export default function AuthScreen() {
 
     if (result.error) {
       setError(result.error)
+      resetCaptcha()
       return
     }
     // Mensagem neutra: nao revela se o e-mail existe na base
@@ -443,7 +451,7 @@ export default function AuthScreen() {
               </div>
             )}
 
-            <TurnstileCaptcha onTokenChange={setCaptchaToken} />
+            <TurnstileCaptcha key={captchaNonce} onTokenChange={setCaptchaToken} />
 
             {mostrarSenha && (
               <button className="btn btn-primary btn-block" type="submit" disabled={busy || (captchaEnabled && !captchaToken)}>
@@ -484,7 +492,7 @@ export default function AuthScreen() {
               />
             </div>
 
-            <TurnstileCaptcha onTokenChange={setCaptchaToken} />
+            <TurnstileCaptcha key={captchaNonce} onTokenChange={setCaptchaToken} />
 
             <button className="btn btn-primary btn-block" type="submit" disabled={busy || (captchaEnabled && !captchaToken)}>
               {busy ? 'Enviando...' : 'Enviar link de recuperação'}
