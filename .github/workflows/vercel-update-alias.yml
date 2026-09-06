@@ -1,14 +1,13 @@
 name: Alias Preview to QA
-
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  deployment_status
 
 permissions:
   pull-requests: write
 
 jobs:
   alias-and-comment:
+    if: github.event.deployment_status.state == 'success' && github.event.deployment_status.environment == 'Preview'
     runs-on: ubuntu-latest
     steps:
       - name: Aguardar deploy da Vercel terminar
@@ -16,18 +15,15 @@ jobs:
         id: waitForVercel
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          max_timeout: 300  # segundos; ajuste conforme o tempo de build
+          max_timeout: 300
           vercel_protection_bypass_header: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-
       - name: Instalar Vercel CLI
         run: npm i -g vercel
-
       - name: Fixar alias QA
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           vercel alias set "${{ steps.waitForVercel.outputs.url }}" dindin-10-qa.vercel.app --scope anke4 --token=$VERCEL_TOKEN
-
       - name: Comentar na PR
         uses: marocchino/sticky-pull-request-comment@v2
         with:
