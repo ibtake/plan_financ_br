@@ -1,4 +1,5 @@
 name: Alias Preview to QA
+
 on:
   deployment_status
 
@@ -17,16 +18,36 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           max_timeout: 300
           vercel_protection_bypass_header: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+
       - name: Instalar Vercel CLI
         run: npm i -g vercel
+
       - name: Fixar alias QA
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           vercel alias set "${{ steps.waitForVercel.outputs.url }}" dindin-10-qa.vercel.app --scope anke4 --token=$VERCEL_TOKEN
+
+      - name: Resolver PR pelo SHA do deployment
+        id: findPr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.payload.deployment.sha
+            });
+            if (prs.length === 0) {
+              core.setFailed('Nenhuma PR encontrada para esse commit');
+              return;
+            }
+            core.setOutput('number', prs[0].number);
+
       - name: Comentar na PR
         uses: marocchino/sticky-pull-request-comment@v2
         with:
+          number: ${{ steps.findPr.outputs.number }}
           message: |
             🔗 **Ambiente de QA atualizado para esta PR**
             Acesse: https://dindin-10-qa.vercel.app
