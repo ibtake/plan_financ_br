@@ -18,7 +18,10 @@ import PGBLPanel from './components/PGBLPanel.jsx'
 import AuthScreen from './components/auth/AuthScreen.jsx'
 import ResetPasswordScreen from './components/auth/ResetPasswordScreen.jsx'
 import RequiredPasswordChange from './components/auth/RequiredPasswordChange.jsx'
+import PasskeyOffer from './components/auth/PasskeyOffer.jsx'
 import { useAuth } from './contexts/AuthContext.jsx'
+import { rememberedAccounts } from './lib/rememberedAccounts.js'
+import { shouldOfferPasskey, takeFreshLogin } from './lib/passkeyOffer.js'
 import { useMonthlyData } from './hooks/useFinance.js'
 import { useLocalStorage } from './hooks/useLocalStorage.js'
 import { useSupabaseFinance } from './hooks/useSupabaseFinance.js'
@@ -46,6 +49,8 @@ const TrendChart = lazy(() => import('./components/TrendChart.jsx'))
 const passkeyLabHost =
   import.meta.env.DEV || (typeof window !== 'undefined' && isHomologacaoHost(window.location.hostname))
 const PasskeyLab = passkeyLabHost ? lazy(() => import('./components/dev/PasskeyLab.jsx')) : null
+
+const suportaWebAuthn = typeof window !== 'undefined' && 'PublicKeyCredential' in window
 
 /** Reserva o espaco do grafico enquanto o chunk chega, evitando salto de layout */
 function ChartFallback({ height = 240 }) {
@@ -114,6 +119,10 @@ const PAGE_META = {
 
 export default function App() {
   const auth = useAuth()
+  // Oferta de passkey pos-login: decidida uma vez por carregamento (guarda no
+  // ref para takeFreshLogin() rodar so uma vez) e dispensavel so nesta carga.
+  const offerDecision = useRef(null)
+  const [offerDismissed, setOfferDismissed] = useState(false)
   const isResetPasswordRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password'
 
   if (isResetPasswordRoute) return <ResetPasswordScreen />
@@ -139,6 +148,19 @@ export default function App() {
   // String() para o mesmo critério do banco e das Edge Functions (schema.sql:132
   // le o claim com `->>`, que casa boolean true e string 'true').
   if (String(auth.session?.user?.app_metadata?.must_change_password) === 'true') return <RequiredPasswordChange />
+
+  // Interstitio pos-login, apos os gates de sessao/MFA/troca-de-senha para o
+  // sinal de login novo ser consumido so quando o app de fato entraria. Decidido
+  // uma vez (ref) para o takeFreshLogin() one-shot nao reavaliar a cada render.
+  if (offerDecision.current === null) {
+    const email = auth.session.user?.email
+    const hasLocalMark = !!email && rememberedAccounts.list().some((a) => a.email === email && a.hasPasskey)
+    offerDecision.current = shouldOfferPasskey({ supported: suportaWebAuthn, hasLocalMark, freshLogin: takeFreshLogin() })
+  }
+  if (offerDecision.current && !offerDismissed) {
+    const dismiss = () => setOfferDismissed(true)
+    return <PasskeyOffer onSkip={dismiss} onDone={dismiss} />
+  }
 
   return <AuthenticatedApp key={auth.user.id} />
 }
