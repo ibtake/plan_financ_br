@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext.jsx'
-import { rememberedAccounts } from '../../lib/rememberedAccounts.js'
+import { initialLoginStep, rememberedAccounts } from '../../lib/rememberedAccounts.js'
 import CodeInput from './CodeInput.jsx'
 import TurnstileCaptcha, { isTurnstileConfigured } from './TurnstileCaptcha.jsx'
 
@@ -14,12 +14,16 @@ export default function AuthScreen() {
   // Contas ja usadas neste navegador (IMPR-009). Lidas uma vez, no primeiro
   // render; como todo hook, ficam acima do early return de missingConfig.
   const [accounts, setAccounts] = useState(() => rememberedAccounts.list())
+  // Semente das tres etapas abaixo, calculada da lista do primeiro render: com
+  // conta unica a escolha e ruido, entao a tela abre na senha (TASK-006). Nao e
+  // estado derivado - mudar `accounts` depois nao reabre a etapa de contas.
+  const inicio = initialLoginStep(accounts)
   // accounts | login | forgot | mfa
-  const [mode, setMode] = useState(() => (accounts.length ? 'accounts' : 'login'))
+  const [mode, setMode] = useState(inicio.mode)
   // E-mail escolhido na etapa de contas; null = formulario tradicional.
-  const [selected, setSelected] = useState(null)
+  const [selected, setSelected] = useState(inicio.selected)
   const [form, setForm] = useState({
-    email: '',
+    email: inicio.selected || '',
     password: '',
   })
   const [code, setCode] = useState('')

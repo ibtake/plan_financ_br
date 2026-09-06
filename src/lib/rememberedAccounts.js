@@ -82,3 +82,17 @@ export function createRememberedAccounts({
 }
 
 export const rememberedAccounts = createRememberedAccounts()
+
+/**
+ * Etapa em que a tela de login abre (TASK-006).
+ *
+ * Escolher conta so faz sentido com duas ou mais lembradas. Com exatamente
+ * uma, a tela abre direto na senha com o e-mail ja identificado; com nenhuma,
+ * no formulario tradicional. `selected` alimenta tanto a identidade exibida
+ * quanto o input oculto que o gerenciador de senhas usa para casar a credencial.
+ */
+export function initialLoginStep(list) {
+  if (list.length > 1) return { mode: 'accounts', selected: null }
+  return { mode: 'login', selected: list.length === 1 ? list[0].email : null }
+}
+
