@@ -1,37 +1,59 @@
-# Reindex do RAG (fase 5, rev d; IMPR-008: dual-transporte) — rebuild da
-# coleção `codigo` a partir do código da main. Disparo: push na main (o índice
-# acompanha a produção) + workflow_dispatch manual. Runs são serializados
-# por concurrency (rebuild + upsert nunca correm em paralelo — pushes em
-# sequência viram fila). Branches/PR não disparam de propósito: o valor
-# `repo` no payload é único e runs concorrentes de branches diferentes se
-# apagariam mutuamente.
+# Reindex do RAG (fase 5, rev d; IMPR-008: dual-transporte; TASK-009: delta)
+# — reconstrução da coleção `codigo` a partir do código da main. Disparos:
+# push na main (modo delta), cron semanal (modo full, convergência) e
+# workflow_dispatch manual (modo à escolha). Branches/PR não disparam de
+# propósito: o valor `repo` no payload é único e runs concorrentes de
+# branches diferentes se apagariam mutuamente.
+#
+# TASK-009 (consumo do free tier do Pinecone): cada push re-embedava os
+# mesmos ~500+ textos idênticos (~21–27k tokens; 21–23 runs em 4 dias =
+# 438k de 5M). Resposta em três frentes:
+#   1. MODO DELTA (push): compara o fingerprint (sha256 do cartão + blob
+#      sha) de cada chunk com o armazenado no índice (list+fetch custam
+#      read units, nunca tokens de embed) e só re-embeda o que mudou —
+#      embedding é determinístico, pular inalterado produz índice idêntico.
+#      Falha na leitura do estado cai para rebuild completo (otimização,
+#      nunca corretude).
+#   2. cancel-in-progress: rajada de pushes cancela runs pendentes/envelhe-
+#      cidos; só o último executa. Um run cancelado no meio deixa o índice
+#      parcial POR HORAS — o próximo push (delta) se auto-corrige, pois o
+#      delta compara o estado real do índice com o desejado, e o failure
+#      fica visível aqui no Actions.
+#   3. CRON SEMANAL FULL (domingo 06:00 UTC / 03:00 BRT): rebuild completo
+#      que garante convergência contra qualquer divergência que o delta não
+#      cubra. Nota: o GitHub desativa schedules após 60 dias sem atividade
+#      no repo (lição do extinto keep-alive-rag) — este repo tem pushes
+#      diários; se ocorrer, reativar em Actions → reindex-rag → Enable.
 #
 # IMPR-008: RAG_TRANSPORTE (vars do repo, default qdrant) escolhe o destino:
-#   qdrant   = id uuidv5, embedding Qdrant Cloud Inference (e5-small, fases 1-5);
+#   qdrant   = id uuidv5, embedding Qdrant Cloud Inference (e5-small, fases
+#              1-5) — caminho de rollback, permanece rebuild completo;
 #   pinecone = id string 'codigo:<repo>:<caminho>:<linha>', namespace 'codigo'
 #              do índice único, embedding por texto (integrated inference,
 #              modelo do índice = multilingual-e5-large, cota própria 5M tokens).
 # O índice é cache: rodar de novo é sempre seguro (ids determinísticos).
 #
-# Revisão d: o embedding é SERVER-SIDE (Qdrant Cloud Inference, modelo
-# intfloat/multilingual-e5-small via Inference Object { text, model }) — não
-# há mais job de paridade Node x Python (D1 obsoleto: um único embedder) nem
-# instalação de torch/sentence-transformers. O job é só chunk → upsert e roda
-# em ~1 minuto. O gate de paridade da fase 2 (scripts/rag/parity.mjs) saiu do
-# pipeline ativo junto com embed.py (mantidos no repo como fallback
-# documentado — ver scripts/rag/modelo.mjs).
-#
-# O índice é cache: rodar de novo é sempre seguro (ids determinísticos).
 name: reindex-rag
 
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: '0 6 * * 0' # domingo 06:00 UTC = 03:00 BRT — modo full
   workflow_dispatch:
+    inputs:
+      modo:
+        description: 'Modo do reindex (delta = só o que mudou; full = rebuild completo)'
+        required: false
+        default: 'delta'
+        type: choice
+        options:
+          - delta
+          - full
 
 concurrency:
   group: reindex-rag
-  cancel-in-progress: false # fila, nunca corrida (o rebuild é delete+upsert)
+  cancel-in-progress: true # TASK-009: rajada de pushes executa só o último run
 
 jobs:
   reindex:
@@ -50,12 +72,16 @@ jobs:
           # Sem a var ou em branco, o default é qdrant — com log EXPLÍCITO do
           # transporte usado para nunca mais haver "verde no lugar errado".
           RAG_TRANSPORTE: ${{ vars.RAG_TRANSPORTE == '' && 'qdrant' || vars.RAG_TRANSPORTE }}
+          # TASK-009: cron semanal força full (convergência); dispatch respeita
+          # o input; push na main roda delta (default).
+          REINDEX_MODE: ${{ github.event_name == 'schedule' && 'full' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.modo == 'full' && 'full' || 'delta')) || 'delta' }}
           PINECONE_INDEX_HOST: ${{ secrets.PINECONE_INDEX_HOST }}
           PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
           QDRANT_URL: ${{ secrets.QDRANT_URL }}
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
         run: |
           echo "RAG_TRANSPORTE = $RAG_TRANSPORTE"
+          echo "REINDEX_MODE = $REINDEX_MODE (evento: ${{ github.event_name }})"
           node scripts/rag/chunk.mjs --json rag-chunks.json
           node scripts/rag/upsert.mjs rag-chunks.json
           rm -f rag-chunks.json
