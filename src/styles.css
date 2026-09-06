@@ -3344,11 +3344,30 @@ dialog.modal-backdrop {
 }
 
 /* Conta escolhida: identificacao de quem vai entrar, sem campo em volta. */
+/* Conta fixada na etapa da senha: a identidade e o proprio titulo da tela,
+   entao vai centralizada, com o avatar maior e o e-mail logo abaixo. Os
+   tamanhos ficam escopados aqui - `.avatar` e `.auth-account-email` seguem
+   com 30px e 13,5px na lista de contas e no resto do app. */
 .auth-identity {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
+  margin-top: 4px;
+}
+
+.auth-identity .avatar {
+  width: 42px;
+  height: 42px;
+  font-size: 16px;
+}
+
+.auth-identity .auth-account-email {
+  max-width: 100%;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 @media (prefers-reduced-motion: reduce) {

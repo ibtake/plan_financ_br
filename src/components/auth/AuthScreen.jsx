@@ -253,9 +253,11 @@ export default function AuthScreen() {
 
   // ---------- Formularios ----------
 
+  // Na etapa da conta fixada o titulo some: a identidade no centro do card ja
+  // diz de quem e a senha pedida, e o `h1` migra para o proprio e-mail.
   const titles = {
     accounts: { title: 'Escolha uma conta', sub: 'Contas usadas neste navegador' },
-    login: { title: selected ? 'Digite sua senha' : 'Entrar na sua conta' },
+    login: { title: selected ? null : 'Entrar na sua conta' },
     forgot: { title: 'Recuperar senha', sub: 'Enviaremos um link por e-mail' },
     mfa: { title: 'Verificação em duas etapas', sub: 'Abra seu aplicativo autenticador' },
   }
@@ -273,10 +275,12 @@ export default function AuthScreen() {
           </div>
         </div>
 
-        <div style={{ marginTop: 22 }}>
-          <h1 className="auth-title">{titles[mode].title}</h1>
-          {titles[mode].sub && <div className="text-sm text-muted">{titles[mode].sub}</div>}
-        </div>
+        {titles[mode].title && (
+          <div style={{ marginTop: 22 }}>
+            <h1 className="auth-title">{titles[mode].title}</h1>
+            {titles[mode].sub && <div className="text-sm text-muted">{titles[mode].sub}</div>}
+          </div>
+        )}
 
         {error && (
           <div id="auth-error" className="notice danger" style={{ marginTop: 16 }} role="alert">
@@ -332,8 +336,8 @@ export default function AuthScreen() {
                     Keychain do iOS incluido) nao casa a credencial e para de
                     oferecer a senha salva nesta segunda etapa. */}
                 <div className="auth-identity">
-                  <span className="avatar">{selected.slice(0, 2)}</span>
-                  <span className="auth-account-email">{selected}</span>
+                  <span className="avatar" aria-hidden="true">{selected.slice(0, 2)}</span>
+                  <h1 className="auth-account-email">{selected}</h1>
                 </div>
                 <input
                   type="email"
