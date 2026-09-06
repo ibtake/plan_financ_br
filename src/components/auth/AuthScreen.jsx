@@ -123,6 +123,10 @@ export default function AuthScreen() {
     switchMode('login')
   }
 
+  // So oferece passkey na conta que registrou passkey NESTE navegador (marca
+  // local). Sem marca, a tela e identica a de antes.
+  const selectedHasPasskey = !!selected && accounts.some((a) => a.email === selected && a.hasPasskey)
+
   const pickAnotherAccount = () => {
     setSelected(null)
     setForm({ email: '', password: '' })
@@ -207,6 +211,25 @@ export default function AuthScreen() {
     setBusy(false)
 
     if (result.error) {
+      setError(result.error)
+      return
+    }
+    if (result.mfaRequired) {
+      slideTo('mfa')
+      setCode('')
+    }
+    // Sem MFA, o AuthContext atualiza a sessao e o App troca de tela
+  }
+
+  const handlePasskeyLogin = async () => {
+    resetMessages()
+    setBusy(true)
+    const result = await auth.signInWithPasskey({ captchaToken })
+    setBusy(false)
+    if (result.error) {
+      // Cancelou o prompt do sistema ou nao havia credencial: fica na senha,
+      // sem barulho (o formulario ja esta montado logo abaixo).
+      if (result.name === 'NotAllowedError') return
       setError(result.error)
       return
     }
@@ -385,6 +408,17 @@ export default function AuthScreen() {
             </div>
 
             <TurnstileCaptcha onTokenChange={setCaptchaToken} />
+
+            {selectedHasPasskey && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-block"
+                onClick={handlePasskeyLogin}
+                disabled={busy || (captchaEnabled && !captchaToken)}
+              >
+                Entrar com chave de acesso (passkey)
+              </button>
+            )}
 
             <button className="btn btn-primary btn-block" type="submit" disabled={busy || (captchaEnabled && !captchaToken)}>
               {busy ? 'Entrando...' : 'Entrar'}

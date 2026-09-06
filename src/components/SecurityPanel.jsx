@@ -3,6 +3,165 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 import { EVENT_LABELS, fetchEvents } from '../lib/audit.js'
 import CodeInput from './auth/CodeInput.jsx'
 
+const suportaWebAuthn = typeof window !== 'undefined' && 'PublicKeyCredential' in window
+
+function dataCurta(valor) {
+  const t = Date.parse(valor || '')
+  return Number.isFinite(t) ? new Date(t).toLocaleDateString('pt-BR') : '—'
+}
+
+/**
+ * Chaves de acesso (passkey) da conta. Gerir exige aal2 quando ha MFA (medido
+ * na Fase 0: 403 insufficient_aal); sem MFA, aal1 e o teto e as acoes operam
+ * nele. Por isso os botoes so travam quando ha MFA E a sessao ainda esta em aal1
+ * - ai o proprio desafio TOTP nativo faz o step-up.
+ */
+function PasskeySection() {
+  const auth = useAuth()
+  const [list, setList] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState(null)
+  const [stepUpCode, setStepUpCode] = useState('')
+
+  const mfaHabilitado = auth.assuranceLevel?.nextLevel === 'aal2'
+  const precisaStepUp = mfaHabilitado && auth.assuranceLevel?.currentLevel !== 'aal2'
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const result = await auth.listPasskeys()
+    setMessage(result.error ? { tone: 'danger', text: result.error } : null)
+    setList(result.data || [])
+    setLoading(false)
+  }, [auth])
+
+  useEffect(() => { load() }, [load])
+
+  const register = async () => {
+    setBusy(true); setMessage(null)
+    const result = await auth.registerPasskey()
+    setBusy(false)
+    if (result.error) setMessage({ tone: 'danger', text: result.error })
+    else { setMessage({ tone: 'success', text: 'Chave de acesso cadastrada.' }); await load() }
+  }
+
+  const revoke = async (id) => {
+    if (!window.confirm('Revogar esta chave de acesso? Ela não poderá mais ser usada para entrar.')) return
+    setBusy(true); setMessage(null)
+    const result = await auth.revokePasskey(id)
+    setBusy(false)
+    if (result.error) setMessage({ tone: 'danger', text: result.error })
+    else { setMessage({ tone: 'success', text: 'Chave de acesso revogada.' }); await load() }
+  }
+
+  const revokeAll = async () => {
+    if (!window.confirm('Revogar todas as chaves de acesso deste aparelho e dos demais?')) return
+    setBusy(true); setMessage(null)
+    const result = await auth.revokeAllPasskeys()
+    setBusy(false)
+    if (result.error) setMessage({ tone: 'danger', text: result.error })
+    else { setMessage({ tone: 'success', text: 'Todas as chaves de acesso foram revogadas.' }); await load() }
+  }
+
+  const stepUp = async () => {
+    setBusy(true); setMessage(null)
+    const result = await auth.verifyMfaChallenge(stepUpCode)
+    setStepUpCode('')
+    if (result.error) {
+      setBusy(false)
+      setMessage({ tone: 'danger', text: result.error, field: 'stepUp' })
+      return
+    }
+    // aal2 confirmado: refreshAssurance ja rodou dentro do verify e o
+    // precisaStepUp cai. Recarrega a lista, que antes o servidor recusava.
+    await load()
+    setBusy(false)
+  }
+
+  if (!suportaWebAuthn) {
+    return (
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <div className="card-title">Chaves de acesso (passkey)</div>
+            <div className="card-sub">Entrada por biometria ou PIN do aparelho, sem digitar a senha</div>
+          </div>
+        </div>
+        <div className="notice info" role="status">
+          Este navegador não oferece suporte a chaves de acesso.
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="card" aria-busy={loading}>
+      <div className="card-head">
+        <div>
+          <div className="card-title">Chaves de acesso (passkey)</div>
+          <div className="card-sub">Entrada por biometria ou PIN do aparelho, sem digitar a senha</div>
+        </div>
+        <span className={`chip ${list.length > 0 ? 'income' : 'warning'}`}>
+          {list.length > 0 ? `${list.length} cadastrada(s)` : 'Nenhuma cadastrada'}
+        </span>
+      </div>
+
+      {message?.field !== 'stepUp' && message && (
+        <div className={`notice ${message.tone}`} role={message.tone === 'danger' ? 'alert' : 'status'} style={{ marginBottom: 14 }}>
+          {message.text}
+        </div>
+      )}
+
+      {precisaStepUp ? (
+        <div className="stack" style={{ gap: 12 }}>
+          <div className="notice info" role="status">
+            Para gerenciar as chaves de acesso, confirme o código do seu aplicativo autenticador.
+          </div>
+          <div className="field" style={{ maxWidth: 420 }}>
+            <span className="label" id="passkey-stepup-label">Código do autenticador</span>
+            <CodeInput value={stepUpCode} onChange={setStepUpCode} disabled={busy} autoFocus={false} errorId={message?.field === 'stepUp' ? 'passkey-stepup-msg' : undefined} labelledBy="passkey-stepup-label" />
+          </div>
+          {message?.field === 'stepUp' && (
+            <div id="passkey-stepup-msg" className={`notice ${message.tone}`} role="alert">{message.text}</div>
+          )}
+          <div><button className="btn btn-primary" onClick={stepUp} disabled={busy || stepUpCode.length !== 6} aria-busy={busy}>Confirmar código</button></div>
+        </div>
+      ) : loading ? (
+        <div className="empty" role="status" aria-live="polite">Carregando chaves...</div>
+      ) : (
+        <div className="stack" style={{ gap: 12 }}>
+          {list.length > 0 && (
+            <div className="security-events">
+              {list.map((pk) => (
+                <div className="security-event info" key={pk.id}>
+                  <span className="security-event-icon" aria-hidden="true">🔑</span>
+                  <div className="grow">
+                    <strong>{pk.friendly_name || pk.provider || 'Chave de acesso'}</strong>
+                    <div className="text-xs text-muted">
+                      Criada em {dataCurta(pk.created_at)} · último uso {dataCurta(pk.last_used_at)}
+                    </div>
+                  </div>
+                  <button type="button" className="btn btn-sm btn-danger" onClick={() => revoke(pk.id)} disabled={busy}>
+                    Revogar
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="settings-actions">
+            <button className="btn btn-primary" onClick={register} disabled={busy} aria-busy={busy}>
+              {busy ? 'Aguarde...' : 'Cadastrar chave de acesso'}
+            </button>
+            {list.length > 0 && (
+              <button className="btn btn-danger" onClick={revokeAll} disabled={busy}>Revogar todas</button>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function EventList() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
@@ -211,6 +370,7 @@ export default function SecurityPanel() {
           </div>
         )}
       </section>
+      <PasskeySection />
       <EventList />
     </div>
   )

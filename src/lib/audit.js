@@ -45,6 +45,12 @@ export const EVENTS = {
   BULK_DELETE: 'bulk_delete',
   DATA_IMPORTED: 'data_imported',
   RLS_VIOLATION: 'rls_violation_attempt',
+  // Passkey (IMPR-010). Uso nao tem tipo proprio: login por passkey grava
+  // login_success, igual ao login por senha. So criacao e revogacao, que sao
+  // acoes de seguranca sobre a credencial, ganham tipo. Banco aceita desde a v46.
+  PASSKEY_REGISTERED: 'passkey_registered',
+  PASSKEY_REVOKED: 'passkey_revoked',
+  PASSKEY_REVOKED_ALL: 'passkey_revoked_all',
 }
 
 /** Descricoes legiveis para a interface */
@@ -70,6 +76,9 @@ export const EVENT_LABELS = {
   // 'rate_limited' - justo no momento em que o painel precisa se explicar,
   // porque a lista dali para frente esta incompleta.
   rate_limited: { icon: '⏳', text: 'Registro de eventos pausado por limite na última hora' },
+  passkey_registered: { icon: '🔑', text: 'Chave de acesso (passkey) cadastrada' },
+  passkey_revoked: { icon: '🗝️', text: 'Chave de acesso (passkey) revogada' },
+  passkey_revoked_all: { icon: '🧹', text: 'Todas as chaves de acesso (passkey) revogadas' },
 }
 
 /** Campos que nunca devem ser gravados, mesmo por engano */

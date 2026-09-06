@@ -89,6 +89,33 @@ test('duplicata gravada a mao sobrevive uma unica vez, na entrada mais recente',
   assert.equal(lista[0].lastUsedAt, 900)
 })
 
+test('markPasskey seta a marca e remember cego a preserva', () => {
+  const storage = memoryStorage()
+  const contas = createRememberedAccounts({ storage })
+
+  contas.remember('a@x.com')
+  assert.equal(contas.list()[0].hasPasskey, false)
+
+  assert.equal(contas.markPasskey('A@X.com'), true)
+  assert.equal(contas.list()[0].hasPasskey, true)
+
+  // authSession chama remember() cego a cada sessao: a marca nao pode sumir.
+  contas.remember('a@x.com')
+  assert.equal(contas.list()[0].hasPasskey, true)
+})
+
+test('list revalida hasPasskey do storage: so true booleano vira marca', () => {
+  const storage = memoryStorage([
+    { email: 'v@x.com', lastUsedAt: 3, hasPasskey: true },
+    { email: 'f@x.com', lastUsedAt: 2, hasPasskey: 'true' },
+    { email: 'n@x.com', lastUsedAt: 1 },
+  ])
+  const lista = createRememberedAccounts({ storage }).list()
+  assert.equal(lista.find((i) => i.email === 'v@x.com').hasPasskey, true)
+  assert.equal(lista.find((i) => i.email === 'f@x.com').hasPasskey, false)
+  assert.equal(lista.find((i) => i.email === 'n@x.com').hasPasskey, false)
+})
+
 test('remember recusa e-mail invalido sem tocar no storage', () => {
   const storage = memoryStorage()
   const contas = createRememberedAccounts({ storage })

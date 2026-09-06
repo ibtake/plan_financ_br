@@ -2,6 +2,8 @@ import { useCallback, useMemo } from 'react'
 import { supabase, translateAuthError } from '../lib/supabase.js'
 import { generateVerifier, deriveChallenge } from '../lib/pkce.js'
 import { recoveryVerifier } from '../lib/recoveryCode.js'
+import { rememberedAccounts } from '../lib/rememberedAccounts.js'
+import { corpoVazioDoSdk } from '../lib/passkeyErrors.js'
 import { AUTH_EVENTS, logAuthEvent } from './authAudit.js'
 import {
   registerFailedLogin,
@@ -60,12 +62,92 @@ export function useAuthOperations({ refreshAssurance }) {
     }
     clearLoginAttempts()
     const assurance = await refreshAssurance()
+    // Leitura do nivel falhou: nao conceder em silencio nem logar login_success.
+    // A senha ja passou; devolvemos erro transitorio para o usuario tentar de novo,
+    // sem tratar a falha como aal1 confirmado (criterio de aceite IMPR-010).
+    if (assurance?.error) {
+      return { error: 'Não foi possível confirmar o nível de segurança da sessão. Tente novamente.' }
+    }
     if (assurance?.nextLevel === 'aal2' && assurance.nextLevel !== assurance.currentLevel) {
       return { data, mfaRequired: true }
     }
     await logAuthEvent(AUTH_EVENTS.LOGIN_SUCCESS, 'info', {})
     return { data }
   }, [refreshAssurance])
+
+  // ---------- Passkey (IMPR-010 Fase 3) ----------
+
+  const listPasskeys = useCallback(async () => {
+    if (!supabase) return { error: 'Supabase não configurado.' }
+    const { data, error } = await supabase.auth.passkey.list()
+    if (error) return { error: translateAuthError(error) }
+    return { data: data || [] }
+  }, [])
+
+  const registerPasskey = useCallback(async () => {
+    if (!supabase) return { error: 'Supabase não configurado.' }
+    const { data: sessionData } = await supabase.auth.getUser()
+    const { error } = await supabase.auth.registerPasskey()
+    if (error) return { error: translateAuthError(error) }
+    // Dica local: a tela de login passa a oferecer passkey nesta conta e navegador.
+    const email = sessionData?.user?.email
+    if (email) rememberedAccounts.markPasskey(email)
+    await logAuthEvent(AUTH_EVENTS.PASSKEY_REGISTERED, 'warning', {})
+    return { ok: true }
+  }, [])
+
+  const signInWithPasskey = useCallback(async ({ captchaToken } = {}) => {
+    if (!supabase) return { error: 'Supabase não configurado.' }
+    const { data, error } = await supabase.auth.signInWithPasskey({
+      options: captchaToken ? { captchaToken } : undefined,
+    })
+    if (error) return { error: translateAuthError(error), name: error.name }
+    const assurance = await refreshAssurance()
+    if (assurance?.error) {
+      return { error: 'Não foi possível confirmar o nível de segurança da sessão. Tente novamente.' }
+    }
+    // Passkey entrega aal1; com TOTP cadastrado o gate nativo pede o desafio.
+    if (assurance?.nextLevel === 'aal2' && assurance.nextLevel !== assurance.currentLevel) {
+      return { data, mfaRequired: true }
+    }
+    await logAuthEvent(AUTH_EVENTS.LOGIN_SUCCESS, 'info', {})
+    return { data }
+  }, [refreshAssurance])
+
+  const revokePasskey = useCallback(async (passkeyId) => {
+    if (!supabase) return { error: 'Supabase não configurado.' }
+    const id = String(passkeyId || '').trim()
+    if (!id) return { error: 'Chave de acesso inválida.' }
+    try {
+      const { error } = await supabase.auth.passkey.delete({ passkeyId: id })
+      if (error) throw error
+    } catch (erro) {
+      if (!corpoVazioDoSdk(erro)) return { error: translateAuthError(erro) }
+    }
+    // Corpo vazio ou nao, a verdade e a lista depois da operacao.
+    const { data: lista } = await supabase.auth.passkey.list()
+    const revogada = !(lista ?? []).some((p) => p.id === id)
+    if (revogada) await logAuthEvent(AUTH_EVENTS.PASSKEY_REVOKED, 'warning', {})
+    return revogada ? { ok: true } : { error: 'A chave de acesso não pôde ser revogada.' }
+  }, [])
+
+  const revokeAllPasskeys = useCallback(async () => {
+    if (!supabase) return { error: 'Supabase não configurado.' }
+    const { data: lista, error } = await supabase.auth.passkey.list()
+    if (error) return { error: translateAuthError(error) }
+    for (const p of lista ?? []) {
+      try {
+        const { error: delError } = await supabase.auth.passkey.delete({ passkeyId: p.id })
+        if (delError) throw delError
+      } catch (erro) {
+        if (!corpoVazioDoSdk(erro)) return { error: translateAuthError(erro) }
+      }
+    }
+    const { data: restante } = await supabase.auth.passkey.list()
+    if ((restante ?? []).length > 0) return { error: 'Nem todas as chaves puderam ser revogadas.' }
+    await logAuthEvent(AUTH_EVENTS.PASSKEY_REVOKED_ALL, 'warning', {})
+    return { ok: true }
+  }, [])
 
   const resetPassword = useCallback(async (email, captchaToken) => {
     if (!supabase) return { error: 'Supabase não configurado.' }
@@ -105,6 +187,21 @@ export function useAuthOperations({ refreshAssurance }) {
     if (!supabase) return { error: 'Supabase não configurado.' }
     const strength = validatePassword(newPassword)
     if (!strength.valid) return { error: 'A nova senha não atende à política de segurança.' }
+    // Trocar a senha revoga todas as passkeys: a senha antiga pode ter vazado e a
+    // passkey e um caminho de entrada que ela nao deve deixar para tras. Gerir
+    // passkey exige aal2 quando ha MFA (medido na Fase 0: 403 insufficient_aal);
+    // sem MFA, aal2 e inatingivel e a revogacao opera no aal1 mesmo. Por isso o
+    // bloqueio so vale quando ha passkey a revogar E o MFA esta habilitado.
+    const { data: passkeys } = await supabase.auth.passkey.list()
+    if ((passkeys ?? []).length > 0) {
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+      const mfaHabilitado = aal?.nextLevel === 'aal2'
+      if (mfaHabilitado && aal?.currentLevel !== 'aal2') {
+        return { error: 'Confirme o código do seu aplicativo autenticador antes de trocar a senha, para que as chaves de acesso possam ser revogadas.' }
+      }
+      const revoke = await revokeAllPasskeys()
+      if (revoke.error) return { error: `Não foi possível revogar as chaves de acesso: ${revoke.error} A senha não foi alterada.` }
+    }
     let widgetWarning = null
     try {
       const { error: revokeError } = await supabase.functions.invoke('widget-setup', { body: { action: 'revoke' } })
@@ -120,7 +217,7 @@ export function useAuthOperations({ refreshAssurance }) {
     return widgetWarning
       ? { ok: true, warning: `Senha alterada, mas ${widgetWarning}. Revogue o widget nas configurações e reinstale.` }
       : { ok: true }
-  }, [])
+  }, [revokeAllPasskeys])
 
   const exchangeRecoveryCode = useCallback(async (code) => {
     if (!supabase) return { error: 'Supabase não configurado.' }
@@ -242,5 +339,10 @@ export function useAuthOperations({ refreshAssurance }) {
     verifyMfaEnrollment,
     verifyMfaChallenge,
     disableMfa,
-  }), [signIn, resetPassword, updatePassword, exchangeRecoveryCode, listFactors, enrollMfa, verifyMfaEnrollment, verifyMfaChallenge, disableMfa])
+    registerPasskey,
+    signInWithPasskey,
+    listPasskeys,
+    revokePasskey,
+    revokeAllPasskeys,
+  }), [signIn, resetPassword, updatePassword, exchangeRecoveryCode, listFactors, enrollMfa, verifyMfaEnrollment, verifyMfaChallenge, disableMfa, registerPasskey, signInWithPasskey, listPasskeys, revokePasskey, revokeAllPasskeys])
 }

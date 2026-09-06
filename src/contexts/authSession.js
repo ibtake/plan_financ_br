@@ -69,8 +69,14 @@ export function useAuthSession() {
 
   const refreshAssurance = useCallback(async () => {
     if (!supabase) return null
+    // IMPR-010: falha de leitura do nivel de garantia nao pode virar aal1
+    // silencioso. Antes, o catch devolvia null igual ao caso sem sessao, e
+    // signIn tratava null como "sem MFA" e liberava o login. Agora o erro sai
+    // como { error } distinto de null, o mfaStage nao e rebaixado, e quem chama
+    // decide sem confundir "leitura falhou" com "aal1 confirmado".
     try {
-      const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+      const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+      if (error) return { error }
       setAssuranceLevel(data || null)
       if (data?.nextLevel === 'aal2' && data.nextLevel !== data.currentLevel) {
         setMfaStage('required')
@@ -78,8 +84,8 @@ export function useAuthSession() {
         setMfaStage(data?.currentLevel === 'aal2' ? 'verified' : 'none')
       }
       return data
-    } catch {
-      return null
+    } catch (error) {
+      return { error }
     }
   }, [])
 

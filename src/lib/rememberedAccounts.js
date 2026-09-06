@@ -31,6 +31,9 @@ function readList(storage) {
       .map((item) => ({
         email: normalizeEmail(item?.email),
         lastUsedAt: Number(item?.lastUsedAt) || 0,
+        // Marca local de passkey (IMPR-010): so diz que ESTE navegador registrou
+        // passkey nesta conta. Passkey sincronizada de outro aparelho nao aparece.
+        hasPasskey: item?.hasPasskey === true,
       }))
       .sort((a, b) => b.lastUsedAt - a.lastUsedAt)
       .filter((item) => {
@@ -62,14 +65,33 @@ export function createRememberedAccounts({
   return {
     list: () => readList(storage),
 
-    /** Registra, ou promove a mais recente, a conta deste navegador. */
+    /**
+     * Registra, ou promove a mais recente, a conta deste navegador. Chamado
+     * cego pelo authSession a cada sessao: preserva o hasPasskey existente, para
+     * o login que gravou a marca nao apagar na proxima entrada por senha.
+     */
     remember(email) {
       const normalized = normalizeEmail(email)
       if (!normalized.includes('@')) return false
-      const outras = readList(storage).filter((item) => item.email !== normalized)
+      const lista = readList(storage)
+      const anterior = lista.find((item) => item.email === normalized)
+      const outras = lista.filter((item) => item.email !== normalized)
       return writeList(
         storage,
-        [{ email: normalized, lastUsedAt: Date.now() }, ...outras].slice(0, MAX_ACCOUNTS),
+        [{ email: normalized, lastUsedAt: Date.now(), hasPasskey: anterior?.hasPasskey === true }, ...outras].slice(0, MAX_ACCOUNTS),
+      )
+    },
+
+    /** Marca que este navegador registrou passkey nesta conta (IMPR-010). */
+    markPasskey(email) {
+      const normalized = normalizeEmail(email)
+      if (!normalized.includes('@')) return false
+      const lista = readList(storage)
+      const outras = lista.filter((item) => item.email !== normalized)
+      const anterior = lista.find((item) => item.email === normalized)
+      return writeList(
+        storage,
+        [{ email: normalized, lastUsedAt: anterior?.lastUsedAt || Date.now(), hasPasskey: true }, ...outras].slice(0, MAX_ACCOUNTS),
       )
     },
 

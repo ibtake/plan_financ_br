@@ -18,6 +18,7 @@ import PGBLPanel from './components/PGBLPanel.jsx'
 import AuthScreen from './components/auth/AuthScreen.jsx'
 import ResetPasswordScreen from './components/auth/ResetPasswordScreen.jsx'
 import RequiredPasswordChange from './components/auth/RequiredPasswordChange.jsx'
+import PasskeyOffer from './components/auth/PasskeyOffer.jsx'
 import { useAuth } from './contexts/AuthContext.jsx'
 import { useMonthlyData } from './hooks/useFinance.js'
 import { useLocalStorage } from './hooks/useLocalStorage.js'
@@ -383,6 +384,7 @@ function AuthenticatedApp() {
         />
 
         <main className="container main-content" aria-busy={finance.revalidating}>
+          <PasskeyOffer />
           {/* Sem sufixo colado aqui: o banner nao sabe se houve recarga, e um
               " Os dados foram recarregados do servidor." fixo mentia em toda
               mensagem que retorna antes de qualquer leitura - validacao local de
