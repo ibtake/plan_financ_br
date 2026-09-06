@@ -127,3 +127,4 @@ são imutáveis: o objetivo delas fica aqui.
 | `20260816203813_v43_enforce_must_change_password.sql` | Impõe no servidor a troca inicial de senha (achado vuln-0003 do pentest de 16/08). |
 | `20260816203837_v44_fix_replace_my_data_race.sql` | Serializa restores concorrentes do mesmo usuário (achado vuln-0001 do pentest de 16/08). |
 | `20260825023357_v45_force_rls_widget_tables.sql` | Aplica `force row level security` nas tabelas do widget. |
+| `20260906143000_v46_security_events_passkey_types.sql` | Amplia o check de `security_events` para os eventos de passkey: `passkey_registered`, `passkey_revoked` e `passkey_revoked_all`. |
