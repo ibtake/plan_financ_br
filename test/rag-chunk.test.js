@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { caminhoElegivel, unidadesDe, estimarTokens, chunkRepositorio } from '../scripts/rag/chunk.mjs'
+import { fingerprintDe } from '../scripts/rag/delta.mjs'
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -89,11 +90,19 @@ test('chunkRepositorio produz chunks com payload do contrato 2.1 e ids determin�
   const chunks = chunkRepositorio(RAIZ)
   assert.ok(chunks.length > 50, `poucos chunks na árvore real: ${chunks.length}`)
 
-  const campos = ['repo', 'path', 'inicio', 'fim', 'simbolo', 'sha_arquivo', 'data_commit', 'linguagem']
+  const campos = ['repo', 'path', 'inicio', 'fim', 'simbolo', 'sha_arquivo', 'data_commit', 'linguagem', 'fingerprint']
   for (const chunk of chunks) {
     for (const campo of campos) {
       assert.ok(campo in chunk.payload, `payload de ${chunk.payload.path} sem ${campo}`)
     }
+    // TASK-009: fingerprint do par (cartão, sha_arquivo) — é o que o upsert
+    // em modo delta compara para poupá-lo de re-embed.
+    assert.match(chunk.payload.fingerprint, /^[0-9a-f]{64}$/)
+    assert.equal(
+      chunk.payload.fingerprint,
+      fingerprintDe(chunk.text, chunk.payload.sha_arquivo),
+      `fingerprint divergente do par (text, sha_arquivo) em ${chunk.payload.path}`
+    )
     assert.equal(chunk.payload.repo, 'local/planejador') // fora do Actions
     // Qdrant só aceita id inteiro sem sinal ou UUID (upsert.mjs confia nisso).
     assert.match(chunk.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
