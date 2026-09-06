@@ -33,6 +33,7 @@ import { readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fingerprintDe } from './delta.mjs';
 
 // Namespace do v5: 16 bytes estáveis derivados do escopo do projeto.
 const NAMESPACE_V5 = createHash('sha1').update('planejador-rag:v1').digest().subarray(0, 16);
@@ -282,6 +283,12 @@ export function chunkRepositorio(raiz = raizPadrao()) {
     if (!caminhoElegivel(chunk.payload.path)) {
       throw new Error(`chunk fora da allowlist: ${chunk.payload.path}`);
     }
+  }
+  // TASK-009 (delta): fingerprint do par (cartão, sha do arquivo) vai no
+  // payload — o upsert.mjs em modo delta compara com o fingerprint armazenado
+  // e pula o re-embed de chunk inalterado (vetor idêntico, zero perda).
+  for (const chunk of chunks) {
+    chunk.payload.fingerprint = fingerprintDe(chunk.text, chunk.payload.sha_arquivo);
   }
   return chunks;
 }
