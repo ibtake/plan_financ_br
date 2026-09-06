@@ -171,7 +171,10 @@ export function useAuthOperations({ refreshAssurance }) {
       friendlyName: `DinDin 10! ${new Date().toISOString()}`,
     })
     if (error) return { error: translateAuthError(error) }
-    return { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret }
+    // `uri` e o otpauth:// que o QR code codifica (TASK-006): serve ao
+    // gerenciador de senhas guardar a semente sem ler o QR na propria tela.
+    // Como o QR e o segredo, nunca vai para log.
+    return { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret, uri: data.totp.uri }
   }, [])
 
   const verifyMfaEnrollment = useCallback(async (factorId, code) => {

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createRememberedAccounts } from '../src/lib/rememberedAccounts.js'
+import { createRememberedAccounts, initialLoginStep } from '../src/lib/rememberedAccounts.js'
 
 const KEY = 'planejador:remembered-accounts'
 
@@ -116,4 +116,21 @@ test('storage que estoura a cota devolve false em vez de lancar', () => {
   }
 
   assert.equal(createRememberedAccounts({ storage }).remember('a@x.com'), false)
+})
+
+test('etapa inicial: conta unica abre na senha, duas ou mais na escolha', () => {
+  assert.deepEqual(initialLoginStep([]), { mode: 'login', selected: null })
+  assert.deepEqual(initialLoginStep([{ email: 'a@x.com' }]), { mode: 'login', selected: 'a@x.com' })
+  assert.deepEqual(
+    initialLoginStep([{ email: 'a@x.com' }, { email: 'b@x.com' }]),
+    { mode: 'accounts', selected: null },
+  )
+})
+
+test('etapa inicial casa com a lista real do storage', () => {
+  const uma = createRememberedAccounts({ storage: memoryStorage([{ email: 'so@x.com', lastUsedAt: 5 }]) })
+  assert.deepEqual(initialLoginStep(uma.list()), { mode: 'login', selected: 'so@x.com' })
+
+  const nenhuma = createRememberedAccounts({ storage: memoryStorage() })
+  assert.deepEqual(initialLoginStep(nenhuma.list()), { mode: 'login', selected: null })
 })

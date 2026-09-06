@@ -63,6 +63,11 @@ export const supabase = isSupabaseConfigured
         detectSessionInUrl: true,
         // PKCE: fluxo recomendado para aplicacoes que rodam no navegador
         flowType: 'pkce',
+        // IMPR-010 Fase 1: destrava a API de passkey do cliente (Beta). Sem a
+        // flag, signInWithPasskey(), registerPasskey() e auth.passkey.* lancam.
+        // A flag so expoe a API - nenhum fluxo do app chama passkey ainda, e o
+        // login por passkey ainda depende de RP ID e origem no painel.
+        experimental: { passkey: true },
       },
       global: {
         headers: { 'x-application-name': 'dindin-10' },

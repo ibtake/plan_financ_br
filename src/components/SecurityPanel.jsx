@@ -171,6 +171,20 @@ export default function SecurityPanel() {
               para confirmar. Não compartilhe o QR code nem a chave manual.
             </div>
             <img className="mfa-qr" src={setup.qrCode} alt="QR code para configurar o aplicativo autenticador" />
+            {/* Alternativa ao QR (TASK-006): o otpauth:// entrega a semente ao
+                gerenciador de senhas do proprio aparelho, que depois preenche o
+                codigo de 6 digitos. Sem target="_blank": esquema proprio abre no
+                app, nao em aba. O link carrega o segredo, igual ao QR acima. */}
+            {setup.uri && (
+              <div className="stack" style={{ gap: 4 }}>
+                <a className="btn btn-ghost" style={{ textDecoration: 'none' }} href={setup.uri}>
+                  Salvar no gerenciador de senhas
+                </a>
+                <span className="text-xs text-muted">
+                  Alternativa ao QR code quando o autenticador está neste mesmo aparelho.
+                </span>
+              </div>
+            )}
             <details className="text-sm">
               <summary>Não consigo escanear o QR code</summary>
               <p>Digite esta chave manualmente no aplicativo:</p>
