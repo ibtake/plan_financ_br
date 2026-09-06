@@ -24,6 +24,7 @@ import { useLocalStorage } from './hooks/useLocalStorage.js'
 import { useSupabaseFinance } from './hooks/useSupabaseFinance.js'
 import { usePGBL } from './hooks/usePGBL.js'
 import { currentMonthKey, isoDateInMonth, monthLabel } from './utils/format.js'
+import { isHomologacaoHost } from './lib/labRoute.js'
 import { isRecurring } from './utils/recurrence.js'
 import { exportCSV, exportJSON } from './utils/exporters.js'
 import { buildSampleData } from './utils/sampleData.js'
@@ -36,6 +37,15 @@ import { buildSampleData } from './utils/sampleData.js'
 const CategoryChart = lazy(() => import('./components/CategoryChart.jsx'))
 const MonthlyChart = lazy(() => import('./components/MonthlyChart.jsx'))
 const TrendChart = lazy(() => import('./components/TrendChart.jsx'))
+
+// IMPR-010 Fase 0: bancada de medicao de passkey, fora de qualquer fluxo do app.
+// O portao e o proprio host - so dev (localhost) e homologacao (sufixo -qa) abrem
+// a rota; producao nunca casa. Fica em lazy() para sair em chunk proprio, que a
+// producao nao baixa. O chunk continua inerte no deploy e sai junto com a
+// bancada quando a Fase 0 fechar.
+const passkeyLabHost =
+  import.meta.env.DEV || (typeof window !== 'undefined' && isHomologacaoHost(window.location.hostname))
+const PasskeyLab = passkeyLabHost ? lazy(() => import('./components/dev/PasskeyLab.jsx')) : null
 
 /** Reserva o espaco do grafico enquanto o chunk chega, evitando salto de layout */
 function ChartFallback({ height = 240 }) {
@@ -107,6 +117,16 @@ export default function App() {
   const isResetPasswordRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password'
 
   if (isResetPasswordRoute) return <ResetPasswordScreen />
+
+  // Antes do portao de sessao de proposito: a medicao de aal/amr precisa sair e
+  // voltar por passkey sem a tela de login assumir no meio do caminho.
+  if (PasskeyLab && typeof window !== 'undefined' && window.location.pathname === '/passkey-lab') {
+    return (
+      <Suspense fallback={<div className="app-loading"><div className="spinner" /></div>}>
+        <PasskeyLab />
+      </Suspense>
+    )
+  }
 
   if (auth.loading) {
     return <div className="app-loading"><div className="spinner" /><span>Verificando sessão...</span></div>

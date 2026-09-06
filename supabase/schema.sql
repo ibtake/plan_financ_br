@@ -250,7 +250,10 @@ create table if not exists public.security_events (
       'data_imported',
       'rls_violation_attempt',
       'suspicious_activity',
-      'rate_limited'
+      'rate_limited',
+      'passkey_registered',
+      'passkey_revoked',
+      'passkey_revoked_all'
     ))
 );
 
