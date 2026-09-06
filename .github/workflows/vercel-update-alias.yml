@@ -28,18 +28,21 @@ jobs:
         run: |
           vercel alias set "${{ steps.waitForVercel.outputs.url }}" dindin-10-qa.vercel.app --scope anke4 --token=$VERCEL_TOKEN
 
-      - name: Resolver PR pelo SHA do deployment
+      - name: Resolver PR pela branch do deployment
         id: findPr
         uses: actions/github-script@v7
         with:
           script: |
-            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+            const branch = context.payload.deployment.ref;
+            console.log('branch do deployment:', branch);
+            const { data: prs } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              commit_sha: context.payload.deployment.sha
+              head: `${context.repo.owner}:${branch}`,
+              state: 'open'
             });
             if (prs.length === 0) {
-              core.setFailed('Nenhuma PR encontrada para esse commit');
+              core.setFailed(`Nenhuma PR aberta encontrada para a branch ${branch}`);
               return;
             }
             core.setOutput('number', prs[0].number);
