@@ -1,22 +1,31 @@
 import { useMemo } from 'react'
-import { AlertTriangle, Check, ReceiptText } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, ReceiptText } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { getCategory } from '../utils/categories.js'
 import { isRecurring } from '../utils/recurrence.js'
 import { daysUntil, formatCurrency, formatDate } from '../utils/format.js'
 
-export default function FixedExpenses({ occurrences, categories, onTogglePaid }) {
+// Teto de itens exibidos na home; o resto fica na aba Lançamentos (TASK-008).
+const MAX_VISIBLE = 4
+
+export default function FixedExpenses({ occurrences, categories, onTogglePaid, onOpenDetails }) {
+  // Ordena pela proximidade da data de hoje (TASK-008): as contas mais próximas
+  // de vencer no topo, para o corte a 4 mostrar o que importa na data de acesso.
+  // Desempate por data para ordem estável.
   const items = useMemo(
     () =>
       occurrences
         .filter((t) => t.type === 'expense' && (isRecurring(t) || !t.paid))
-        .sort((a, b) => (a.date < b.date ? -1 : 1)),
+        .sort((a, b) => Math.abs(daysUntil(a.date)) - Math.abs(daysUntil(b.date)) || (a.date < b.date ? -1 : 1)),
     [occurrences],
   )
 
+  // Totais seguem sobre a lista completa; o corte e so de apresentacao.
   const total = items.reduce((s, t) => s + t.amount, 0)
   const pending = items.filter((t) => !t.paid)
   const pendingTotal = pending.reduce((s, t) => s + t.amount, 0)
+  const visible = items.slice(0, MAX_VISIBLE)
+  const hidden = items.length - visible.length
 
   return (
     <div className="card">
@@ -47,7 +56,7 @@ export default function FixedExpenses({ occurrences, categories, onTogglePaid })
         </div>
       ) : (
         <div className="tx-list">
-          {items.map((tx) => {
+          {visible.map((tx) => {
             const cat = getCategory(categories, tx.categoryId)
             const days = daysUntil(tx.date)
             const overdue = !tx.paid && days < 0
@@ -104,6 +113,12 @@ export default function FixedExpenses({ occurrences, categories, onTogglePaid })
               </div>
             )
           })}
+          {hidden > 0 && onOpenDetails && (
+            <button type="button" className="btn btn-ghost btn-block fixed-expense-more" onClick={onOpenDetails}>
+              Mais detalhes • +{hidden} {hidden === 1 ? 'conta' : 'contas'}
+              <ChevronRight size={16} strokeWidth={2} aria-hidden="true" />
+            </button>
+          )}
         </div>
       )}
     </div>

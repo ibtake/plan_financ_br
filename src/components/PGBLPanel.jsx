@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { BookOpen, Calculator, CircleAlert, CircleCheck, Settings2, Table2 } from 'lucide-react'
-import { amountToInput, formatAmountInput, parseAmount } from '../utils/format.js'
+import { amountToInput, formatAmountInput, formatCurrency, parseAmount } from '../utils/format.js'
 
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 const DEFAULT_PARAMS = { limitePgblPercentual: 0.12, descontoSimplificadoPercentual: 0.2, tetoDescontoSimplificado: 17640, deducaoPorDependenteAno: 2275.08, tetoEducacaoPorPessoaAno: 3561.5, reducaoAnualLimite: 60000, reducaoAnualMaxima: 2694.15, reducaoAnualFaixaFinal: 88200, reducaoAnualIntercepto: 8429.73, reducaoAnualCoeficiente: 0.095575, fonte: 'Receita Federal — referência 2026/2027', tabela: [[29145.6, 0, 0], [33919.8, 2185.92, 0.075], [45012.6, 4729.91, 0.15], [55976.16, 8105.85, 0.225], [Infinity, 10904.66, 0.275]] }
 const blankMonths = () => MONTHS.map((mes) => ({ mes, base: '', retido: '', inss: '', pgbl: '', saude: '', educacao: '' }))
 const toNumeric = (value) => Number(value) || 0
-const money = (value) => {
-  const n = Number(value) || 0
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
+// Reusa formatCurrency para herdar o modo privacidade (data-privacy=hidden);
+// o money() local exibia valores mesmo com a privacidade ligada.
+const money = formatCurrency
 const numberValue = (value) => value === '' ? '' : Math.max(0, Number(value) || 0)
 const normalizeParams = (params = DEFAULT_PARAMS) => {
   const merged = { ...DEFAULT_PARAMS, ...params }
