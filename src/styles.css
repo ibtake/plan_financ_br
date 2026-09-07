@@ -3428,43 +3428,35 @@ dialog.modal-backdrop {
   margin: 12px auto 0;
 }
 
-/* Sinal do captcha embutido. Card de identidade (login): cinza claro enquanto
-   o token nao chega, verde "apto" quando valida. Transicao suave em ambos. */
-.auth-identity-card,
-.auth-identity-passkey {
-  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease, transform 0.15s ease;
+/* Sinal do captcha embutido: so a bolinha das iniciais muda de cor. O quadrado
+   em volta (cracha/card) fica como era. Cinza claro enquanto o token nao chega,
+   verde "apto" quando valida, com transicao suave. */
+.is-gate-pending .avatar,
+.is-gate-ready .avatar {
+  transition: background 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
 }
-/* So vira moldura quando o gate esta ativo; sem captcha, identico a antes. */
-.auth-identity-card.is-gate-pending,
-.auth-identity-card.is-gate-ready {
-  width: 100%;
-  border-radius: 16px;
-  padding: 16px;
-}
-.auth-identity-card.is-gate-pending,
-.auth-identity-passkey.is-gate-pending {
-  border-color: var(--border);
+.is-gate-pending .avatar {
   background: var(--surface-2);
+  color: var(--text-muted);
 }
-.auth-identity-card.is-gate-ready,
-.auth-identity-passkey.is-gate-ready {
-  border-color: var(--income);
+.is-gate-ready .avatar {
   background: var(--income-soft);
-  box-shadow: 0 0 0 1px var(--income) inset;
+  color: var(--income);
+  box-shadow: 0 0 0 2px var(--income);
 }
 
 /* Botao de recuperacao: cinza enquanto o captcha nao valida; ao validar,
    volta a cor do sistema (btn-primary). */
-.auth-forgot-submit.is-gate-pending:not(:disabled),
 .auth-forgot-submit.is-gate-pending {
   background: var(--surface-2);
   border-color: var(--border);
   color: var(--text-muted);
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .auth-identity-card,
-  .auth-identity-passkey,
+  .is-gate-pending .avatar,
+  .is-gate-ready .avatar,
   .auth-forgot-submit {
     transition: none;
   }
