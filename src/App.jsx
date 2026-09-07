@@ -339,7 +339,7 @@ function AuthenticatedApp() {
       </div>
       <div className="grid-2 dashboard-grid dashboard-bottom-panels">
         <Insights {...insightProps} />
-        <FixedExpenses occurrences={monthly.occurrences} categories={finance.categories} onTogglePaid={finance.togglePaid} />
+        <FixedExpenses occurrences={monthly.occurrences} categories={finance.categories} onTogglePaid={finance.togglePaid} onOpenDetails={() => setActiveTab('transactions')} />
       </div>
     </div>
   )

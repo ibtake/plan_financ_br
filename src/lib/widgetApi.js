@@ -73,6 +73,9 @@ async function load() {
     const detail = result?.error || result?.message || JSON.stringify(result)
     throw new Error('API ' + response.status + ': ' + detail)
   }
+  // Contrato: o widget roda no Scriptable (iOS), fora do navegador, sem o
+  // flag data-privacy do app. Os valores abaixo são sempre exibidos em reais
+  // por decisão de design — não é bypass do modo privacidade da SPA.
   const widget = new ListWidget()
   const background = new LinearGradient()
   background.colors = [new Color('#0b1220'), new Color('#16243a')]
