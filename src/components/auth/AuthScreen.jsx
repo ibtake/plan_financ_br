@@ -145,6 +145,10 @@ export default function AuthScreen() {
   // esconde a senha. Conta sem marca: senha visivel de sempre, sem cracha.
   const crachaMode = selectedHasPasskey && !passkeyFailed
   const mostrarSenha = !selectedHasPasskey || passkeyFailed
+  // Sinal visual do captcha embutido: cinza enquanto o token nao chega, cor de
+  // "pronto" quando valida. Vazio quando o captcha nao esta configurado (sem
+  // gate, sem sinal). Vira classe no cracha (login) e no botao (reset).
+  const captchaGate = captchaEnabled ? (captchaToken ? 'is-gate-ready' : 'is-gate-pending') : ''
 
   const pickAnotherAccount = () => {
     setSelected(null)
@@ -385,7 +389,7 @@ export default function AuthScreen() {
                   // login por chave de acesso; a senha so aparece se ele falhar.
                   <button
                     type="button"
-                    className="auth-identity auth-identity-passkey"
+                    className={`auth-identity auth-identity-passkey ${captchaGate}`}
                     onClick={handlePasskeyLogin}
                     disabled={busy || (captchaEnabled && !captchaToken)}
                     aria-label={`Entrar com chave de acesso de ${selected}`}
@@ -405,7 +409,7 @@ export default function AuthScreen() {
                   </button>
                 )}
                 {!crachaMode && (
-                  <div className="auth-identity">
+                  <div className={`auth-identity auth-identity-card ${captchaGate}`}>
                     <span className="avatar" aria-hidden="true">{selected.slice(0, 2)}</span>
                     <h1 className="auth-account-email">{selected}</h1>
                   </div>
@@ -501,7 +505,7 @@ export default function AuthScreen() {
 
             <TurnstileCaptcha key={captchaNonce} onTokenChange={setCaptchaToken} />
 
-            <button className="btn btn-primary btn-block" type="submit" disabled={busy || (captchaEnabled && !captchaToken)}>
+            <button className={`btn btn-primary btn-block auth-forgot-submit ${captchaGate}`} type="submit" disabled={busy || (captchaEnabled && !captchaToken)}>
               {busy ? 'Enviando...' : 'Enviar link de recuperação'}
             </button>
 
