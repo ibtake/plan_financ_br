@@ -192,6 +192,21 @@ test('cadeiaLlm: fallback entra só com LLM_FALLBACK_API_KEY', () => {
   assert.equal(com[1].model, 'm2');
 });
 
+// maxTokens 8000 nos DOIS slots (2026-09-07): o @cf/gpt-oss-120b tem default
+// max_tokens 256 documentado e divide raciocínio/resposta pelo mesmo teto —
+// "só raciocínio" 3/3 no reformatter sem o teto; cadeiaDiag (8000) 2/2 ok no
+// mesmo provedor. Custo é por token usado; o teto é só proteção de orçamento.
+test('cadeiaLlm: maxTokens 8000 nos dois slots (default 256 do @cf/gpt-oss estoura no raciocínio)', () => {
+  const cadeia = cadeiaLlm({
+    LLM_PROVIDER: 'openai-compat',
+    LLM_API_KEY: 'k1',
+    LLM_FALLBACK_PROVIDER: 'openai-compat',
+    LLM_FALLBACK_API_KEY: 'k2'
+  });
+  assert.equal(cadeia[0].maxTokens, 8000);
+  assert.equal(cadeia[1].maxTokens, 8000);
+});
+
 test('cadeiaDiag: Groq único, sem fallback, orçamento fixo', () => {
   const cadeia = cadeiaDiag({});
   assert.equal(cadeia.length, 1);
@@ -342,14 +357,16 @@ test('cadeiaDiag: teto de saída v2.29.2 cobre raciocínio + resposta (8000, era
 
 test('timestampValido: aceita payload recente, rejeita replay (2min), ausente, malformado', () => {
   const agora = Date.now();
-  assert.equal(timestampValido(JSON.stringify({ webhookTimestamp: agora }), agora), true);
-  assert.equal(timestampValido(JSON.stringify({ webhookTimestamp: agora - 30_000 }), agora), true); // dentro de 60s
+  // Assinatura v2.42: recebe o webhookTimestamp JÁ PARSEADO (o handler
+  // parseia o corpo uma vez e repassa o valor — sem segundo JSON.parse).
+  assert.equal(timestampValido(agora, agora), true);
+  assert.equal(timestampValido(agora - 30_000, agora), true); // dentro de 60s
   // replay: timestamp de 2 minutos atrás (a reentrega de 1h/6h do Linear cai aqui)
-  assert.equal(timestampValido(JSON.stringify({ webhookTimestamp: agora - 120_000 }), agora), false);
-  // sem timestamp / malformado / corpo inválido
-  assert.equal(timestampValido(JSON.stringify({ type: 'Issue' }), agora), false);
-  assert.equal(timestampValido('{"webhookTimestamp":', agora), false);
+  assert.equal(timestampValido(agora - 120_000, agora), false);
+  // sem timestamp / malformado / não-numérico
+  assert.equal(timestampValido(undefined, agora), false);
   assert.equal(timestampValido(null, agora), false);
+  assert.equal(timestampValido('x', agora), false);
   // janela em constante nomeada (facilita afrouxar se clock skew aparecer)
   assert.equal(typeof JANELA_REPLAY_MS, 'number');
   assert.ok(JANELA_REPLAY_MS > 0);
