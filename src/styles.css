@@ -5047,6 +5047,9 @@ body:has(.modal-backdrop) .fab {
 
 /* Mobile: anel acima dos números (o app tem bottom-nav e overflow-x oculto) */
 @media (max-width: 560px) {
+  .reserve-top { flex-wrap: nowrap; }
+  .reserve-adjust { flex: none; width: 34px; height: 34px; padding: 0; }
+  .reserve-adjust .reserve-adjust-label { display: none; }
   .reserve-body { grid-template-columns: 1fr; gap: 18px; justify-items: center; }
   .reserve-figs { width: 100%; }
   .reserve-cover { text-align: center; }
