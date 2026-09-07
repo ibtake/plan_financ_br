@@ -409,7 +409,7 @@ export default function AuthScreen() {
                   </button>
                 )}
                 {!crachaMode && (
-                  <div className={`auth-identity auth-identity-card ${captchaGate}`}>
+                  <div className={`auth-identity ${captchaGate}`}>
                     <span className="avatar" aria-hidden="true">{selected.slice(0, 2)}</span>
                     <h1 className="auth-account-email">{selected}</h1>
                   </div>
