@@ -3471,10 +3471,25 @@ dialog.modal-backdrop {
   }
 }
 
+/* Colapsado enquanto o Turnstile roda invisível; expande de cima para baixo
+   só quando o desafio vira interativo (.is-open). grid-rows 0fr→1fr anima a
+   altura sem hardcodar o pixel do widget. */
 .turnstile-wrap {
-  min-height: 65px;
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-rows: 0fr;
+  justify-items: center;
+  transition: grid-template-rows 240ms ease, margin 240ms ease;
+}
+.turnstile-wrap > * {
+  min-height: 0;
+  overflow: hidden;
+}
+.turnstile-wrap.is-open {
+  grid-template-rows: 1fr;
+  margin-block: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .turnstile-wrap { transition: none; }
 }
 
 .goal-switch {

@@ -14,6 +14,7 @@ export default function TurnstileCaptcha({ onTokenChange }) {
   const widgetIdRef = useRef(null)
   const onTokenChangeRef = useRef(onTokenChange)
   const [loadError, setLoadError] = useState('')
+  const [interactive, setInteractive] = useState(false)
 
   useEffect(() => {
     onTokenChangeRef.current = onTokenChange
@@ -27,6 +28,16 @@ export default function TurnstileCaptcha({ onTokenChange }) {
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: siteKey,
         theme: 'auto',
+        // interaction-only: sem UI no fluxo normal; o widget só aparece se a
+        // Cloudflare exigir desafio. execution fica no default ('render'), então
+        // o token continua chegando pelo callback e o gate do botão de envio segue
+        // valendo. Modo invisível de fato depende da site key ser Managed no painel.
+        appearance: 'interaction-only',
+        // O wrapper fica colapsado até o desafio virar interativo. Estes dois
+        // callbacks do Turnstile são o único sinal de "vou aparecer / já sumi":
+        // before → expande o espaço, after → recolhe.
+        'before-interactive-callback': () => setInteractive(true),
+        'after-interactive-callback': () => setInteractive(false),
         callback: (token) => onTokenChangeRef.current?.(token),
         'expired-callback': () => onTokenChangeRef.current?.(null),
         'error-callback': () => {
@@ -63,7 +74,7 @@ export default function TurnstileCaptcha({ onTokenChange }) {
 
   if (!siteKey) return null
   return (
-    <div className="turnstile-wrap">
+    <div className={`turnstile-wrap${interactive || loadError ? ' is-open' : ''}`}>
       <div ref={containerRef} />
       {loadError && <p className="text-xs text-danger" role="alert" style={{ margin: 0 }}>{loadError}</p>}
     </div>
