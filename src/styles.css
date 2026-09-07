@@ -3428,6 +3428,48 @@ dialog.modal-backdrop {
   margin: 12px auto 0;
 }
 
+/* Sinal do captcha embutido. Card de identidade (login): cinza claro enquanto
+   o token nao chega, verde "apto" quando valida. Transicao suave em ambos. */
+.auth-identity-card,
+.auth-identity-passkey {
+  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease, transform 0.15s ease;
+}
+/* So vira moldura quando o gate esta ativo; sem captcha, identico a antes. */
+.auth-identity-card.is-gate-pending,
+.auth-identity-card.is-gate-ready {
+  width: 100%;
+  border-radius: 16px;
+  padding: 16px;
+}
+.auth-identity-card.is-gate-pending,
+.auth-identity-passkey.is-gate-pending {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+.auth-identity-card.is-gate-ready,
+.auth-identity-passkey.is-gate-ready {
+  border-color: var(--income);
+  background: var(--income-soft);
+  box-shadow: 0 0 0 1px var(--income) inset;
+}
+
+/* Botao de recuperacao: cinza enquanto o captcha nao valida; ao validar,
+   volta a cor do sistema (btn-primary). */
+.auth-forgot-submit.is-gate-pending:not(:disabled),
+.auth-forgot-submit.is-gate-pending {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-identity-card,
+  .auth-identity-passkey,
+  .auth-forgot-submit {
+    transition: none;
+  }
+}
+
 /* Oferta de passkey pos-login: icone grande e chamativo no topo do cartao. */
 .passkey-offer-hero {
   display: flex;
