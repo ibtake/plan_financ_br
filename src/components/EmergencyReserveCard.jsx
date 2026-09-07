@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { LifeBuoy, AlertTriangle, SlidersHorizontal, X } from 'lucide-react'
 import { computeEmergencyReserve } from '../utils/emergencyReserve.js'
+import { useDialog } from '../hooks/useDialog.js'
 import { formatCurrency, monthKeyFromDate, monthLabelShort, parseAmount, todayISO } from '../utils/format.js'
 
 const RING_R = 50
@@ -43,9 +44,9 @@ export default function EmergencyReserveCard({ transactions, reserve, onSetTarge
             <div className="card-sub">quantos meses de gasto sua reserva cobre</div>
           </div>
         </div>
-        <button type="button" className="btn btn-sm" onClick={() => setEditing(true)}>
+        <button type="button" className="btn btn-sm reserve-adjust" onClick={() => setEditing(true)} aria-label="Ajustar reserva">
           <SlidersHorizontal size={15} strokeWidth={2} />
-          Ajustar
+          <span className="reserve-adjust-label">Ajustar</span>
         </button>
       </div>
 
@@ -143,9 +144,11 @@ function ReserveDialog({ reserve, balance, onClose, onSetTarget, onSetBaseline }
   const [months, setMonths] = useState(currentTarget == null ? '' : String(currentTarget))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const { closing, close, surfaceRef } = useDialog(onClose)
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (saving || closing) return
     setError('')
     const wantsBaseline = amount.trim() !== ''
     const parsedAmount = wantsBaseline ? parseAmount(amount) : null
@@ -165,20 +168,20 @@ function ReserveDialog({ reserve, balance, onClose, onSetTarget, onSetBaseline }
     if (wantsBaseline) ok = await onSetBaseline(parsedAmount, date)
     if (ok && targetChanged) ok = await onSetTarget(normalizedMonths)
     setSaving(false)
-    if (ok) onClose()
+    if (ok) close()
     else setError('Não foi possível salvar. Tente novamente.')
   }
 
   return (
-    <dialog open className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose() }} aria-label="Ajustar reserva de emergência">
-      <div className="modal">
+    <dialog open className={`modal-backdrop${closing ? ' is-closing' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) close() }} aria-label="Ajustar reserva de emergência">
+      <div ref={surfaceRef} className={`modal${closing ? ' is-closing' : ''}`}>
         <form onSubmit={handleSubmit}>
           <div className="modal-head">
             <div>
               <div className="card-title">Ajustar reserva</div>
               <div className="card-sub">Corrija o saldo real e defina sua meta de meses</div>
             </div>
-            <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar">
+            <button type="button" className="icon-btn" onClick={close} disabled={saving} aria-label="Fechar">
               <X size={18} strokeWidth={2} />
             </button>
           </div>
@@ -216,8 +219,8 @@ function ReserveDialog({ reserve, balance, onClose, onSetTarget, onSetBaseline }
           </div>
 
           <div className="modal-foot">
-            <button type="button" className="btn" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Salvando…' : 'Salvar'}</button>
+            <button type="button" className="btn" onClick={close} disabled={saving}>Cancelar</button>
+            <button type="submit" className="btn btn-primary" disabled={saving || closing}>{saving ? 'Salvando…' : 'Salvar'}</button>
           </div>
         </form>
       </div>
