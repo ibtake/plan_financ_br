@@ -10,6 +10,7 @@ import BudgetPanel from './components/BudgetPanel.jsx'
 import GoalsPanel from './components/GoalsPanel.jsx'
 import Insights from './components/Insights.jsx'
 import FixedExpenses from './components/FixedExpenses.jsx'
+import EmergencyReserveCard from './components/EmergencyReserveCard.jsx'
 import CategoryManager from './components/CategoryManager.jsx'
 import IconManager from './components/IconManager.jsx'
 import SettingsPanel from './components/SettingsPanel.jsx'
@@ -337,6 +338,12 @@ function AuthenticatedApp() {
           <MonthlyChart transactions={finance.transactions} monthKey={monthly.monthKey} categories={finance.categories} />
         </Suspense>
       </div>
+      <EmergencyReserveCard
+        transactions={finance.transactions}
+        reserve={finance.emergencyReserve}
+        onSetTarget={finance.setEmergencyReserveTarget}
+        onSetBaseline={finance.setEmergencyReserveBaseline}
+      />
       <div className="grid-2 dashboard-grid dashboard-bottom-panels">
         <Insights {...insightProps} />
         <FixedExpenses occurrences={monthly.occurrences} categories={finance.categories} onTogglePaid={finance.togglePaid} onOpenDetails={() => setActiveTab('transactions')} />

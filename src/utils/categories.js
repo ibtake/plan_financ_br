@@ -46,6 +46,7 @@ export const DEFAULT_CATEGORIES = [
   // Despesas reinvestidas (saem do caixa, viram patrimonio)
   { id: 'aportes', name: 'Aportes e investimentos', type: 'reinvested', color: '#8b5cf6', icon: '📈' },
   { id: 'outros-ri', name: 'Outros reinvestimentos', type: 'reinvested', color: '#a855f7', icon: '📦' },
+  { id: 'reserva-emergencia', name: 'Reserva de emergência', type: 'reinvested', color: '#0891b2', icon: '🛟' },
 
   // Receitas
   { id: 'salario', name: 'Salário', type: 'income', color: '#22c55e', icon: '💼' },

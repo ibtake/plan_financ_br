@@ -8,6 +8,13 @@ export function loadFinanceData({ supabase, guarded, selectAllPages }) {
     () => supabase.from('profiles').select('transaction_form_fields').maybeSingle(),
     { table: 'profiles', action: 'select_transaction_form_fields' },
   )
+  // Meta/base da Reserva de emergência (IMPR-004). Leitura própria e isolada: a
+  // linha é 1 por usuário e não entra no cache offline nem no backup (fora do
+  // escopo), então não pesa no Promise.all das secundárias.
+  const emergencyReserveRequest = guarded(
+    () => supabase.from('emergency_reserve').select('target_months, baseline_amount, baseline_date').maybeSingle(),
+    { table: 'emergency_reserve', action: 'select' },
+  )
   const supportingDataRequest = Promise.all([
     readList(supabase, guarded, selectAllPages, 'reverse_goal_history', (query) => query.order('reference_month', { ascending: false }).order('id', { ascending: false })),
     readList(supabase, guarded, selectAllPages, 'reverse_goal_contributions', (query) => query.order('occurred_on', { ascending: false }).order('id', { ascending: false })),
@@ -21,5 +28,5 @@ export function loadFinanceData({ supabase, guarded, selectAllPages }) {
     readList(supabase, guarded, selectAllPages, 'budgets', (query) => query.order('category_id')),
     readList(supabase, guarded, selectAllPages, 'goals', (query) => query.order('created_at').order('id')),
   ])
-  return { profileRequest, supportingDataRequest, primaryDataRequest }
+  return { profileRequest, emergencyReserveRequest, supportingDataRequest, primaryDataRequest }
 }

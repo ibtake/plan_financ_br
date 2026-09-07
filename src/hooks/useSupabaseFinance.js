@@ -28,6 +28,7 @@ export function useSupabaseFinance() {
   const [reverseGoalEvents, setReverseGoalEvents] = useState([])
   const [reverseGoalRetentionMonths, setReverseGoalRetentionMonths] = useState(null)
   const [reverseGoalRetentionLoaded, setReverseGoalRetentionLoaded] = useState(false)
+  const [emergencyReserve, setEmergencyReserve] = useState(null)
   const [theme, setTheme] = useLocalStorage('planejador:theme', 'auto')
   const [transactionFormFields, setTransactionFormFieldsState] = useState(DEFAULT_TRANSACTION_FORM_FIELDS)
   const [loading, setLoading] = useState(true)
@@ -166,7 +167,7 @@ export function useSupabaseFinance() {
       setRevalidating(true)
       if (hydrated || preserveLoading) setDataStatus('revalidating')
       console.info('[finance-load] iniciando carregamento', { userPresent: true, supabaseConfigured: true })
-      const { profileRequest, supportingDataRequest, primaryDataRequest } = loadFinanceData({ supabase, guarded, selectAllPages })
+      const { profileRequest, emergencyReserveRequest, supportingDataRequest, primaryDataRequest } = loadFinanceData({ supabase, guarded, selectAllPages })
       const [txResult, catResult, budgetResult, goalResult] = await primaryDataRequest
       // Uma carga iniciada antes de uma mutacao nao pode restaurar um snapshot
       // antigo sobre os dados que acabaram de ser confirmados pelo servidor.
@@ -268,6 +269,17 @@ export function useSupabaseFinance() {
         const cached = await offlineDb.writeSnapshots(captured.userId, { transactionFormFields: confirmedFields }, Date.now())
         if (cached.error) reportOfflineStorageError(cached.error)
       }).catch(reportError)
+
+      // Meta/base da Reserva de emergência: leitura isolada, sem cache offline.
+      // Ausência de linha (usuário nunca configurou) é estado válido → null.
+      void emergencyReserveRequest.then((reserveResult) => {
+        if (!stillCurrent()) return
+        if (reserveResult.error) return
+        const row = reserveResult.data
+        setEmergencyReserve(row
+          ? { targetMonths: row.target_months ?? null, baselineAmount: Number(row.baseline_amount) || 0, baselineDate: row.baseline_date ?? null }
+          : null)
+      }).catch(reportError)
       return true
     } catch (error) {
       // `load` nunca rejeita: os doze chamadores tratam o retorno booleano, e uma
@@ -336,6 +348,30 @@ export function useSupabaseFinance() {
 
   const { exportData, importData, clearAll, setTransactionFormFields } = useFinanceDataManagement({ transactions, categories, budgets, goals, standardGoalContributions, reverseGoalContributions, reverseGoalHistory, reverseGoalEvents, reverseGoalRetentionMonths, setTransactionFormFieldsState, confirmedTransactionFormFields, transactionFormFieldsQueue, transactionFormFieldsVersion, load, guarded, reportError, user })
 
+  // Escrita da Reserva de emergência via RPC security definer (mesmo molde do
+  // runGoalRpc: guarded → recarrega, que reidrata emergencyReserve). Sem update
+  // otimista — a linha é uma só e o load já traz o valor confirmado.
+  const runReserveRpc = useCallback(async (operation, action) => {
+    try {
+      const result = await guarded(operation, { table: 'emergency_reserve', action })
+      if (result?.error) { reportError(result.error); return false }
+    } catch (rpcError) { reportError(rpcError); return false }
+    await load({ preserveLoading: true })
+    return true
+  }, [reportError, load])
+
+  const setEmergencyReserveTarget = useCallback((months) => {
+    const value = months === null || months === '' ? null : Number(months)
+    return runReserveRpc(() => supabase.rpc('set_emergency_reserve_target', { p_months: value }), 'set_target')
+  }, [runReserveRpc])
+
+  const setEmergencyReserveBaseline = useCallback((amount, date) => {
+    const p_amount = Math.abs(Number(amount) || 0)
+    // p_date tem default current_date na RPC; só envio quando o usuário informa.
+    const params = date ? { p_amount, p_date: date } : { p_amount }
+    return runReserveRpc(() => supabase.rpc('set_emergency_reserve_baseline', params), 'set_baseline')
+  }, [runReserveRpc])
+
   return { transactions, categories, budgets, goals, theme, transactionFormFields, loading, error, isDeletingGoal, goalDeletionPhase,
     dataStatus, revalidating, lastUpdatedAt, offlineStorageError, offlineCacheEnabled,
     refresh: requestSessionRefresh,
@@ -343,5 +379,6 @@ export function useSupabaseFinance() {
     addCategory, updateCategory, deleteCategory, setBudget, addGoal, addReverseGoal, addReverseGoalContribution, updateReverseGoalContribution, addStandardGoalContribution, updateStandardGoalContribution, updateGoal, updateReverseGoal, deleteGoal,
     reverseGoalHistory, reverseGoalContributions, standardGoalContributions, reverseGoalEvents, reverseGoalRetentionMonths, reverseGoalRetentionLoaded,
     setReverseGoalRetention,
+    emergencyReserve, setEmergencyReserveTarget, setEmergencyReserveBaseline,
     setTheme, setTransactionFormFields, exportData, importData, clearAll }
 }
