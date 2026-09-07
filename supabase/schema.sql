@@ -1246,6 +1246,7 @@ begin
     ('outros-d',      new.id, 'Outros',            'expense', '#94a3b8', '📦', false),
     ('aportes',       new.id, 'Aportes e investimentos', 'reinvested', '#8b5cf6', '📈', false),
     ('outros-ri',     new.id, 'Outros reinvestimentos',  'reinvested', '#a855f7', '📦', false),
+    ('reserva-emergencia', new.id, 'Reserva de emergência', 'reinvested', '#0891b2', '🛟', false),
     ('salario',       new.id, 'Salário',           'income',  '#22c55e', '💼', false),
     ('freelance',     new.id, 'Freelance',         'income',  '#10b981', '💻', false),
     ('investimentos', new.id, 'Investimentos',     'income',  '#0d9488', '📈', false),
@@ -1263,6 +1264,57 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+
+-- =====================================================================
+-- BLOCO 14b - Reserva de emergência (IMPR-004, v47)
+-- =====================================================================
+-- Uma linha por usuário com a meta de meses e a base de correção manual.
+-- O saldo não é guardado: é derivado no app (baseline_amount + lançamentos
+-- da categoria 'reserva-emergencia' posteriores a baseline_date). Escrita
+-- apenas por RPC security definer (mesmo desenho de
+-- reverse_goal_retention_settings); o cliente recebe só SELECT sob RLS.
+-- Criada antes do BLOCO 15 porque delete_my_data/replace_my_data a apagam.
+-- =====================================================================
+create table public.emergency_reserve (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  target_months smallint check (target_months between 1 and 60),
+  baseline_amount numeric(14,2) not null default 0 check (baseline_amount >= 0),
+  baseline_date date,
+  updated_at timestamptz not null default now()
+);
+alter table public.emergency_reserve enable row level security;
+alter table public.emergency_reserve force row level security;
+create policy "own emergency reserve select" on public.emergency_reserve for select to authenticated using (auth.uid() = user_id and public.is_token_valid() and public.has_required_aal());
+revoke all on table public.emergency_reserve from anon;
+revoke all on table public.emergency_reserve from authenticated;
+grant select on table public.emergency_reserve to authenticated;
+
+create or replace function public.set_emergency_reserve_target(p_months smallint default null)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_uid uuid := auth.uid();
+begin
+  if v_uid is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode = '28000'; end if;
+  if p_months is not null and p_months not between 1 and 60 then raise exception 'meta de meses invalida' using errcode = '22023'; end if;
+  insert into public.emergency_reserve(user_id, target_months, updated_at) values (v_uid, p_months, now())
+  on conflict (user_id) do update set target_months = excluded.target_months, updated_at = now();
+end; $$;
+
+create or replace function public.set_emergency_reserve_baseline(p_amount numeric, p_date date default current_date)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_uid uuid := auth.uid();
+begin
+  if v_uid is null or not public.is_token_valid() or not public.has_required_aal() then raise exception 'sessao invalida ou verificacao MFA necessaria' using errcode = '28000'; end if;
+  if p_amount is null or p_amount < 0 or p_amount >= 1000000000 then raise exception 'valor de reserva invalido' using errcode = '22023'; end if;
+  if p_date is null or p_date > current_date then raise exception 'data de correcao invalida' using errcode = '22023'; end if;
+  insert into public.emergency_reserve(user_id, baseline_amount, baseline_date, updated_at) values (v_uid, round(p_amount, 2), p_date, now())
+  on conflict (user_id) do update set baseline_amount = excluded.baseline_amount, baseline_date = excluded.baseline_date, updated_at = now();
+end; $$;
+
+revoke all on function public.set_emergency_reserve_target(smallint) from public, anon;
+grant execute on function public.set_emergency_reserve_target(smallint) to authenticated;
+revoke all on function public.set_emergency_reserve_baseline(numeric, date) from public, anon;
+grant execute on function public.set_emergency_reserve_baseline(numeric, date) to authenticated;
 
 
 -- =====================================================================
@@ -1285,6 +1337,7 @@ begin
   delete from public.goals where user_id = v_uid;
   delete from public.categories where user_id = v_uid;
   delete from public.pgbl_plans where user_id = v_uid;
+  delete from public.emergency_reserve where user_id = v_uid;
   insert into public.security_events (user_id, event_type, severity, details)
   values (v_uid, 'bulk_delete', 'warning', jsonb_build_object('scope', 'all_financial_data'));
 end; $$;
@@ -1326,6 +1379,7 @@ begin
     ('outros-d', v_uid, 'Outros', 'expense', '#94a3b8', '📦', false, 0),
     ('aportes', v_uid, 'Aportes e investimentos', 'reinvested', '#8b5cf6', '📈', false, 0),
     ('outros-ri', v_uid, 'Outros reinvestimentos', 'reinvested', '#a855f7', '📦', false, 0),
+    ('reserva-emergencia', v_uid, 'Reserva de emergência', 'reinvested', '#0891b2', '🛟', false, 0),
     ('salario', v_uid, 'Salário', 'income', '#22c55e', '💼', false, 0),
     ('freelance', v_uid, 'Freelance', 'income', '#10b981', '💻', false, 0),
     ('investimentos', v_uid, 'Investimentos', 'income', '#0d9488', '📈', false, 0),
@@ -1644,7 +1698,7 @@ begin
   perform pg_advisory_xact_lock(hashtext('replace_my_data:' || u::text));
   if jsonb_typeof(p_data) <> 'object' then raise exception 'backup invalido' using errcode='22023'; end if;
   if exists (select 1 from jsonb_to_recordset(coalesce(p_data->'goals','[]'::jsonb)) x(id text,goal_type text,reverse_completed_at timestamptz) where coalesce(x.goal_type,'standard')='reverse' and x.reverse_completed_at is not null and not exists (select 1 from jsonb_to_recordset(coalesce(p_data->'reverseGoalHistory','[]'::jsonb)) h(goal_id text) where h.goal_id=x.id)) then raise exception 'backup de meta reversa concluida sem historico' using errcode='22023'; end if;
-  delete from public.transactions where user_id=u; delete from public.budgets where user_id=u; delete from public.goals where user_id=u; delete from public.categories where user_id=u; delete from public.pgbl_plans where user_id=u; delete from public.reverse_goal_retention_settings where user_id=u;
+  delete from public.transactions where user_id=u; delete from public.budgets where user_id=u; delete from public.goals where user_id=u; delete from public.categories where user_id=u; delete from public.pgbl_plans where user_id=u; delete from public.reverse_goal_retention_settings where user_id=u; delete from public.emergency_reserve where user_id=u;
   insert into public.categories(user_id,id,name,icon,color,type,target_percentage) select u,x.id,x.name,x.icon,x.color,x.type,coalesce(x.target_percentage,0) from jsonb_to_recordset(coalesce(p_data->'categories','[]'::jsonb)) x(id text,name text,icon text,color text,type text,target_percentage numeric);
   insert into public.transactions(user_id,id,type,description,amount,category_id,date,method,paid,recurrence,recurrence_end,installments,tags,note,paid_occurrences,created_at,updated_at) select u,x.id,x.type,x.description,x.amount,x.category_id,x.date,x.method,x.paid,x.recurrence,x.recurrence_end,x.installments,x.tags,x.note,x.paid_occurrences,coalesce(x.created_at,now()),coalesce(x.updated_at,now()) from jsonb_to_recordset(coalesce(p_data->'transactions','[]'::jsonb)) x(id text,type text,description text,amount numeric,category_id text,date date,method text,paid boolean,recurrence text,recurrence_end date,installments integer,tags text[],note text,paid_occurrences jsonb,created_at timestamptz,updated_at timestamptz);
   insert into public.budgets(user_id,category_id,limit_amount) select u,x.category_id,x.limit_amount from jsonb_to_recordset(coalesce(p_data->'budgets','[]'::jsonb)) x(category_id text,limit_amount numeric);
