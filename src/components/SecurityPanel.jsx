@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { EVENT_LABELS, fetchEvents } from '../lib/audit.js'
+import { useConfirm } from './ConfirmDialog.jsx'
 import CodeInput from './auth/CodeInput.jsx'
 
 const suportaWebAuthn = typeof window !== 'undefined' && 'PublicKeyCredential' in window
@@ -23,6 +24,7 @@ function PasskeySection() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
   const [stepUpCode, setStepUpCode] = useState('')
+  const [confirm, confirmDialog] = useConfirm()
 
   const mfaHabilitado = auth.assuranceLevel?.nextLevel === 'aal2'
   const precisaStepUp = mfaHabilitado && auth.assuranceLevel?.currentLevel !== 'aal2'
@@ -46,22 +48,34 @@ function PasskeySection() {
   }
 
   const revoke = async (id) => {
-    if (!window.confirm('Revogar esta chave de acesso? Ela não poderá mais ser usada para entrar.')) return
-    setBusy(true); setMessage(null)
     const result = await auth.revokePasskey(id)
     setBusy(false)
     if (result.error) setMessage({ tone: 'danger', text: result.error })
     else { setMessage({ tone: 'success', text: 'Chave de acesso revogada.' }); await load() }
   }
 
+  const askRevoke = (id) => confirm({
+    title: 'Revogar chave de acesso',
+    message: 'Revogar esta chave de acesso? Ela não poderá mais ser usada para entrar.',
+    confirmLabel: 'Revogar',
+    danger: true,
+    onConfirm: () => { setBusy(true); setMessage(null); revoke(id) },
+  })
+
   const revokeAll = async () => {
-    if (!window.confirm('Revogar todas as chaves de acesso deste aparelho e dos demais?')) return
-    setBusy(true); setMessage(null)
     const result = await auth.revokeAllPasskeys()
     setBusy(false)
     if (result.error) setMessage({ tone: 'danger', text: result.error })
     else { setMessage({ tone: 'success', text: 'Todas as chaves de acesso foram revogadas.' }); await load() }
   }
+
+  const askRevokeAll = () => confirm({
+    title: 'Revogar todas as chaves',
+    message: 'Revogar todas as chaves de acesso deste aparelho e dos demais?',
+    confirmLabel: 'Revogar todas',
+    danger: true,
+    onConfirm: () => { setBusy(true); setMessage(null); revokeAll() },
+  })
 
   const stepUp = async () => {
     setBusy(true); setMessage(null)
@@ -95,6 +109,7 @@ function PasskeySection() {
   }
 
   return (
+    <>
     <section className="card" aria-busy={loading}>
       <div className="card-head">
         <div>
@@ -141,7 +156,7 @@ function PasskeySection() {
                       Criada em {dataCurta(pk.created_at)} · último uso {dataCurta(pk.last_used_at)}
                     </div>
                   </div>
-                  <button type="button" className="btn btn-sm btn-danger" onClick={() => revoke(pk.id)} disabled={busy}>
+                  <button type="button" className="btn btn-sm btn-danger" onClick={() => askRevoke(pk.id)} disabled={busy}>
                     Revogar
                   </button>
                 </div>
@@ -153,12 +168,14 @@ function PasskeySection() {
               {busy ? 'Aguarde...' : 'Cadastrar chave de acesso'}
             </button>
             {list.length > 0 && (
-              <button className="btn btn-danger" onClick={revokeAll} disabled={busy}>Revogar todas</button>
+              <button className="btn btn-danger" onClick={askRevokeAll} disabled={busy}>Revogar todas</button>
             )}
           </div>
         </div>
       )}
     </section>
+    {confirmDialog}
+    </>
   )
 }
 
@@ -259,6 +276,7 @@ export default function SecurityPanel() {
   const [disableCode, setDisableCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
+  const [confirmMfa, mfaConfirmDialog] = useConfirm()
 
   const refresh = useCallback(async () => {
     const factors = await auth.listFactors()
@@ -287,7 +305,6 @@ export default function SecurityPanel() {
   }
 
   const disable = async () => {
-    if (!window.confirm('Desativar a verificação em duas etapas reduz a segurança da conta. Continuar?')) return
     setBusy(true); setMessage(null)
     const result = await auth.disableMfa(disableCode)
     setBusy(false)
@@ -297,6 +314,14 @@ export default function SecurityPanel() {
       setMessage({ tone: 'success', text: 'Verificação em duas etapas desativada.' })
     }
   }
+
+  const askDisable = () => confirmMfa({
+    title: 'Desativar verificação em duas etapas',
+    message: 'Desativar a verificação em duas etapas reduz a segurança da conta. Continuar?',
+    confirmLabel: 'Desativar',
+    danger: true,
+    onConfirm: disable,
+  })
 
   return (
     <div className="stack">
@@ -366,12 +391,13 @@ export default function SecurityPanel() {
               <span className="label" id="disable-mfa-label">Código atual para desativar</span>
               <CodeInput value={disableCode} onChange={setDisableCode} disabled={busy} autoFocus={false} errorId={message?.field === 'disableCode' ? 'security-message' : undefined} labelledBy="disable-mfa-label" />
             </div>
-            <div><button className="btn btn-danger" onClick={disable} disabled={busy || disableCode.length !== 6} aria-busy={busy}>Desativar MFA</button></div>
+            <div><button className="btn btn-danger" onClick={askDisable} disabled={busy || disableCode.length !== 6} aria-busy={busy}>Desativar MFA</button></div>
           </div>
         )}
       </section>
       <PasskeySection />
       <EventList />
+      {mfaConfirmDialog}
     </div>
   )
 }

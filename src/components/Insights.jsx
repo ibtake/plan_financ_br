@@ -52,7 +52,9 @@ function buildInsights({ summary, previousSummary, byCategory, previousByCategor
       list.push({
         tone: 'warning',
         emoji: cat.icon,
-        title: `${cat.name} está em ${formatPercent(percent)} do orçamento`,
+        // 1 casa: com toFixed(0), 99,6% viraria "100%" e anunciaria o teto numa
+        // faixa que ainda nao estourou (o insight de estouro so dispara >=100) - F-04.
+        title: `${cat.name} está em ${formatPercent(percent, 1)} do orçamento`,
         text: `Restam apenas ${formatCurrency(limit - spent)} para o resto do mês.`,
       })
     }
@@ -79,7 +81,10 @@ function buildInsights({ summary, previousSummary, byCategory, previousByCategor
   }
 
   // 4. Contas pendentes
-  const pending = occurrences.filter((t) => !t.paid && t.type === 'expense')
+  // Mesmo predicado do pendingExpense em summarize (useFinance.js): tudo que nao
+  // e receita e esta !paid entra no total, inclusive reinvestido. Contar so
+  // 'expense' aqui divergia da soma exibida quando havia aporte pendente (F-03).
+  const pending = occurrences.filter((t) => !t.paid && t.type !== 'income')
   if (pending.length > 0) {
     list.push({
       tone: 'warning',

@@ -6,6 +6,7 @@ import { CHART_PALETTE, TYPE_META, categoriesByType } from '../utils/categories.
 import { ICON_CATALOG, ICON_GROUPS } from '../utils/iconRegistry.js'
 import { readIconFile } from '../utils/iconUpload.js'
 import { formatCurrency } from '../utils/format.js'
+import { useConfirm } from './ConfirmDialog.jsx'
 
 /** Tipos que aceitam meta percentual (REQ 6): receita fica de fora */
 const TARGET_TYPES = ['expense', 'reinvested']
@@ -286,13 +287,14 @@ function CategoryRow({ category, usage, onEdit, onDelete }) {
         </div>
       </div>
       <div className="tx-actions">
-        <button className="icon-btn" onClick={() => onEdit(category)} title="Editar">
+        <button className="icon-btn" onClick={() => onEdit(category)} title="Editar" aria-label={`Editar categoria ${category.name}`}>
           <Pencil size={15} strokeWidth={1.9} />
         </button>
         <button
           className="icon-btn danger"
           onClick={() => onDelete(category)}
           title="Excluir"
+          aria-label={`Excluir categoria ${category.name}`}
         >
           <Trash2 size={15} strokeWidth={1.9} />
         </button>
@@ -310,6 +312,7 @@ export default function CategoryManager({
 }) {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [confirm, confirmDialog] = useConfirm()
 
   const usage = useMemo(() => {
     const map = {}
@@ -358,7 +361,13 @@ export default function CategoryManager({
     const message = used
       ? `A categoria "${category.name}" é usada em ${used} lançamento(s). Eles serão movidos para outra categoria do mesmo tipo. Continuar?`
       : `Excluir a categoria "${category.name}"?`
-    if (window.confirm(message)) onDelete(category.id)
+    confirm({
+      title: 'Excluir categoria',
+      message,
+      confirmLabel: 'Excluir',
+      danger: true,
+      onConfirm: () => onDelete(category.id),
+    })
   }
 
   const startEdit = (cat) => {
@@ -434,6 +443,7 @@ export default function CategoryManager({
           </div>
         ))}
       </div>
+      {confirmDialog}
     </div>
   )
 }

@@ -93,7 +93,12 @@ Deno.serve(async (request) => {
     return new Response(null, { status: 204, headers })
   }
   if (request.method !== 'POST') return response(request, 405, { error: 'Método não permitido.' })
-  if (request.headers.get('origin') && !corsHeaders(request)['Access-Control-Allow-Origin']) return response(request, 403, { error: 'Origem não autorizada.' })
+  // SUPB-006: bloqueia tambem Origin AUSENTE, em paridade com admin-users
+  // (`:159`). O guard anterior (`get('origin') &&`) so barrava Origin presente
+  // e invalido, deixando passar POST sem Origin. Navegador sempre envia Origin
+  // em metodo != GET/HEAD (Fetch Standard), entao ausencia aqui e cliente
+  // nao-navegador - defesa em profundidade antes do JWT + AAL (a auth real).
+  if (!corsHeaders(request)['Access-Control-Allow-Origin']) return response(request, 403, { error: 'Origem não autorizada.' })
   // Recusa barata, ANTES das duas a tres chamadas ao Auth abaixo (getUser,
   // getClaims e listFactors quando ha MFA), que sao o custo real por
   // requisicao. O header e declarativo: quem mentir ou usar chunked encoding

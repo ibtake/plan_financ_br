@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { BookOpen, Calculator, CircleAlert, CircleCheck, Settings2, Table2 } from 'lucide-react'
-import { amountToInput, formatAmountInput, formatCurrency, parseAmount } from '../utils/format.js'
+import { amountToInput, formatAmountInput, formatCurrency, MONTH_NAMES, parseAmount } from '../utils/format.js'
+import { useConfirm } from './ConfirmDialog.jsx'
 
-const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 const DEFAULT_PARAMS = { limitePgblPercentual: 0.12, descontoSimplificadoPercentual: 0.2, tetoDescontoSimplificado: 17640, deducaoPorDependenteAno: 2275.08, tetoEducacaoPorPessoaAno: 3561.5, reducaoAnualLimite: 60000, reducaoAnualMaxima: 2694.15, reducaoAnualFaixaFinal: 88200, reducaoAnualIntercepto: 8429.73, reducaoAnualCoeficiente: 0.095575, fonte: 'Receita Federal — referência 2026/2027', tabela: [[29145.6, 0, 0], [33919.8, 2185.92, 0.075], [45012.6, 4729.91, 0.15], [55976.16, 8105.85, 0.225], [Infinity, 10904.66, 0.275]] }
-const blankMonths = () => MONTHS.map((mes) => ({ mes, base: '', retido: '', inss: '', pgbl: '', saude: '', educacao: '' }))
+const blankMonths = () => MONTH_NAMES.map((mes) => ({ mes, base: '', retido: '', inss: '', pgbl: '', saude: '', educacao: '' }))
 const toNumeric = (value) => Number(value) || 0
 // Reusa formatCurrency para herdar o modo privacidade (data-privacy=hidden);
 // o money() local exibia valores mesmo com a privacidade ligada.
 const money = formatCurrency
 const numberValue = (value) => value === '' ? '' : Math.max(0, Number(value) || 0)
-const normalizeParams = (params = DEFAULT_PARAMS) => {
+export const normalizeParams = (params = DEFAULT_PARAMS) => {
   const merged = { ...DEFAULT_PARAMS, ...params }
   const legacy2026 = Array.isArray(params?.tabela) && Number(params.tabela?.[2]?.[1]) === 4729.92 && Number(params.tabela?.[3]?.[1]) === 8105.88 && Number(params.tabela?.[4]?.[1]) === 10904.76
-  const tabela = legacy2026 ? DEFAULT_PARAMS.tabela : (merged.tabela || DEFAULT_PARAMS.tabela)
+  // tabela: [] importada e truthy; sem o .length cairia no map vazio e faixa
+  // ficava undefined -> NaN exibido como "R$ 0,00" (AUDT-024 F-08).
+  const tabela = legacy2026 ? DEFAULT_PARAMS.tabela : (merged.tabela?.length ? merged.tabela : DEFAULT_PARAMS.tabela)
   const finiteOr = (value, fallback, min = 0, max = Infinity) => {
     const number = Number(value)
     return Number.isFinite(number) && number >= min && number <= max ? number : fallback
@@ -47,6 +49,11 @@ export function calculatePGBL(months, premise, params) {
   const baseFinal = Math.max(base - deductions, 0)
   const faixa = params.tabela.find((item) => baseFinal <= item[0]) || params.tabela.at(-1)
   const irBase = Math.max(baseFinal * faixa[2] - faixa[1], 0)
+  // F-05 (aceita, nao ajustada): ao cruzar reducaoAnualLimite (60000) o teto da
+  // reducao salta de reducaoAnualMaxima (2694,15) para intercepto - coef*60000
+  // (2695,23), +1,08. A aritmetica confere; intercepto/coeficiente vem da
+  // referencia da Receita (params.fonte, 2026/2027). Mudar o intercepto exige
+  // conferir a formula oficial do phase-out na fonte antes - mantido como esta.
   const reducaoAnual = base <= params.reducaoAnualLimite
     ? Math.min(irBase, params.reducaoAnualMaxima)
     : base <= params.reducaoAnualFaixaFinal
@@ -85,6 +92,7 @@ export default function PGBLPanel({ pgbl }) {
   const { plans, loading, error: pgblError, savePlan, deletePlan } = pgbl
   const [selectedYear, setSelectedYear] = useState(year)
   const [view, setView] = useState('resumo')
+  const [confirm, confirmDialog] = useConfirm()
   const tabRefs = useRef(new Map())
   const tabIds = ['resumo', 'mensal', 'config', 'sobre']
   const years = plans
@@ -92,6 +100,10 @@ export default function PGBLPanel({ pgbl }) {
   const selectedPlan = years[selectedYear] || { months: blankMonths(), premise: { contribuiInss: true, dependentes: 0, educacao: 0 }, params: years[latestYear]?.params }
   const data = { ...selectedPlan, year: selectedYear, params: normalizeParams(selectedPlan.params) }
   const result = calculatePGBL(data.months, data.premise, normalizeParams(data.params))
+  // Aviso nao bloqueante: params copiados verbatim para anos futuros seguem na
+  // tabela 2026/2027 (changeYear). So alerta se a fonte ainda referencia esses
+  // anos - fonte editada pelo usuario silencia o aviso (AUDT-024 F-07).
+  const tabelaDefasada = selectedYear > 2027 && /202[67]/.test(String(data.params.fonte || ''))
   const update = (next) => {
     if (next.year) return changeYear(next.year)
     savePlan({ ...data, ...next, params: normalizeParams({ ...data.params, ...(next.params || {}) }) })
@@ -123,16 +135,25 @@ export default function PGBLPanel({ pgbl }) {
 
   if (loading) return <div className="card pgbl-loading" role="status"><div className="spinner" />Carregando dados do Aporte Certo…</div>
 
-  const removeYear = async () => {
-    if (!window.confirm(`Excluir todos os dados do ano ${selectedYear}? Essa ação não pode ser desfeita.`)) return
-    const removed = await deletePlan(selectedYear)
-    if (removed) setSelectedYear(Number(Object.keys(years).find((item) => Number(item) !== selectedYear) || year))
+  const removeYear = () => {
+    confirm({
+      title: 'Excluir ano',
+      message: `Excluir todos os dados do ano ${selectedYear}? Essa ação não pode ser desfeita.`,
+      confirmLabel: 'Excluir',
+      danger: true,
+      onConfirm: async () => {
+        const removed = await deletePlan(selectedYear)
+        if (removed) setSelectedYear(Number(Object.keys(years).find((item) => Number(item) !== selectedYear) || year))
+      },
+    })
   }
 
   return <div className="pgbl-tool">
     {view === 'mensal' && <StableTransposedPGBLTable data={data} result={result} onChange={updateMonth} onYearChange={(value) => update({ year: Number(value) || year })} />}
     {view === 'config' && <ConfigYearSelector years={years} selectedYear={selectedYear} onChange={changeYear} onDelete={removeYear} />}
+    {confirmDialog}
     {pgblError && <div className="notice danger" role="alert">{pgblError}</div>}
+    {tabelaDefasada && <div className="notice warning" role="status"><CircleAlert size={18} /> A tabela do IR aplicada é a referência 2026/2027; para {selectedYear} as faixas podem estar defasadas. Confirme os valores vigentes na Receita Federal.</div>}
     <div className="pgbl-tabs" role="tablist" aria-label="Aporte Certo">
       {[['resumo', Calculator, 'Resumo anual'], ['mensal', Table2, 'Lançamentos'], ['config', Settings2, 'Parâmetros'], ['sobre', BookOpen, 'Como funciona']].map(([id, Icon, label]) => <button key={id} ref={(node) => { if (node) tabRefs.current.set(id, node); else tabRefs.current.delete(id) }} type="button" role="tab" id={`pgbl-tab-${id}`} aria-selected={view === id} aria-controls="pgbl-panel" tabIndex={view === id ? 0 : -1} className={`pgbl-tab${view === id ? ' active' : ''}`} onClick={() => setView(id)} onKeyDown={(event) => handleTabKeyDown(event, id)}><Icon size={16} aria-hidden="true" />{label}</button>)}
     </div>

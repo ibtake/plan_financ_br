@@ -154,20 +154,32 @@ Deno.serve(async (request) => {
     endpoint.searchParams.set('dataInicial', formatBcbDate(startDate))
     endpoint.searchParams.set('dataFinal', formatBcbDate(currentMonth()))
 
+    // BUG-002: um unico prazo cobre o fetch E a leitura do corpo. Antes o
+    // `clearTimeout` caia no `finally` do fetch, entao `readUpstreamJsonWithinLimit`
+    // lia o stream sem teto de tempo - um upstream que entrega os headers e trava
+    // o corpo (slowloris de resposta) segurava a funcao ate o limite da plataforma;
+    // o teto de bytes do AUDT-008 nao cobre isso porque o problema e tempo, nao
+    // tamanho. Com a leitura dentro do try, o mesmo `AbortController` aborta o
+    // fetch OU o body em leitura ao estourar. Normalizo o timeout por
+    // `signal.aborted` para um throw no formato dos demais (stage/detail no log,
+    // 503 generico), sem depender de `DOMException instanceof Error`.
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-    let upstream: Response
+    let payload: unknown
     try {
-      upstream = await fetch(endpoint, {
+      const upstream = await fetch(endpoint, {
         method: 'GET',
         headers: { Accept: 'application/json' },
         signal: controller.signal,
       })
+      if (!upstream.ok) throw new Error('bcb_unavailable', { cause: { status: upstream.status } })
+      payload = await readUpstreamJsonWithinLimit(upstream)
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error('bcb_timeout', { cause: { code: `timeout_${FETCH_TIMEOUT_MS}ms` } })
+      throw error
     } finally {
       clearTimeout(timeout)
     }
-    if (!upstream.ok) throw new Error('bcb_unavailable', { cause: { status: upstream.status } })
-    const payload: unknown = await readUpstreamJsonWithinLimit(upstream)
     if (!Array.isArray(payload) || payload.length > MAX_MONTHS_FROM_BCB) {
       throw new Error('invalid_bcb_payload', { cause: { code: Array.isArray(payload) ? `length_${payload.length}` : 'not_array' } })
     }
@@ -196,12 +208,25 @@ Deno.serve(async (request) => {
     if (existingError) throw new Error('rates_query_failed', { cause: existingError })
     const existingMonths = new Set((existing || []).map((row) => String(row.reference_month)))
     const missingRates = [...rates.values()].filter((row) => !existingMonths.has(row.reference_month))
-    if (!missingRates.length) return response(200, { ok: true, inserted: 0, rebuilt: 0 })
 
-    const { error: insertError } = await admin
-      .from('selic_monthly_rates')
-      .upsert(missingRates, { onConflict: 'reference_month', ignoreDuplicates: true })
-    if (insertError) throw new Error('rates_insert_failed', { cause: insertError })
+    // SUPB-002: o upsert so roda quando ha mes faltando, mas o rebuild passou a
+    // rodar em toda execucao que chega aqui. Antes o handler saia em
+    // `if (!missingRates.length) return` ANTES do rebuild: se a execucao N
+    // inseriu as taxas e o `rebuild_all_reverse_goals` falhou (503), a N+1 nao
+    // tinha mes faltando, saia cedo e as metas reversas ficavam desatualizadas
+    // ate um mes novo entrar. `rebuild_all_reverse_goals` e idempotente -
+    // recomputa cada meta ativa do zero a partir de `selic_monthly_rates`
+    // (`schema.sql`, definicao de `rebuild_all_reverse_goals`) -, entao roda-lo
+    // sem taxa nova so recomputa o mesmo resultado. O cron e diario
+    // (`docs/IMPLANTACAO-V2.md`: "Selic mensal ... Diaria") e so se chega aqui
+    // com meta reversa ativa (early return la em cima quando nao ha), entao o
+    // custo e um recompute diario de um conjunto pequeno de metas - aceitavel.
+    if (missingRates.length) {
+      const { error: insertError } = await admin
+        .from('selic_monthly_rates')
+        .upsert(missingRates, { onConflict: 'reference_month', ignoreDuplicates: true })
+      if (insertError) throw new Error('rates_insert_failed', { cause: insertError })
+    }
 
     const { data: rebuilt, error: rebuildError } = await admin.rpc('rebuild_all_reverse_goals')
     if (rebuildError) throw new Error('rebuild_failed', { cause: rebuildError })

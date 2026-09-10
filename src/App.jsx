@@ -16,6 +16,7 @@ import IconManager from './components/IconManager.jsx'
 import SettingsPanel from './components/SettingsPanel.jsx'
 import SecurityPanel from './components/SecurityPanel.jsx'
 import PGBLPanel from './components/PGBLPanel.jsx'
+import { useConfirm } from './components/ConfirmDialog.jsx'
 import AuthScreen from './components/auth/AuthScreen.jsx'
 import ResetPasswordScreen from './components/auth/ResetPasswordScreen.jsx'
 import RequiredPasswordChange from './components/auth/RequiredPasswordChange.jsx'
@@ -160,6 +161,7 @@ function AuthenticatedApp() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [notificationFocus, setNotificationFocus] = useState(null)
+  const [confirm, confirmDialog] = useConfirm()
   const [privacyVisible, setPrivacyVisible] = useLocalStorage('finance-privacy-visible', true)
   const [systemTheme, setSystemTheme] = useState(() => (
     typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
@@ -255,13 +257,17 @@ function AuthenticatedApp() {
     const scope = isRecurring(occurrence)
       ? ' Esta ação exclui toda a série ou todas as parcelas.'
       : ''
-    if (window.confirm(`Excluir “${occurrence.description}”?${scope}`)) {
+    confirm({
+      title: 'Excluir lançamento',
+      message: `Excluir “${occurrence.description}”?${scope}`,
+      confirmLabel: 'Excluir',
+      danger: true,
       // Segue `sourceId || id`: e a raiz da serie, e o hook ainda corta o `#`
       // por conta propria (useFinanceOperations.js:35). Nao ha exclusao de
       // ocorrencia isolada no app - todo delete apaga a serie inteira.
-      removeTransaction(occurrence.sourceId || occurrence.id)
-    }
-  }, [removeTransaction])
+      onConfirm: () => removeTransaction(occurrence.sourceId || occurrence.id),
+    })
+  }, [confirm, removeTransaction])
 
   const pending = useMemo(
     () => monthly.occurrences.filter((item) => !item.paid),
@@ -528,6 +534,7 @@ function AuthenticatedApp() {
         defaultDate={isoDateInMonth(monthKey, new Date().getDate())}
         fieldVisibility={finance.transactionFormFields}
       />
+      {confirmDialog}
     </div>
   )
 }

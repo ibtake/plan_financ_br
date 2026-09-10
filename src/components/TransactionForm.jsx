@@ -5,11 +5,12 @@ import {
   RECURRENCE_OPTIONS,
   categoriesByType,
 } from '../utils/categories.js'
-import { amountToInput, formatAmountInput, parseAmount, todayISO } from '../utils/format.js'
+import { amountToInput, formatAmountInput, formatCurrency, formatDate, parseAmount, todayISO } from '../utils/format.js'
 import { RECURRENCE_END_ERROR, recurrenceEndBeforeStart } from '../utils/recurrence.js'
 import { normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
 import { useDialog } from '../hooks/useDialog.js'
 import { parseQuickTransaction } from '../utils/quickTransaction.js'
+import { findDuplicateInMonth } from '../utils/duplicateTransaction.js'
 
 const EMPTY = {
   type: 'expense',
@@ -30,6 +31,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
   const [quickText, setQuickText] = useState('')
+  const [duplicateWarning, setDuplicateWarning] = useState(null)
   const isEditing = Boolean(initial?.id)
   const visibleFields = normalizeTransactionFormFields(fieldVisibility)
   const { closing, close, surfaceRef } = useDialog(onClose, open)
@@ -48,6 +50,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
     }
     setErrors({})
     setQuickText('')
+    setDuplicateWarning(null)
   }, [open, initial, defaultDate])
 
   const available = useMemo(
@@ -55,13 +58,13 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
     [categories, form.type],
   )
 
-  // Garante que a categoria pertence ao tipo escolhido
+  // Garante que a categoria pertence ao tipo escolhido. A checagem mora dentro do
+  // updater do setForm: assim o efeito nao le `form.categoryId` do closure e os
+  // deps [available, open] ficam completos - sem o eslint-disable de antes (AUDT-025).
+  // Retornar o proprio `f` quando ainda e valido faz o React pular o re-render.
   useEffect(() => {
     if (!open) return
-    if (!available.some((c) => c.id === form.categoryId)) {
-      setForm((f) => ({ ...f, categoryId: available[0]?.id || '' }))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setForm((f) => (available.some((c) => c.id === f.categoryId) ? f : { ...f, categoryId: available[0]?.id || '' }))
   }, [available, open])
 
   if (!open) return null
@@ -102,11 +105,21 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
     // botao segue clicavel; sem isso, dois cliques geram duas transacoes.
     if (closing) return
     if (!validate()) return
-    onSubmit({
+    const payload = {
       ...form,
       amount: parseAmount(form.amount),
       installments: Math.max(1, Number(form.installments) || 1),
-    })
+    }
+    // Aviso de duplicata: so avisa uma vez. Confirmar reenvia com a flag e
+    // passa direto. Nunca bloqueia sozinho - e sinal, nao trava.
+    if (!duplicateWarning) {
+      const found = findDuplicateInMonth(payload, transactions || [])
+      if (found) {
+        setDuplicateWarning(found)
+        return
+      }
+    }
+    onSubmit(payload)
     close()
   }
 
@@ -114,7 +127,7 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
   const amountValue = parseAmount(form.amount)
 
   return (
-    <dialog open className={`modal-backdrop${closing ? ' is-closing' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) close() }} aria-label={isEditing ? 'Editar lançamento' : 'Novo lançamento'}>
+    <dialog open role="dialog" aria-modal="true" className={`modal-backdrop${closing ? ' is-closing' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) close() }} aria-label={isEditing ? 'Editar lançamento' : 'Novo lançamento'}>
       <div
         ref={surfaceRef}
         className={`modal${closing ? ' is-closing' : ''}`}
@@ -388,13 +401,35 @@ export default function TransactionForm({ open, onClose, onSubmit, initial, cate
             </div>
           </div>
 
+          {duplicateWarning && (
+            <div className="duplicate-warning" role="alert">
+              <strong>Lançamento parecido neste mês</strong>
+              <span>
+                {`Já existe "${duplicateWarning.description}" de ${formatCurrency(duplicateWarning.amount)} em ${formatDate(duplicateWarning.date)}. Deseja lançar mesmo assim?`}
+              </span>
+            </div>
+          )}
+
           <div className="modal-foot">
-            <button type="button" className="btn" onClick={close}>
-              Cancelar
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={closing}>
-              {isEditing ? 'Salvar alterações' : 'Adicionar lançamento'}
-            </button>
+            {duplicateWarning ? (
+              <>
+                <button type="button" className="btn" onClick={() => setDuplicateWarning(null)}>
+                  Voltar e revisar
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={closing}>
+                  Continuar assim mesmo
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="btn" onClick={close}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={closing}>
+                  {isEditing ? 'Salvar alterações' : 'Adicionar lançamento'}
+                </button>
+              </>
+            )}
           </div>
         </form>
       </div>

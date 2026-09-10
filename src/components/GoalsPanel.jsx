@@ -3,6 +3,7 @@ import { AlertTriangle, CircleHelp, Pencil, Plus, Trash2, Trophy, X } from 'luci
 import AppIcon from './AppIcon.jsx'
 import { amountToInput, formatAmountInput, formatCurrency, formatDate, formatPercent, monthLabelShort, monthsBehind, parseAmount, todayISO } from '../utils/format.js'
 import { useDialog } from '../hooks/useDialog.js'
+import { useConfirm } from './ConfirmDialog.jsx'
 
 const ICONS = ['🎯', '✈️', '🏠', '🚗', '💻', '🎓', '💍', '🏖️', '📱', '🎁']
 const COLORS = ['#6366f1', '#22c55e', '#0ea5e9', '#f97316', '#ec4899', '#8b5cf6']
@@ -10,7 +11,7 @@ const COLORS = ['#6366f1', '#22c55e', '#0ea5e9', '#f97316', '#ec4899', '#8b5cf6'
 function GoalForm({ initial, onSave, onCancel }) {
   const [reverse, setReverse] = useState(initial?.goalType === 'reverse')
   const [busy, setBusy] = useState(false)
-  const [form, setForm] = useState(initial ? { ...initial, target: amountToInput(initial.target), current: amountToInput(initial.current), originalAmount: amountToInput(initial.originalAmount), initialContribution: amountToInput(initial.initialContribution) } : { name: '', target: '', current: '', deadline: '', icon: '🎯', color: '#6366f1', originalAmount: '', initialContribution: '', startDate: new Date().toISOString().slice(0, 10), selicFactor: 1 })
+  const [form, setForm] = useState(initial ? { ...initial, target: amountToInput(initial.target), current: amountToInput(initial.current), originalAmount: amountToInput(initial.originalAmount), initialContribution: amountToInput(initial.initialContribution) } : { name: '', target: '', current: '', deadline: '', icon: '🎯', color: '#6366f1', originalAmount: '', initialContribution: '', startDate: todayISO(), selicFactor: 1 })
   const set = (patch) => setForm((value) => ({ ...value, ...patch }))
   const submit = async (event) => {
     event.preventDefault()
@@ -32,7 +33,7 @@ function GoalForm({ initial, onSave, onCancel }) {
       {reverse ? <>
         <div className="field"><label className="label" htmlFor="goal-original-amount">Valor inicial *</label><input id="goal-original-amount" name="goal-original-amount" className="input mono" value={form.originalAmount} onChange={(event) => set({ originalAmount: formatAmountInput(event.target.value) })} inputMode="numeric" /></div>
         <div className="field"><label className="label" htmlFor="goal-initial-contribution">Já recomposto</label><input id="goal-initial-contribution" name="goal-initial-contribution" className="input mono" value={form.initialContribution} onChange={(event) => set({ initialContribution: formatAmountInput(event.target.value) })} inputMode="numeric" /></div>
-        <div className="field"><label className="label" htmlFor="goal-start-date">Data de início *</label><input id="goal-start-date" name="goal-start-date" className="input goal-date-input" type="date" value={form.startDate} max={new Date().toISOString().slice(0, 10)} onChange={(event) => set({ startDate: event.target.value })} /></div>
+        <div className="field"><label className="label" htmlFor="goal-start-date">Data de início *</label><input id="goal-start-date" name="goal-start-date" className="input goal-date-input" type="date" value={form.startDate} max={todayISO()} onChange={(event) => set({ startDate: event.target.value })} /></div>
         <div className="field"><label className="label">Fator Selic</label><div className="factor-stepper"><button type="button" aria-label="Diminuir fator Selic" onClick={() => set({ selicFactor: Math.max(.5, Number(form.selicFactor) - .005) })}>−</button><strong>{formatPercent(Number(form.selicFactor) * 100, 1)}</strong><button type="button" aria-label="Aumentar fator Selic" onClick={() => set({ selicFactor: Math.min(1.5, Number(form.selicFactor) + .005) })}>+</button></div></div>
       </> : <>
         <div className="field"><label className="label" htmlFor="goal-target">Valor alvo *</label><input id="goal-target" name="goal-target" className="input mono" value={form.target} onChange={(event) => set({ target: formatAmountInput(event.target.value) })} inputMode="numeric" /></div>
@@ -108,6 +109,7 @@ function ReverseCard({ goal, onAporte, onEdit, onDelete, history = [], contribut
   const [modal, setModal] = useState(false)
   const [details, setDetails] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
+  const [confirm, confirmDialog] = useConfirm()
   const detailsDialog = useDialog(() => setDetails(false), details)
   const progress = Math.min(100, Math.max(0, Number(goal.reverseProgressPercent) || 0))
   const completed = Boolean(goal.reverseCompletedAt || goal.reverseRemainingAmount <= 0)
@@ -129,7 +131,7 @@ function ReverseCard({ goal, onAporte, onEdit, onDelete, history = [], contribut
   const toggleFromCard = (event) => { if (!event.target.closest('button, input, select, textarea, form, .reverse-modal-backdrop')) setOpen((current) => !current) }
 
   return <div className={`goal-card goal-card-expandable reverse-goal-card${completed ? ' goal-completed' : ''}`} onClick={toggleFromCard}>
-    <div className="row-between"><button className="reverse-card-main" onClick={() => setOpen(!open)} disabled={isDeleting}><span className="goal-icon" style={{ background: `${goal.color}22`, color: goal.color }}><AppIcon emoji={goal.icon} /></span><span><strong>{goal.name}</strong><small className="goal-badge reverse-badge">Meta Reversa</small></span></button><div className="row"><button className="icon-btn" aria-label="Editar meta reversa" onClick={() => onEdit(goal)} disabled={isDeleting}><Pencil size={15} /></button><button className="icon-btn danger" aria-label="Excluir meta" disabled={isDeleting} onClick={async () => { if (window.confirm('Excluir esta meta e seu histórico?')) await onDelete(goal.id) }}><Trash2 size={15} /></button></div></div>
+    <div className="row-between"><button className="reverse-card-main" onClick={() => setOpen(!open)} disabled={isDeleting}><span className="goal-icon" style={{ background: `${goal.color}22`, color: goal.color }}><AppIcon emoji={goal.icon} /></span><span><strong>{goal.name}</strong><small className="goal-badge reverse-badge">Meta Reversa</small></span></button><div className="row"><button className="icon-btn" aria-label="Editar meta reversa" onClick={() => onEdit(goal)} disabled={isDeleting}><Pencil size={15} /></button><button className="icon-btn danger" aria-label="Excluir meta" disabled={isDeleting} onClick={() => confirm({ title: 'Excluir meta', message: 'Excluir esta meta e seu histórico?', confirmLabel: 'Excluir', danger: true, onConfirm: () => onDelete(goal.id) })}><Trash2 size={15} /></button></div></div>
     <div className="progress"><div className="progress-bar" style={{ width: `${progress}%`, background: goal.color }} role="progressbar" aria-label={`Progresso da meta ${goal.name}`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={progress} aria-valuetext={formatPercent(progress, 1)} /></div>
     <div className="completion-status text-xs"><span>{formatPercent(progress, 1)} concluído</span>{completed && <span className="completion-trophy" role="img" aria-label="Meta concluída">🏆</span>}</div>
     {correctionLag >= 2 && <div className="notice warning text-xs"><AlertTriangle size={13} strokeWidth={2.2} /> Correção pela Selic sem atualização desde {monthLabelShort(lastCorrected)}. O valor restante está menor que o real até a próxima sincronização.</div>}
@@ -137,6 +139,7 @@ function ReverseCard({ goal, onAporte, onEdit, onDelete, history = [], contribut
     {modal && <ContributionModal goal={goal} title="Fazer aporte" amountName="reverse-contribution-amount" dateName="reverse-contribution-date" dateLabel="Data real" minDate={goal.reverseStartDate} onSave={onAporte} onClose={() => setModal(false)} />}
     {editingItem && <EditContributionModal item={editingItem} minDate={goal.reverseStartDate} onSave={onUpdateContribution} onClose={() => setEditingItem(null)} />}
     {details && <div className={`reverse-modal-backdrop${detailsDialog.closing ? ' is-closing' : ''}`} onMouseDown={detailsDialog.close} role="presentation"><section ref={detailsDialog.surfaceRef} className={`reverse-details${detailsDialog.closing ? ' is-closing' : ''}`} onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="reverse-details-title"><div className="row-between"><strong id="reverse-details-title">Mais detalhes</strong><button className="icon-btn" aria-label="Fechar" onClick={detailsDialog.close}><X size={18} /></button></div><div className="reverse-timeline">{items.length ? items.map((item, index) => <article className={item.t === 'Aporte' ? 'reverse-timeline-contribution' : ''} key={`${item.t}-${item.id || item.d}-${index}`}><div className="reverse-timeline-info"><strong>{formatDate(item.d)} · {item.t}</strong>{item.v !== undefined && <p>{formatCurrency(Number(item.v))}</p>}</div>{item.t === 'Aporte' && <button className="btn btn-sm reverse-timeline-edit" aria-label="Editar aporte" onClick={() => editContribution(item)} disabled={isDeleting}><Pencil size={15} /><span className="reverse-timeline-edit-label">Editar aporte</span></button>}</article>) : <p className="muted">Ainda não há movimentações nesta meta.</p>}</div></section></div>}
+    {confirmDialog}
   </div>
 }
 
@@ -145,6 +148,7 @@ function StandardCard({ goal, contributions = [], onAddContribution, onUpdateCon
   const [modal, setModal] = useState(false)
   const [details, setDetails] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
+  const [confirm, confirmDialog] = useConfirm()
   const detailsDialog = useDialog(() => setDetails(false), details)
   const progress = goal.target ? goal.current / goal.target * 100 : 0
   const completed = goal.current >= goal.target
@@ -160,7 +164,7 @@ function StandardCard({ goal, contributions = [], onAddContribution, onUpdateCon
         </button>
         <div className="row">
           <button className="icon-btn" aria-label={`Editar meta ${goal.name}`} onClick={() => onEdit(goal)} disabled={isDeleting}><Pencil size={15} /></button>
-          <button className="icon-btn danger" aria-label={`Excluir meta ${goal.name}`} disabled={isDeleting} onClick={async () => { if (window.confirm('Excluir esta meta?')) await onDelete(goal.id) }}><Trash2 size={15} /></button>
+          <button className="icon-btn danger" aria-label={`Excluir meta ${goal.name}`} disabled={isDeleting} onClick={() => confirm({ title: 'Excluir meta', message: 'Excluir esta meta?', confirmLabel: 'Excluir', danger: true, onConfirm: () => onDelete(goal.id) })}><Trash2 size={15} /></button>
         </div>
       </div>
       <div className="progress">
@@ -189,6 +193,7 @@ function StandardCard({ goal, contributions = [], onAddContribution, onUpdateCon
           <div className="reverse-timeline">{items.length ? items.map((item) => <article className="reverse-timeline-contribution" key={item.id}><div className="reverse-timeline-info"><strong>{formatDate(item.occurred_on)} · Aporte</strong><p>{formatCurrency(Number(item.amount))}{item.note && ` · ${item.note}`}</p></div><button className="btn btn-sm reverse-timeline-edit" aria-label="Editar aporte" onClick={() => editContribution(item)} disabled={isDeleting}><Pencil size={15} /><span className="reverse-timeline-edit-label">Editar aporte</span></button></article>) : <p className="muted">Ainda não há aportes nesta meta.</p>}</div>
         </section>
       </div>}
+      {confirmDialog}
     </div>
   )
 }

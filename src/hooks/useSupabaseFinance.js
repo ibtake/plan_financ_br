@@ -120,10 +120,15 @@ export function useSupabaseFinance() {
     })
     try {
       if (!user || !supabase) {
-        console.warn('[finance-load] carregamento ignorado', {
-          userPresent: Boolean(user),
-          supabaseConfigured: Boolean(supabase),
-        })
+        // Rastreio, nao falha: `!user` e o estado normal em logout e na carga
+        // inicial - em producao dispararia a cada logout. `!supabase` (env ausente)
+        // ja aparece na UI via configurationProblem(). So no dev (AUDT-025).
+        if (import.meta.env.DEV) {
+          console.warn('[finance-load] carregamento ignorado', {
+            userPresent: Boolean(user),
+            supabaseConfigured: Boolean(supabase),
+          })
+        }
         if (requestId === latestLoadRequest.current) setLoading(false)
         return false
       }
@@ -166,7 +171,8 @@ export function useSupabaseFinance() {
       if (!preserveError) setError('')
       setRevalidating(true)
       if (hydrated || preserveLoading) setDataStatus('revalidating')
-      console.info('[finance-load] iniciando carregamento', { userPresent: true, supabaseConfigured: true })
+      // Rastreio de cada carga bem-sucedida: ruido em producao, so no dev (AUDT-025).
+      if (import.meta.env.DEV) console.info('[finance-load] iniciando carregamento', { userPresent: true, supabaseConfigured: true })
       const { profileRequest, emergencyReserveRequest, supportingDataRequest, primaryDataRequest } = loadFinanceData({ supabase, guarded, selectAllPages })
       const [txResult, catResult, budgetResult, goalResult] = await primaryDataRequest
       // Uma carga iniciada antes de uma mutacao nao pode restaurar um snapshot
@@ -333,6 +339,14 @@ export function useSupabaseFinance() {
       // (B58) - o esqueleto de FinanceLoadingScreen taparia a mensagem. Vale para
       // as doze escritas otimistas que passam por aqui.
       if (rollback) rollback()
+      // Decisao AUDT-025 (aceita, sem retry automatico da mutacao): em erro
+      // retryable a operacao NAO e reenviada. insert/update passam pelo `guarded`
+      // sem chave de idempotencia, entao um reenvio cego arriscaria duplicar a
+      // linha - o mesmo motivo das guardas de duplo-clique de :48-49. A recuperacao
+      // e rollback do otimista + scheduleSessionRetry, que revalida a sessao e
+      // recarrega quando a conexao volta; o usuario reexecuta a acao se quiser.
+      // Backoff limitado so valeria para operacao idempotente (update), fora do
+      // escopo deste card - mantido como esta.
       const retryable = isRetryableConnectionError(result.error)
       const reloaded = retryable ? false : await load({ preserveError: true, preserveLoading: true })
       if (retryable) scheduleSessionRetry()

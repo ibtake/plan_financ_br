@@ -238,6 +238,20 @@ Deno.serve(async (request) => {
   let responseToken = ''
   let responseRefreshToken = ''
 
+  // SUPB-006: enforceInvalidAttemptLimit consome o teto global de invalidas
+  // (Redis `wial` + RPC `consume_widget_invalid_attempt_limit`). Os ramos de
+  // token, refresh e codigo abaixo NAO se excluem - um POST com os tres
+  // invalidos passava pelos tres gates e consumia 3 unidades do teto de 600/h,
+  // antecipando o 429 contra widgets legitimos. Consome uma unica vez por
+  // requisicao: a primeira invalida paga a unidade e decide o 429; as seguintes
+  // reaproveitam sem incrementar. O teto e por instalacao, nao por credencial.
+  let invalidChecked = false
+  const enforceInvalidOnce = async () => {
+    if (invalidChecked) return null
+    invalidChecked = true
+    return await enforceInvalidAttemptLimit(admin)
+  }
+
   // Pentest 16/08: requisicao sem NENHUMA credencial nunca e legitima - o
   // widget sempre envia token, refresh ou codigo. Consome o teto global de
   // invalidas antes de qualquer processamento; antes deste gate, POST vazio
@@ -245,7 +259,7 @@ Deno.serve(async (request) => {
   // contagem dos caminhos que ja consomem o contador com credencial invalida.
   if (!widgetToken && !refreshToken && !body.code) {
     authLog({ mode: 'none', tokenPresent: false, codePresent: false })
-    const invalidLimit = await enforceInvalidAttemptLimit(admin)
+    const invalidLimit = await enforceInvalidOnce()
     if (invalidLimit) return invalidLimit
     await recordSampledMetric(admin, 'unauthorized')
     return response(401, { error: 'Widget não autorizado.' })
@@ -261,7 +275,7 @@ Deno.serve(async (request) => {
     authLog({ mode: 'token', tokenPresent: Boolean(presentedToken), tokenLength: presentedToken.length, tokenFingerprint: tokenHash.slice(0, 12), tokenFound: Boolean(data), lookupError: tokenLookupError?.code || null })
     if (!data) {
       await recordSampledMetric(admin, 'token')
-      const invalidLimit = await enforceInvalidAttemptLimit(admin)
+      const invalidLimit = await enforceInvalidOnce()
       if (invalidLimit) return invalidLimit
       userId = ''
     } else {
@@ -280,7 +294,7 @@ Deno.serve(async (request) => {
     const { data: refreshRow } = await admin.from('widget_tokens').select('user_id').eq('refresh_token_hash', refreshHash).is('revoked_at', null).gt('refresh_expires_at', new Date().toISOString()).maybeSingle()
     if (!refreshRow) {
       await recordSampledMetric(admin, 'refresh')
-      const invalidLimit = await enforceInvalidAttemptLimit(admin)
+      const invalidLimit = await enforceInvalidOnce()
       if (invalidLimit) return invalidLimit
     } else {
       const rateLimitResponse = await enforceRateLimit(admin, refreshHash, 'refresh')
@@ -317,7 +331,7 @@ Deno.serve(async (request) => {
     authLog({ mode: 'install_code_result', found: Boolean(install), used: Boolean(install?.used_at), valid: installValid })
     if (!installValid) {
       await recordSampledMetric(admin, 'install_code')
-      const invalidLimit = await enforceInvalidAttemptLimit(admin)
+      const invalidLimit = await enforceInvalidOnce()
       if (invalidLimit) return invalidLimit
     }
     if (installValid) {

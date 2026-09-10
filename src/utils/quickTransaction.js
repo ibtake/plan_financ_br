@@ -11,7 +11,7 @@ const CATEGORY_ALIASES = {
   'aluguel-r': ['aluguel recebido'],
 }
 
-function normalize(value) {
+export function normalize(value) {
   return String(value || '')
     .toLowerCase()
     .normalize('NFD')
@@ -99,9 +99,14 @@ export function parseQuickTransaction(input, { defaultDate, categories, transact
 
   // Keep the ungrouped alternative after the grouped one, and require it to
   // consume all integer digits. Otherwise "1759,95" is captured as "175"
-  // and the remaining "9,95" leaks into the description.
-  const amountMatch = text.match(/(?:r\$\s*)?(\d{1,3}(?:\.\d{3})+|\d+)(?:[,.]\s*(\d{1,2})|\s+e\s+(\d{1,2}))?(?:\s*reais?)?/i)
-  const dateMatch = text.match(/\bdia\s*(\d{1,2})\b|\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/i)
+  // and the remaining "9,95" leaks into the description. O `\d*` depois dos
+  // centavos engole digitos extras colados a um valor ja completo (AUDT-024
+  // F-06): sem ele, "1.2345" casava "1.234" e o "5" vazava para a descricao.
+  const amountMatch = text.match(/(?:r\$\s*)?(\d{1,3}(?:\.\d{3})+|\d+)(?:[,.]\s*(\d{1,2})|\s+e\s+(\d{1,2}))?\d*(?:\s*reais?)?/i)
+  // `(?![/-])` depois do "dia N": "dia 31/08" nao pode casar so "dia 31" e deixar
+  // "/08" vazar - o \b antes impede o backtrack para "dia 3", entao a alternativa
+  // cai na de data dd/mm e captura o mes (AUDT-024 F-06).
+  const dateMatch = text.match(/\bdia\s*(\d{1,2})\b(?![/-])|\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/i)
   const amountIsDate = amountMatch && dateMatch
     && amountMatch.index >= dateMatch.index
     && amountMatch.index < dateMatch.index + dateMatch[0].length

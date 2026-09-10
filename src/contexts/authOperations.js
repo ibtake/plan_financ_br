@@ -225,20 +225,28 @@ export function useAuthOperations({ refreshAssurance }) {
       const revoke = await revokeAllPasskeys()
       if (revoke.error) return { error: `Não foi possível revogar as chaves de acesso: ${revoke.error} A senha não foi alterada.` }
     }
-    let widgetWarning = null
-    try {
-      const { error: revokeError } = await supabase.functions.invoke('widget-setup', { body: { action: 'revoke' } })
-      if (revokeError) widgetWarning = 'não foi possível revogar o widget'
-    } catch {
-      widgetWarning = 'não foi possível revogar o widget'
-    }
+    // A troca da senha vem primeiro. Revogar o widget e derrubar as outras
+    // sessoes e limpeza pos-troca: so faz sentido depois que a senha mudou de
+    // fato. Antes (AUDT-023) o widget era revogado ANTES do updateUser - uma
+    // troca que falhasse (senha fraca, rede) deixava o usuario sem widget a toa.
     const { error } = await supabase.auth.updateUser({ password: newPassword })
     if (error) return { error: translateAuthError(error), code: error.code || null }
     await logAuthEvent(AUTH_EVENTS.PASSWORD_CHANGED, 'warning', {})
+    // Daqui pra frente a senha JA mudou: o que falhar e limpeza e vira aviso,
+    // nunca erro. Devolver erro faria o usuario achar que a troca falhou e tentar
+    // de novo (AUDT-023). O widget e revogado antes do signOut global porque o
+    // signOut derruba a sessao que a Edge Function precisa para autenticar.
+    const avisos = []
+    try {
+      const { error: revokeError } = await supabase.functions.invoke('widget-setup', { body: { action: 'revoke' } })
+      if (revokeError) avisos.push('não foi possível revogar o widget — revogue nas configurações e reinstale')
+    } catch {
+      avisos.push('não foi possível revogar o widget — revogue nas configurações e reinstale')
+    }
     const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' })
-    if (signOutError) return { error: translateAuthError(signOutError) }
-    return widgetWarning
-      ? { ok: true, warning: `Senha alterada, mas ${widgetWarning}. Revogue o widget nas configurações e reinstale.` }
+    if (signOutError) avisos.push('não foi possível encerrar as outras sessões abertas')
+    return avisos.length
+      ? { ok: true, warning: `Senha alterada, mas ${avisos.join('; ')}.` }
       : { ok: true }
   }, [revokeAllPasskeys, refreshAssurance])
 
@@ -310,7 +318,13 @@ export function useAuthOperations({ refreshAssurance }) {
     await logAuthEvent(AUTH_EVENTS.MFA_ENROLLED, 'warning', {})
     const { error: refreshError } = await supabase.auth.refreshSession()
     if (refreshError) return { error: 'MFA ativado, mas não foi possível atualizar a sessão. Faça login novamente.' }
-    await refreshAssurance()
+    // Mesma guarda do signIn/verifyMfaChallenge: se a leitura do nivel falhar, nao
+    // seguir como se o aal2 estivesse confirmado - o mfaStage nao subiria e a tela
+    // ficaria presa sem erro. Erro transitorio faz o usuario repetir (AUDT-023).
+    const assurance = await refreshAssurance()
+    if (assurance?.error) {
+      return { error: 'Não foi possível confirmar o nível de segurança da sessão. Tente novamente.' }
+    }
     return { ok: true }
   }, [refreshAssurance])
 
@@ -328,7 +342,10 @@ export function useAuthOperations({ refreshAssurance }) {
     }
     await logAuthEvent(AUTH_EVENTS.MFA_OK, 'info', {})
     await logAuthEvent(AUTH_EVENTS.LOGIN_SUCCESS, 'info', { mfa: true })
-    await refreshAssurance()
+    const assurance = await refreshAssurance()
+    if (assurance?.error) {
+      return { error: 'Não foi possível confirmar o nível de segurança da sessão. Tente novamente.' }
+    }
     return { ok: true }
   }, [listFactors, refreshAssurance])
 

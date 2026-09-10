@@ -242,7 +242,11 @@ export function useAuthSession() {
 
     const coordinatedRefresh = createRefreshCoordinator(async () => {
       try {
-        return await refreshSessionOnReturn()
+        const ok = await refreshSessionOnReturn()
+        // Sucesso zera o backoff de reconexao: senao uma revalidacao boa deixa
+        // retryAttempt alto e o proximo blip espera o delay maximo a toa (AUDT-023).
+        if (ok) retryAttempt.current = 0
+        return ok
       } catch (error) {
         if (isRetryableConnectionError(error)) scheduleSessionRetry()
         return false

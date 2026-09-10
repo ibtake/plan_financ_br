@@ -81,7 +81,7 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
             aria-current={moreIsActive ? 'page' : undefined}
             aria-expanded={moreOpen}
             aria-controls="bottom-nav-more-menu"
-            aria-haspopup="menu"
+            aria-haspopup="true"
           >
             <MoreHorizontal size={20} strokeWidth={moreIsActive || moreOpen ? 2.2 : 1.8} />
             <span>Mais</span>
@@ -94,7 +94,7 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
           aria-hidden={!moreOpen}
         >
           <div className="bottom-nav-popover-title">Mais opções</div>
-          <div className="bottom-nav-popover-list" role="menu" aria-label="Mais opções">
+          <div className="bottom-nav-popover-list" aria-label="Mais opções">
             {MOBILE_SECONDARY.map((item) => {
               const Icon = item.icon
               const isActive = active === item.id
@@ -104,7 +104,6 @@ export default function BottomNav({ active, onChange, badges = {}, onOpenNew }) 
                 <button
                   key={item.id}
                   type="button"
-                  role="menuitem"
                   className={`bottom-nav-popover-item${isActive ? ' active' : ''}`}
                   onClick={() => handleSelect(item.id)}
                   tabIndex={moreOpen ? 0 : -1}
