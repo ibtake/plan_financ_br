@@ -4,6 +4,7 @@ import { importJSON } from '../utils/exporters.js'
 import { normalizeTransactionFormFields } from '../utils/transactionFormFields.js'
 import { createWidgetSetup, getWidgetStatus, revokeWidget } from '../lib/widgetApi.js'
 import AdminUserManagement from './AdminUserManagement.jsx'
+import { useConfirm } from './ConfirmDialog.jsx'
 
 export default function SettingsPanel({
   theme,
@@ -25,6 +26,7 @@ export default function SettingsPanel({
 }) {
   const inputRef = useRef(null)
   const [message, setMessage] = useState(null)
+  const [confirm, confirmDialog] = useConfirm()
   const [retentionMonths, setRetentionMonths] = useState(reverseGoalRetentionMonths ?? '')
   const [savingRetention, setSavingRetention] = useState(false)
   const [settingUpWidget, setSettingUpWidget] = useState(false)
@@ -91,20 +93,26 @@ export default function SettingsPanel({
       return
     }
     const description = normalized === null ? 'Nunca excluir metas reversas concluídas?' : `Excluir permanentemente metas reversas concluídas após ${normalized} mês(es)?`
-    if (!window.confirm(`${description} Metas em andamento e metas comuns nunca serão excluídas.`)) return
-    // O par savingRetention fica fora do runAction, que nunca rejeita - tem catch
-    // proprio -, e por isso o setSavingRetention(false) abaixo sempre roda.
-    setSavingRetention(true)
-    await runAction(
-      () => onSetReverseGoalRetention(normalized),
-      normalized === null
-        ? 'Retenção desativada: metas concluídas não serão excluídas automaticamente.'
-        : 'Configuração de retenção aplicada.',
-      // "Nada foi alterado" e exato: setReverseGoalRetention so devolve false
-      // quando a RPC set_reverse_goal_retention falha, e nada foi gravado ali.
-      'Não foi possível aplicar a configuração de retenção. Nada foi alterado.',
-    )
-    setSavingRetention(false)
+    confirm({
+      title: 'Retenção de metas reversas',
+      message: `${description} Metas em andamento e metas comuns nunca serão excluídas.`,
+      confirmLabel: 'Aplicar',
+      onConfirm: async () => {
+        // O par savingRetention fica fora do runAction, que nunca rejeita - tem catch
+        // proprio -, e por isso o setSavingRetention(false) abaixo sempre roda.
+        setSavingRetention(true)
+        await runAction(
+          () => onSetReverseGoalRetention(normalized),
+          normalized === null
+            ? 'Retenção desativada: metas concluídas não serão excluídas automaticamente.'
+            : 'Configuração de retenção aplicada.',
+          // "Nada foi alterado" e exato: setReverseGoalRetention so devolve false
+          // quando a RPC set_reverse_goal_retention falha, e nada foi gravado ali.
+          'Não foi possível aplicar a configuração de retenção. Nada foi alterado.',
+        )
+        setSavingRetention(false)
+      },
+    })
   }
 
   const handleFile = async (event) => {
@@ -128,21 +136,30 @@ export default function SettingsPanel({
     // planos PGBL nao entram na troca: importData mantem os atuais. A excecao e o
     // B64 - buildSampleData recria a categoria padrao que o exemplo usa e o usuario
     // excluiu, senao os lancamentos entram orfaos (nao ha FK em category_id).
-    if (!window.confirm('Lançamentos, orçamentos e metas serão substituídos pelos dados de exemplo. Suas categorias e os planos do Aporte Certo são preservados; categorias padrão que você excluiu e que o exemplo usa serão recriadas. Continuar?')) return
-    await runAction(
-      onLoadSample,
-      'Dados de exemplo carregados.',
-      'Não foi possível carregar os dados de exemplo. Nenhum dado foi alterado.',
-    )
+    confirm({
+      title: 'Carregar dados de exemplo',
+      message: 'Lançamentos, orçamentos e metas serão substituídos pelos dados de exemplo. Suas categorias e os planos do Aporte Certo são preservados; categorias padrão que você excluiu e que o exemplo usa serão recriadas. Continuar?',
+      confirmLabel: 'Carregar exemplo',
+      onConfirm: () => runAction(
+        onLoadSample,
+        'Dados de exemplo carregados.',
+        'Não foi possível carregar os dados de exemplo. Nenhum dado foi alterado.',
+      ),
+    })
   }
 
   const clear = async () => {
-    if (!window.confirm('Apagar lançamentos, orçamentos, metas e restaurar as categorias padrão? Esta ação não pode ser desfeita.')) return
-    await runAction(
-      onClearAll,
-      'Dados da conta removidos.',
-      'Não foi possível remover os dados. Nada foi apagado.',
-    )
+    confirm({
+      title: 'Apagar todos os dados',
+      message: 'Apagar lançamentos, orçamentos, metas e restaurar as categorias padrão? Esta ação não pode ser desfeita.',
+      confirmLabel: 'Apagar tudo',
+      danger: true,
+      onConfirm: () => runAction(
+        onClearAll,
+        'Dados da conta removidos.',
+        'Não foi possível remover os dados. Nada foi apagado.',
+      ),
+    })
   }
 
   const setupWidget = async () => {
@@ -160,17 +177,24 @@ export default function SettingsPanel({
   }
 
   const disableWidget = async () => {
-    if (!window.confirm('Revogar o acesso de todos os widgets Scriptable desta conta?')) return
-    setRevokingWidget(true)
-    try {
-      await revokeWidget()
-      setWidgetTokens((tokens) => tokens.map((token) => ({ ...token, revoked_at: new Date().toISOString() })))
-      setMessage({ tone: 'success', text: 'Acesso do widget revogado. O Scriptable deixará de receber dados.' })
-    } catch (error) {
-      setMessage({ tone: 'danger', text: error.message })
-    } finally {
-      setRevokingWidget(false)
-    }
+    confirm({
+      title: 'Revogar acesso do widget',
+      message: 'Revogar o acesso de todos os widgets Scriptable desta conta?',
+      confirmLabel: 'Revogar',
+      danger: true,
+      onConfirm: async () => {
+        setRevokingWidget(true)
+        try {
+          await revokeWidget()
+          setWidgetTokens((tokens) => tokens.map((token) => ({ ...token, revoked_at: new Date().toISOString() })))
+          setMessage({ tone: 'success', text: 'Acesso do widget revogado. O Scriptable deixará de receber dados.' })
+        } catch (error) {
+          setMessage({ tone: 'danger', text: error.message })
+        } finally {
+          setRevokingWidget(false)
+        }
+      },
+    })
   }
 
   return (
@@ -260,7 +284,7 @@ export default function SettingsPanel({
             </label>
           ))}
         </div>
-        <p className="hint" style={{ marginTop: 12 }} role={loadingWidgetStatus ? 'status' : widgetError ? 'alert' : undefined} aria-live="polite">
+        <p className="hint" style={{ marginTop: 12 }}>
           Descrição, valor, data, categoria e tipo são obrigatórios e continuam sempre visíveis. As preferências ficam salvas apenas na sua conta.
         </p>
       </section>
@@ -284,7 +308,7 @@ export default function SettingsPanel({
             {revokingWidget ? 'Revogando...' : 'Revogar todos os acessos'}
           </button>
         </div>
-        <p className="hint" style={{ marginTop: 12 }}>
+        <p className="hint" style={{ marginTop: 12 }} role={loadingWidgetStatus ? 'status' : widgetError ? 'alert' : undefined} aria-live="polite">
           {loadingWidgetStatus ? 'Consultando integrações...' : widgetError ? 'Não foi possível consultar as integrações. Tente novamente.' : `${widgetTokens.filter((token) => !token.revoked_at).length} integração(ões) ativa(s).`}
           {' '}Os valores dos tokens não são exibidos nem recuperáveis; apenas o status pode ser consultado. O botão vermelho revoga todos os widgets desta conta.
         </p>
@@ -383,6 +407,7 @@ export default function SettingsPanel({
           <button className="btn btn-danger" onClick={clear}>Apagar todos os dados</button>
         </div>
       </section>
+      {confirmDialog}
     </div>
   )
 }

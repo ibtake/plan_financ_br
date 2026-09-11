@@ -1422,23 +1422,30 @@ alter table public.goals
   add column if not exists reverse_start_date date,
   add column if not exists reverse_selic_factor numeric(6,4),
   add column if not exists reverse_completed_at timestamptz;
-alter table public.goals add constraint goals_goal_type_check check (goal_type in ('standard','reverse'));
-alter table public.goals add constraint goals_reverse_data_check check (goal_type = 'standard' or (reverse_original_amount > 0 and reverse_remaining_amount >= 0 and reverse_corrected_amount >= 0 and reverse_start_date is not null and reverse_selic_factor between .5 and 1.5));
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'goals_goal_type_check') then
+    alter table public.goals add constraint goals_goal_type_check check (goal_type in ('standard','reverse'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'goals_reverse_data_check') then
+    alter table public.goals add constraint goals_reverse_data_check check (goal_type = 'standard' or (reverse_original_amount > 0 and reverse_remaining_amount >= 0 and reverse_corrected_amount >= 0 and reverse_start_date is not null and reverse_selic_factor between .5 and 1.5));
+  end if;
+end $$;
 
-create table public.selic_monthly_rates (
+create table if not exists public.selic_monthly_rates (
   reference_month date primary key check (date_trunc('month', reference_month)::date = reference_month),
   rate_percent numeric(10,6) not null check (rate_percent >= 0 and rate_percent < 100),
   source text not null default 'BCB_SGS_4390' check (source = 'BCB_SGS_4390'),
   source_observed_on date not null, fetched_at timestamptz not null default now(), created_at timestamptz not null default now()
 );
-create table public.reverse_goal_contributions (
+create table if not exists public.reverse_goal_contributions (
   id bigint generated always as identity primary key, goal_id text not null,
   user_id uuid not null references auth.users(id) on delete cascade, amount numeric(14,2) not null check (amount > 0),
   occurred_on date not null, note text check (note is null or char_length(note) <= 500), created_at timestamptz not null default now(),
   foreign key (user_id, goal_id) references public.goals(user_id, id) on delete cascade
 );
-create index reverse_goal_contributions_goal_date_idx on public.reverse_goal_contributions (goal_id, occurred_on, id);
-create table public.reverse_goal_history (
+create index if not exists reverse_goal_contributions_goal_date_idx on public.reverse_goal_contributions (goal_id, occurred_on, id);
+create index if not exists reverse_goal_contributions_user_date_idx on public.reverse_goal_contributions (user_id, occurred_on desc, id desc);
+create table if not exists public.reverse_goal_history (
   id bigint generated always as identity primary key, goal_id text not null,
   user_id uuid not null references auth.users(id) on delete cascade, reference_month date not null check (date_trunc('month', reference_month)::date = reference_month), applied_on date not null,
   balance_before numeric(14,2) not null check (balance_before >= 0), balance_after numeric(14,2) not null check (balance_after >= 0),
@@ -1446,12 +1453,16 @@ create table public.reverse_goal_history (
   correction_amount numeric(14,2) not null check (correction_amount >= 0), contribution_amount numeric(14,2) not null check (contribution_amount >= 0), created_at timestamptz not null default now(), unique (user_id, goal_id, reference_month),
   foreign key (user_id, goal_id) references public.goals(user_id, id) on delete cascade
 );
-create index reverse_goal_history_goal_month_idx on public.reverse_goal_history (goal_id, reference_month desc);
+create index if not exists reverse_goal_history_goal_month_idx on public.reverse_goal_history (goal_id, reference_month desc);
+create index if not exists reverse_goal_history_user_month_idx on public.reverse_goal_history (user_id, reference_month desc, id desc);
 alter table public.selic_monthly_rates enable row level security; alter table public.selic_monthly_rates force row level security;
 alter table public.reverse_goal_contributions enable row level security; alter table public.reverse_goal_contributions force row level security;
 alter table public.reverse_goal_history enable row level security; alter table public.reverse_goal_history force row level security;
+drop policy if exists "authenticated read selic monthly rates" on public.selic_monthly_rates;
 create policy "authenticated read selic monthly rates" on public.selic_monthly_rates for select to authenticated using (public.is_token_valid() and public.has_required_aal());
+drop policy if exists "own reverse goal contributions select" on public.reverse_goal_contributions;
 create policy "own reverse goal contributions select" on public.reverse_goal_contributions for select to authenticated using (auth.uid() = user_id and public.is_token_valid() and public.has_required_aal());
+drop policy if exists "own reverse goal history select" on public.reverse_goal_history;
 create policy "own reverse goal history select" on public.reverse_goal_history for select to authenticated using (auth.uid() = user_id and public.is_token_valid() and public.has_required_aal());
 grant select on public.selic_monthly_rates, public.reverse_goal_contributions, public.reverse_goal_history to authenticated;
 
@@ -1459,16 +1470,29 @@ grant select on public.selic_monthly_rates, public.reverse_goal_contributions, p
 alter table public.goals add column if not exists reverse_total_contributed numeric(14,2) not null default 0;
 alter table public.goals add column if not exists reverse_correction_amount numeric(14,2) not null default 0;
 alter table public.goals add column if not exists reverse_progress_percent numeric(6,2) not null default 0;
-alter table public.goals add constraint goals_reverse_summary_check check (reverse_total_contributed >= 0 and reverse_correction_amount >= 0 and reverse_progress_percent between 0 and 100);
-alter table public.goals add constraint goals_reverse_original_limit check (goal_type <> 'reverse' or reverse_original_amount < 1000000000);
-alter table public.goals add constraint goals_reverse_remaining_limit check (goal_type <> 'reverse' or reverse_remaining_amount < 1000000000);
-alter table public.goals add constraint goals_reverse_corrected_limit check (goal_type <> 'reverse' or reverse_corrected_amount < 1000000000);
-create table public.reverse_goal_events (id bigint generated always as identity primary key, goal_id text not null, user_id uuid not null references auth.users(id) on delete cascade, event_type text not null check (event_type in ('created','contribution','recalculated','completed')), occurred_on date not null, details jsonb not null default '{}'::jsonb, created_at timestamptz not null default now(), foreign key (user_id, goal_id) references public.goals(user_id, id) on delete cascade);
-create index reverse_goal_events_goal_date_idx on public.reverse_goal_events(goal_id,occurred_on,id);
-create table public.reverse_goal_retention_settings (user_id uuid primary key references auth.users(id) on delete cascade, completed_goal_retention_months smallint check (completed_goal_retention_months between 1 and 12), updated_at timestamptz not null default now());
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'goals_reverse_summary_check') then
+    alter table public.goals add constraint goals_reverse_summary_check check (reverse_total_contributed >= 0 and reverse_correction_amount >= 0 and reverse_progress_percent between 0 and 100);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'goals_reverse_original_limit') then
+    alter table public.goals add constraint goals_reverse_original_limit check (goal_type <> 'reverse' or reverse_original_amount < 1000000000);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'goals_reverse_remaining_limit') then
+    alter table public.goals add constraint goals_reverse_remaining_limit check (goal_type <> 'reverse' or reverse_remaining_amount < 1000000000);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'goals_reverse_corrected_limit') then
+    alter table public.goals add constraint goals_reverse_corrected_limit check (goal_type <> 'reverse' or reverse_corrected_amount < 1000000000);
+  end if;
+end $$;
+create table if not exists public.reverse_goal_events (id bigint generated always as identity primary key, goal_id text not null, user_id uuid not null references auth.users(id) on delete cascade, event_type text not null check (event_type in ('created','contribution','recalculated','completed')), occurred_on date not null, details jsonb not null default '{}'::jsonb, created_at timestamptz not null default now(), foreign key (user_id, goal_id) references public.goals(user_id, id) on delete cascade);
+create index if not exists reverse_goal_events_goal_date_idx on public.reverse_goal_events(goal_id,occurred_on,id);
+create index if not exists reverse_goal_events_user_date_idx on public.reverse_goal_events (user_id, occurred_on desc, id desc);
+create table if not exists public.reverse_goal_retention_settings (user_id uuid primary key references auth.users(id) on delete cascade, completed_goal_retention_months smallint check (completed_goal_retention_months between 1 and 12), updated_at timestamptz not null default now());
 alter table public.reverse_goal_events enable row level security; alter table public.reverse_goal_events force row level security;
 alter table public.reverse_goal_retention_settings enable row level security; alter table public.reverse_goal_retention_settings force row level security;
+drop policy if exists "own reverse goal events select" on public.reverse_goal_events;
 create policy "own reverse goal events select" on public.reverse_goal_events for select to authenticated using (auth.uid()=user_id and public.is_token_valid() and public.has_required_aal());
+drop policy if exists "own reverse goal retention select" on public.reverse_goal_retention_settings;
 create policy "own reverse goal retention select" on public.reverse_goal_retention_settings for select to authenticated using (auth.uid()=user_id and public.is_token_valid() and public.has_required_aal());
 grant select on public.reverse_goal_events, public.reverse_goal_retention_settings to authenticated;
 create or replace function public.rebuild_reverse_goal(p_goal_id text)

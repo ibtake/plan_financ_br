@@ -4,6 +4,7 @@ import AppIcon from './AppIcon.jsx'
 import { useIcons, STORAGE_FULL_MESSAGE } from '../contexts/IconContext.jsx'
 import { ICON_CATALOG, ICON_GROUPS, TOTAL_ICONS } from '../utils/iconRegistry.js'
 import { estimateStorageBytes, readIconFile } from '../utils/iconUpload.js'
+import { useConfirm } from './ConfirmDialog.jsx'
 
 /** Linha da tabela: um emoji, onde ele aparece e o controle de substituicao */
 function IconRow({ item, replaced, onUpload, onClear, busy }) {
@@ -66,6 +67,7 @@ export default function IconManager() {
   const [message, setMessage] = useState(null)
   const [busy, setBusy] = useState(false)
   const messageTimer = useRef(0)
+  const [confirm, confirmDialog] = useConfirm()
 
   const notify = (text, kind = 'ok') => {
     setMessage({ text, kind })
@@ -102,10 +104,16 @@ export default function IconManager() {
 
   const handleClearAll = () => {
     if (!storedCount) return
-    if (window.confirm(`Restaurar os ${storedCount} ícones personalizados para os emojis originais?`)) {
-      clearAll()
-      notify('Todos os ícones voltaram ao padrão.')
-    }
+    confirm({
+      title: 'Restaurar ícones',
+      message: `Restaurar os ${storedCount} ícones personalizados para os emojis originais?`,
+      confirmLabel: 'Restaurar',
+      danger: true,
+      onConfirm: () => {
+        clearAll()
+        notify('Todos os ícones voltaram ao padrão.')
+      },
+    })
   }
 
   const visible = useMemo(() => {
@@ -233,6 +241,7 @@ export default function IconManager() {
           </div>
         </div>
       ))}
+      {confirmDialog}
     </div>
   )
 }

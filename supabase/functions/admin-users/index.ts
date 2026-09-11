@@ -352,7 +352,7 @@ Deno.serve(async (request) => {
       if (data.users.length < 100) break
       if (page === 10) {
         const { data: probe, error: probeError } = await admin.auth.admin.listUsers({ page: 11, perPage: 1 })
-        if (probeError) return response(request, 500, { error: 'NÃ£o foi possÃ­vel listar os usuÃ¡rios.' })
+        if (probeError) return response(request, 500, { error: 'Não foi possível listar os usuários.' })
         truncated = probe.users.length > 0
       }
     }

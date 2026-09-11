@@ -213,11 +213,13 @@ export function parseAmount(input) {
   let s = String(input).trim().replace(/[R$\s]/g, '')
   if (s.includes(',')) {
     s = s.replace(/\./g, '').replace(',', '.')
-  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) {
+  } else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(s)) {
     // Sem virgula e com grupos de exatamente 3 digitos e milhar pt-BR: "1.234"
     // sao mil duzentos e trinta e quatro, nao um real e vinte e tres. Padrao
     // estreito de proposito - "1234.56", "12.5" e "0.5" seguem decimais, que e
-    // como numero sai serializado em JSON.
+    // como numero sai serializado em JSON. O primeiro grupo exige [1-9]: "0.123"
+    // e "0.500" comecam com zero, entao sao decimais (0,123 e 0,5), nunca milhar
+    // - nenhum valor de milhar comeca com zero antes do ponto (AUDT-024 F-01).
     s = s.replace(/\./g, '')
   }
   const n = parseFloat(s)
