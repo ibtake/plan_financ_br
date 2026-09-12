@@ -128,5 +128,5 @@ são imutáveis: o objetivo delas fica aqui.
 | `20260816203837_v44_fix_replace_my_data_race.sql` | Serializa restores concorrentes do mesmo usuário (achado vuln-0001 do pentest de 16/08). |
 | `20260825023357_v45_force_rls_widget_tables.sql` | Aplica `force row level security` nas tabelas do widget. |
 | `20260906143000_v46_security_events_passkey_types.sql` | Amplia o check de `security_events` para os eventos de passkey: `passkey_registered`, `passkey_revoked` e `passkey_revoked_all`. |
-| `20260907143000_v47_emergency_reserve.sql` | Cria a Reserva de emergência (IMPR-004): tabela `emergency_reserve` por usuário com RLS, RPCs de meta e correção manual de saldo, categoria padrão e limpeza no delete/restore. |
+| `20260907230030_v47_emergency_reserve.sql` | Cria a Reserva de emergência (IMPR-004): tabela `emergency_reserve` por usuário com RLS, RPCs de meta e correção manual de saldo, categoria padrão e limpeza no delete/restore. |
 | `20260909162529_v48_reverse_goal_user_id_indexes.sql` | Adiciona três índices liderados por `user_id` em `reverse_goal_contributions`, `reverse_goal_history` e `reverse_goal_events` (SUPB-004), casando com a ordem de leitura do `financeLoader`; expand-only, os índices por `goal_id` permanecem. |

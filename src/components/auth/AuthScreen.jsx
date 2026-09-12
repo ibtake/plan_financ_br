@@ -149,6 +149,9 @@ export default function AuthScreen() {
   // "pronto" quando valida. Vazio quando o captcha nao esta configurado (sem
   // gate, sem sinal). Vira classe no cracha (login) e no botao (reset).
   const captchaGate = captchaEnabled ? (captchaToken ? 'is-gate-ready' : 'is-gate-pending') : ''
+  // Cracha revelado: token validado, ou captcha nem configurado (nasce pronto).
+  // "Usar senha" so existe depois desse ponto - nao aparece durante o skeleton.
+  const gateRevealed = !captchaEnabled || !!captchaToken
 
   const pickAnotherAccount = () => {
     setSelected(null)
@@ -387,6 +390,9 @@ export default function AuthScreen() {
                 {crachaMode ? (
                   // Conta com passkey: a identidade vira botao. Tocar inicia o
                   // login por chave de acesso; a senha so aparece se ele falhar.
+                  // Enquanto o Turnstile nao libera, um skeleton desenhado pulsa
+                  // por cima do conteudo real (oculto com blur); ao validar, o
+                  // skeleton fade-out + blur e o conteudo fade-in + un-blur.
                   <button
                     type="button"
                     className={`auth-identity auth-identity-passkey ${captchaGate}`}
@@ -394,16 +400,27 @@ export default function AuthScreen() {
                     disabled={busy || (captchaEnabled && !captchaToken)}
                     aria-label={`Entrar com chave de acesso de ${selected}`}
                   >
-                    <span className="auth-identity-avatar-wrap">
-                      <span className="avatar" aria-hidden="true">{selected.slice(0, 2)}</span>
-                      <span className="auth-identity-key" aria-hidden="true"><KeyRound size={16} strokeWidth={2} /></span>
+                    {captchaEnabled && (
+                      <span className="t-skel-skeleton is-pulsing" aria-hidden="true">
+                        <span className="t-skel-avatar" />
+                        <span className="t-skel-bar" />
+                        <span className="t-skel-bar is-wide" />
+                      </span>
+                    )}
+                    <span className="t-skel-content">
+                      <span className="auth-identity-avatar-wrap">
+                        <span className="avatar" aria-hidden="true">{selected.slice(0, 2)}</span>
+                        <span className="auth-identity-key" aria-hidden="true"><KeyRound size={16} strokeWidth={2} /></span>
+                      </span>
+                      <span className="auth-account-email">{selected}</span>
+                      <span className="auth-identity-hint">Toque para entrar com a chave de acesso</span>
                     </span>
-                    <span className="auth-account-email">{selected}</span>
-                    <span className="auth-identity-hint">Toque para entrar com a chave de acesso</span>
                   </button>
                 ) : null}
-                {crachaMode && (
+                {crachaMode && gateRevealed && (
                   // Escape sem esperar a passkey falhar: revela a senha ja.
+                  // So depois do reveal do cracha - nada de atalho durante o
+                  // skeleton, quando nem se sabe ainda se o gate vai passar.
                   <button type="button" className="link-btn auth-use-password" onClick={() => setPasskeyFailed(true)}>
                     Usar senha
                   </button>
