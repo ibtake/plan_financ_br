@@ -3,6 +3,7 @@ import { AlertTriangle, CircleHelp, Pencil, Plus, Trash2, Trophy, X } from 'luci
 import AppIcon from './AppIcon.jsx'
 import { amountToInput, formatAmountInput, formatCurrency, formatDate, formatPercent, monthLabelShort, monthsBehind, parseAmount, todayISO } from '../utils/format.js'
 import { useDialog } from '../hooks/useDialog.js'
+import { useKeyboardInset } from '../hooks/useKeyboardInset.js'
 import { useConfirm } from './ConfirmDialog.jsx'
 
 const ICONS = ['🎯', '✈️', '🏠', '🚗', '💻', '🎓', '💍', '🏖️', '📱', '🎁']
@@ -70,6 +71,7 @@ function ContributionModal({ goal, onSave, onClose, title = 'Registrar aporte', 
   const [amount, setAmount] = useState('')
   const [occurredOn, setOccurredOn] = useState(todayISO())
   const { closing, close, surfaceRef } = useDialog(onClose)
+  useKeyboardInset()
   const submit = async (event) => { event.preventDefault(); if (await onSave(goal.id, { amount: parseAmount(amount), occurredOn })) close() }
   return <div className={`reverse-modal-backdrop${closing ? ' is-closing' : ''}`} onMouseDown={close} role="presentation"><form ref={surfaceRef} className={`reverse-details aporte-modal${closing ? ' is-closing' : ''}`} onMouseDown={(event) => event.stopPropagation()} onSubmit={submit} role="dialog" aria-modal="true" aria-label={title}><div className="row-between"><strong>{title}</strong><button type="button" className="icon-btn" onClick={close} aria-label="Fechar"><X size={18} /></button></div><label className="label">Valor *</label><input name={amountName} className="input mono aporte-value" value={amount} onChange={(event) => setAmount(formatAmountInput(event.target.value))} inputMode="numeric" required autoFocus /><label className="label">{dateLabel} *</label><input name={dateName} className="input" type="date" min={minDate} max={todayISO()} value={occurredOn} onChange={(event) => setOccurredOn(event.target.value)} required /><button className="btn btn-primary">Salvar aporte</button></form></div>
 }
@@ -81,6 +83,7 @@ function EditContributionModal({ item, minDate, onSave, onClose }) {
   const [occurredOn, setOccurredOn] = useState(item.occurredOn || '')
   const [saving, setSaving] = useState(false)
   const { closing, close, surfaceRef } = useDialog(onClose, true, saving)
+  useKeyboardInset()
 
   const submit = async (event) => {
     event.preventDefault()

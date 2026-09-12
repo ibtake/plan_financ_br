@@ -2944,6 +2944,12 @@ dialog.modal-backdrop {
   box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 40%, transparent);
   transition: var(--transition);
   pointer-events: auto;
+  /* Tokens do morph plus (transitions.dev), escopados ao FAB. */
+  --fab-in-dur: 350ms;
+  --fab-out-dur: 250ms;
+  --fab-in-ease: cubic-bezier(0.34, 1.25, 0.64, 1);
+  --fab-out-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --fab-blur: 2px;
 }
 
 .fab:active {
@@ -2953,7 +2959,8 @@ dialog.modal-backdrop {
 .fab.is-hidden {
   opacity: 0;
   pointer-events: none;
-  transform: scale(0.82) translateY(8px);
+  transform: scale(0.7) rotate(-90deg);
+  filter: blur(var(--fab-blur));
 }
 
 @media (max-width: 768px) {
@@ -3415,6 +3422,7 @@ dialog.modal-backdrop {
 /* Conta com passkey: a identidade vira um botao (o "cracha"). Avatar maior,
    chave no canto, e-mail e dica embaixo. Tocar inicia o login por passkey. */
 .auth-identity-passkey {
+  position: relative;
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -3422,6 +3430,10 @@ dialog.modal-backdrop {
   padding: 20px 16px;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  /* Tokens do reveal skeleton + reveal (escopados ao cracha, sem tocar :root). */
+  --reveal-dur: 400ms;
+  --reveal-blur: 2px;
+  --reveal-ease: ease-in-out;
 }
 
 .auth-identity-passkey:hover:not(:disabled),
@@ -3468,6 +3480,12 @@ dialog.modal-backdrop {
 .auth-use-password {
   display: block;
   margin: 12px auto 0;
+  /* So e montado depois do reveal do cracha; o fade suaviza a entrada. */
+  animation: auth-use-password-in 0.2s ease both;
+}
+
+@keyframes auth-use-password-in {
+  from { opacity: 0; }
 }
 
 /* Sinal do captcha embutido: so a bolinha das iniciais muda de cor. O quadrado
@@ -3487,37 +3505,92 @@ dialog.modal-backdrop {
   box-shadow: 0 0 0 2px var(--income);
 }
 
-/* Skeleton "carregando" no cracha do passkey enquanto o Turnstile nao libera:
-   avatar (com a chave), e-mail e dica entram borrados e pulsando; ao validar, o
-   blur some suave e o anel verde do avatar aparece - o sinal de "apto ao login".
+/* Skeleton "carregando" no cracha do passkey enquanto o Turnstile nao libera
+   (padrao skeleton loader + reveal): um skeleton desenhado (circulo + barras)
+   pulsa por cima do conteudo real, que fica oculto com blur. Ao validar, o
+   skeleton fade-out + blur e o conteudo fade-in + un-blur, com o anel verde
+   "apto ao login" surgindo no avatar. As duas camadas compartilham duracao e
+   ease, entao o swap le como um movimento so. A transicao so existe declarada
+   no estado pronto (.is-gate-ready): a reversao (trocar de conta, voltar a
+   pendurar) e instantanea, sem precisar de classe de reset imperativa.
+   Sem captcha configurado nao ha skeleton: o cracha nasce revelado.
    So no cracha; a conta sem passkey (senha visivel) segue como era. */
-.auth-identity-passkey .auth-identity-avatar-wrap,
-.auth-identity-passkey .auth-account-email,
-.auth-identity-passkey .auth-identity-hint {
-  transition: filter 0.35s ease;
+.auth-identity-passkey .t-skel-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  opacity: 1;
+  filter: blur(0);
 }
-.auth-identity-passkey.is-gate-pending .auth-identity-avatar-wrap,
-.auth-identity-passkey.is-gate-pending .auth-account-email,
-.auth-identity-passkey.is-gate-pending .auth-identity-hint {
-  filter: blur(5px);
+.auth-identity-passkey .t-skel-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  opacity: 1;
+  filter: blur(0);
+}
+/* Formas do skeleton: imitam a silhueta do conteudo (avatar 64px, e-mail,
+   dica). Pulse nos filhos, nao na camada, para opacity/filter da camada
+   ficarem livres para o cross-fade do reveal. */
+.auth-identity-passkey .t-skel-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--surface-2);
+}
+.auth-identity-passkey .t-skel-bar {
+  width: 150px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+.auth-identity-passkey .t-skel-bar.is-wide {
+  width: 190px;
+  height: 12px;
+  border-radius: 6px;
+}
+.auth-identity-passkey.is-gate-pending .t-skel-content {
+  opacity: 0;
+  filter: blur(var(--reveal-blur));
+}
+.auth-identity-passkey.is-gate-pending .t-skel-skeleton.is-pulsing > * {
   animation: auth-gate-skeleton 1.1s ease-in-out infinite;
 }
-.auth-identity-passkey.is-gate-ready .auth-identity-avatar-wrap,
-.auth-identity-passkey.is-gate-ready .auth-account-email,
-.auth-identity-passkey.is-gate-ready .auth-identity-hint {
+/* Estado pronto: transicao declarada aqui (no destino) para o reveal animar
+   e a volta ao pendente nao animar nada. */
+.auth-identity-passkey.is-gate-ready .t-skel-content {
+  transition:
+    opacity var(--reveal-dur) var(--reveal-ease),
+    filter var(--reveal-dur) var(--reveal-ease);
+  opacity: 1;
   filter: blur(0);
-  animation: none;
+}
+.auth-identity-passkey.is-gate-ready .t-skel-skeleton {
+  transition:
+    opacity var(--reveal-dur) var(--reveal-ease),
+    filter var(--reveal-dur) var(--reveal-ease);
+  opacity: 0;
+  filter: blur(var(--reveal-blur));
+  pointer-events: none;
 }
 @keyframes auth-gate-skeleton {
   50% { opacity: 0.5; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .auth-identity-passkey .auth-identity-avatar-wrap,
-  .auth-identity-passkey .auth-account-email,
-  .auth-identity-passkey .auth-identity-hint {
-    filter: none;
-    animation: none;
+  .auth-identity-passkey .t-skel-content,
+  .auth-identity-passkey .t-skel-skeleton {
     transition: none;
+  }
+  .auth-identity-passkey .t-skel-skeleton.is-pulsing > * {
+    animation: none;
   }
 }
 
@@ -3572,7 +3645,8 @@ dialog.modal-backdrop {
 @media (prefers-reduced-motion: reduce) {
   .auth-step,
   .auth-step.is-leaving,
-  .auth-password-reveal {
+  .auth-password-reveal,
+  .auth-use-password {
     animation: none;
   }
 
@@ -4584,6 +4658,10 @@ dialog.modal-backdrop {
 .reverse-timeline article { border-left:3px solid var(--primary); padding:9px 12px; border-radius:0 8px 8px 0; background:var(--surface-2); }
 .reverse-timeline p { margin:5px 0 0; font-size:.82rem; color:var(--muted); line-height:1.45; }
 @media (max-width: 768px) { .reverse-modal-backdrop { align-items:flex-end; padding:0; } .reverse-details { width:100%; max-height:88vh; border-radius:18px 18px 0 0; padding:18px; } .reverse-modal-backdrop:has(.reverse-details:not(.aporte-modal)) { inset:0 0 calc(var(--bottom-nav-h) + env(safe-area-inset-bottom)); z-index:44; align-items:center; padding:12px; background:rgb(15 23 42 / .58); } .reverse-details:not(.aporte-modal) { width:min(680px,100%); max-height:min(64dvh,620px); border-radius:18px; padding:16px; } }
+/* BUG-007: no iOS o teclado cobre a folha de aporte ancorada no rodapé (o
+   Safari ignora interactive-widget=resizes-content); useKeyboardInset mede o
+   recorte em --kb-inset e o padding-bottom empurra a folha para cima dele. */
+@media (max-width: 768px) { .reverse-modal-backdrop:has(.aporte-modal) { padding-bottom: var(--kb-inset, 0px); } }
 /* Datas seguem a mesma largura dos demais .input e nunca ultrapassam a coluna
    do formulário, inclusive no controle nativo de navegadores móveis. */
 .input[type='date'] {
@@ -4760,15 +4838,25 @@ dialog.modal-backdrop {
   transform: translateY(-1px);
 }
 
+/* Surgimento/desaparecimento do FAB no padrao "plus to menu morph"
+   (transitions.dev): a saida (menu "Mais" abre, modal aberto) recontrai
+   girando com blur, rapida e seca; a entrada vem de volta desenblurando
+   com o ease saltitante. A transicao e declarada no estado de destino,
+   entao entrada e saida tem duracao/ease proprios sem JS. */
 .fab {
   right: 18px;
   bottom: 76px;
-  transform: none;
+  transform: rotate(0) scale(1);
+  filter: blur(0);
   border: 4px solid var(--surface);
   border: 4px solid color-mix(in srgb, var(--surface) 82%, transparent);
   box-shadow: var(--shadow-md), inset 0 1px 0 rgb(255 255 255 / 0.28);
   box-shadow: 0 10px 28px color-mix(in srgb, var(--primary) 38%, transparent), inset 0 1px 0 rgb(255 255 255 / 0.28);
-  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease, opacity 220ms ease;
+  transition:
+    transform var(--fab-in-dur) var(--fab-in-ease),
+    filter var(--fab-in-dur) var(--fab-in-ease),
+    opacity var(--fab-in-dur) var(--fab-in-ease),
+    box-shadow 220ms ease;
 }
 
 .fab:hover {
@@ -4782,7 +4870,11 @@ dialog.modal-backdrop {
 
 .fab.is-hidden,
 body:has(.modal-backdrop) .fab {
-  transform: scale(0.82) translateY(8px);
+  transition:
+    transform var(--fab-out-dur) var(--fab-out-ease),
+    filter var(--fab-out-dur) var(--fab-out-ease),
+    opacity var(--fab-out-dur) var(--fab-out-ease),
+    box-shadow var(--fab-out-dur) ease;
 }
 
 .goal-card {
@@ -4834,11 +4926,15 @@ body:has(.modal-backdrop) .fab {
   .fab:hover,
   .fab:active {
     transform: none;
+    transition: none;
   }
 
+  /* Sem movimento o FAB some/volta na hora: so o opacity (ja no estado base). */
   .fab.is-hidden,
   body:has(.modal-backdrop) .fab {
-    transform: scale(0.82) translateY(8px);
+    transform: none;
+    filter: none;
+    transition: none;
   }
 }
 
