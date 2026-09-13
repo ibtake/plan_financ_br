@@ -17,13 +17,15 @@ const HEX_W = 42
 const HEX_H = 48.5
 const HEX_GRID_W = HEX_COLUMNS * HEX_UNIT_X + HEX_UNIT_X / 2
 const HEX_GRID_H = (HEX_ROWS - 1) * HEX_UNIT_Y + HEX_H
-const HEX_PATH = 'M30 4Q25 4 22 10L5 44Q2 50 5 56L22 90Q25 96 30 96H70Q75 96 78 90L95 56Q98 50 95 44L78 10Q75 4 70 4Z'
+// Hexágono pointy-top (ponta para cima) no box 42×48.5, cantos arredondados —
+// mesma silhueta do desenho de referência.
+const HEX_PATH = 'M16.67 2.5 Q21 0 25.33 2.5 L37.67 9.625 Q42 12.125 42 17.125 L42 31.375 Q42 36.375 37.67 38.875 L25.33 46 Q21 48.5 16.67 46 L4.33 38.875 Q0 36.375 0 31.375 L0 17.125 Q0 12.125 4.33 9.625 Z'
 
 // Sombra de domo: centro mais claro que as bordas, dá a sensação de relevo.
 // Overlay com gradiente radial em vez de fill chapado, funciona com qualquer cor.
 function HexShape() {
   return (
-    <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+    <svg viewBox="0 0 42 48.5" aria-hidden="true" focusable="false">
       <path d={HEX_PATH} fill="currentColor" />
       <path d={HEX_PATH} fill="url(#hex-dome-shade)" />
     </svg>
@@ -63,8 +65,8 @@ function buildHexGrid(data) {
         column,
         x,
         y,
-        xCenter,
-        yCenter,
+        xNorm,
+        yNorm,
         active,
         category: null
       })
@@ -74,12 +76,9 @@ function buildHexGrid(data) {
   const activeSlots = slots.filter((slot) => slot.active)
   if (!activeSlots.length || !data.length) return slots
 
-  // Agrupamento contínuo usando varredura angular
-  activeSlots.sort((a, b) => {
-    const aAngle = Math.atan2(a.yCenter - HEX_GRID_H / 2, a.xCenter - HEX_GRID_W / 2)
-    const bAngle = Math.atan2(b.yCenter - HEX_GRID_H / 2, b.xCenter - HEX_GRID_W / 2)
-    return aAngle - bAngle
-  })
+  // Agrupamento contínuo usando varredura angular (coordenadas normalizadas,
+  // para a varredura ser circular e não distorcida pelo retângulo do grid)
+  activeSlots.sort((a, b) => Math.atan2(a.yNorm, a.xNorm) - Math.atan2(b.yNorm, b.xNorm))
 
   let slotIndex = 0
   const totalSlots = activeSlots.length
