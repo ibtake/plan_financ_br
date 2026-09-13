@@ -1197,8 +1197,8 @@ body:has(.modal-backdrop) .fab {
 .balance-hero {
   --position-positive: #bff7e0;
   --position-negative: #ffd0d8;
-  --trend-income-fill: rgb(15 125 79 / 0.28);
-  --trend-expense-fill: rgb(229 57 53 / 0.28);
+  --trend-income-fill: rgb(191 247 224 / 0.24);
+  --trend-expense-fill: rgb(255 208 216 / 0.24);
   display: grid;
   grid-template-columns: minmax(190px, 0.72fr) minmax(0, 1.28fr);
   align-items: center;
@@ -1255,8 +1255,8 @@ body:has(.modal-backdrop) .fab {
 [data-theme='dark'] .balance-hero {
   --position-positive: #bff7e0;
   --position-negative: #ffd0d8;
-  --trend-income-fill: rgb(46 170 116 / 0.34);
-  --trend-expense-fill: rgb(239 83 80 / 0.34);
+  --trend-income-fill: rgb(191 247 224 / 0.24);
+  --trend-expense-fill: rgb(255 208 216 / 0.24);
 }
 
 .balance-hero-change.is-negative {
@@ -1265,6 +1265,19 @@ body:has(.modal-backdrop) .fab {
 
 .balance-hero-chart {
   min-width: 0;
+}
+
+.balance-hero .recharts-cartesian-axis-tick-value {
+  fill: rgb(255 255 255 / 0.76) !important;
+}
+
+.balance-hero .recharts-cartesian-axis-line,
+.balance-hero .recharts-reference-line-line {
+  stroke: rgb(255 255 255 / 0.34) !important;
+}
+
+.balance-hero .recharts-area-curve {
+  stroke: rgb(255 255 255 / 0.92) !important;
 }
 
 @media (min-width: 901px) {
