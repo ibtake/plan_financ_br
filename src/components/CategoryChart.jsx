@@ -6,8 +6,8 @@ import { getCategory } from '../utils/categories.js'
 import { formatCurrency, formatPercent } from '../utils/format.js'
 
 const SMALL_CATEGORY_SHARE = 5
-const HEX_COLUMNS = 13
-const HEX_ROWS = 9
+const HEX_COLUMNS = 18
+const HEX_ROWS = 11
 // Geometria pointy-top de hexágono regular: altura = largura * 1.1547,
 // passo vertical = 75% da altura (+ respiro) e linhas alternadas deslocadas
 // meia célula — mesmas proporções do desenho de referência (42×48.5, passo 46×39.4).
@@ -58,7 +58,14 @@ function buildHexGrid(data) {
       const xNorm = (xCenter - HEX_GRID_W / 2) / (HEX_GRID_W / 2)
       const yNorm = (yCenter - HEX_GRID_H / 2) / ((HEX_GRID_H / 2) * 1.15)
 
-      const active = Math.hypot(xNorm, yNorm) <= 1.12
+      // Moldura de "mesa": a fileira de borda nunca é usada — fica sempre
+      // cinza-claro em volta do mapa. O jitter determinístico na fronteira
+      // interna (estável entre renders) dá um recorte orgânico ao conjunto.
+      const borderRow = row === 0 || row === HEX_ROWS - 1
+      const borderCol = column === 0 || column === HEX_COLUMNS - 1
+      const jitter = (((row + 1) * 73856093) ^ ((column + 1) * 19349663)) % 100 / 100
+      const active = !borderRow && !borderCol
+        && Math.hypot(xNorm, yNorm) <= 1.0 + (jitter - 0.5) * 0.16
 
       slots.push({
         row,
@@ -67,6 +74,7 @@ function buildHexGrid(data) {
         y,
         xNorm,
         yNorm,
+        radius: Math.hypot(xNorm, yNorm),
         active,
         category: null
       })
@@ -76,24 +84,30 @@ function buildHexGrid(data) {
   const activeSlots = slots.filter((slot) => slot.active)
   if (!activeSlots.length || !data.length) return slots
 
-  // Agrupamento contínuo usando varredura angular (coordenadas normalizadas,
-  // para a varredura ser circular e não distorcida pelo retângulo do grid)
-  activeSlots.sort((a, b) => Math.atan2(a.yNorm, a.xNorm) - Math.atan2(b.yNorm, b.xNorm))
-
-  let slotIndex = 0
+  // Ilha central: a menor categoria vira um bloco compacto no centro.
+  // As demais categorias (maiores primeiro) entram como ilhas contíguas
+  // em torno dela, por varredura angular — blocos de região, não anéis.
+  const byRadius = [...activeSlots].sort((a, b) => a.radius - b.radius)
+  const byAngle = (a, b) => Math.atan2(a.yNorm, a.xNorm) - Math.atan2(b.yNorm, b.xNorm)
+  const descending = [...data].sort((a, b) => b.share - a.share)
+  const smallest = descending[descending.length - 1]
   const totalSlots = activeSlots.length
 
-  data.forEach((item) => {
-    const count = Math.max(1, Math.round((item.share / 100) * totalSlots))
+  const centerCount = Math.max(1, Math.round((smallest.share / 100) * totalSlots))
+  byRadius.slice(0, centerCount).forEach((slot) => { slot.category = smallest })
 
-    for (let i = 0; i < count && slotIndex < totalSlots; i++) {
-      activeSlots[slotIndex].category = item
-      slotIndex++
-    }
+  const ring = byRadius.slice(centerCount).sort(byAngle)
+  let slotIndex = 0
+
+  descending.slice(0, -1).forEach((item) => {
+    const island = ring.slice(slotIndex, slotIndex + Math.max(1, Math.round((item.share / 100) * totalSlots)))
+    island.forEach((slot) => { slot.category = item })
+    slotIndex += island.length
   })
 
-  while (slotIndex < totalSlots) {
-    activeSlots[slotIndex].category = data[0]
+  // Sobras de arredondamento viram a maior categoria, contígua na borda externa
+  while (slotIndex < ring.length) {
+    ring[slotIndex].category = descending[0]
     slotIndex++
   }
 
@@ -270,6 +284,9 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
       setSelectedHex(null)
       setActiveId(null)
       setLiftedId(null)
+      // sem isso, o cursor parado sobre a categoria mantém o foco de hover
+      // e o gráfico "parece" ainda selecionado após deselecionar
+      setHoveredId(null)
     } else {
       const hexRect = event.currentTarget.getBoundingClientRect()
       const wrapRect = wrap.getBoundingClientRect()
@@ -285,6 +302,7 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
     setSelectedHex(null)
     setActiveId(null)
     setLiftedId(null)
+    setHoveredId(null)
     startRef.current()
   }
 
