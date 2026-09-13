@@ -144,7 +144,6 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   const gridRef = useRef(null)
   const springsRef = useRef([])
   const liftRef = useRef(null)
-  const mouseRef = useRef({ x: 0, y: 0, inside: false })
   const startRef = useRef(() => {})
 
   const data = useMemo(() => {
@@ -169,25 +168,27 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   const focusedId = hoveredId || selectedHex?.id || liftedId || activeId
   const selectedItem = data.find((item) => item.id === selectedHex?.id)
 
-  // ---- molas orgânicas (hover + seleção) ----
-  // Cada hexágono é uma mola sub-amortecida. O cursor define uma altura-alvo
-  // com decaimento gaussiano pela distância (o hex apontado sobe, os vizinhos
-  // acompanham em degradê e tudo assenta com balanço suave). A categoria
-  // selecionada por clique mantém um patamar constante de elevação.
-  const SPRING_MAX_LIFT = 7
-  const SPRING_SELECT_LIFT = 5
-  const SPRING_SIGMA = 55
+  // ---- mola na seleção ----
+  // Cada hexágono é uma mola sub-amortecida, mas o único gatilho é o clique:
+  // a categoria selecionada ergue até o patamar e assenta com balanço suave.
+  // Sem reação a hover — além de desnecessário, o pointermove por frame
+  // custava layout + repaint em todos os hexágonos e travava a rolagem.
+  const SPRING_LIFT = 5
   const SPRING_STIFFNESS = 170
   const SPRING_DAMPING = 9
 
-  useEffect(() => { liftRef.current = liftedId }, [liftedId])
+  // Reinicia a mola DEPOIS que o liftRef reflete a seleção — se começar antes,
+  // o primeiro tick vê alvo 0, encerra o loop e o lift nunca acontece.
+  useEffect(() => {
+    liftRef.current = liftedId
+    startRef.current()
+  }, [liftedId])
 
   useEffect(() => {
     const grid = gridRef.current
     if (!grid) return
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const springs = springsRef.current
-    const mouse = mouseRef.current
     let rafId = null
     let lastT = 0
 
@@ -197,8 +198,6 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
         springs.push({
           el,
           cls: el.dataset.categoryId,
-          cx: el.offsetLeft + el.offsetWidth / 2,
-          cy: el.offsetTop + el.offsetHeight / 2,
           z: 0,
           v: 0
         })
@@ -212,29 +211,16 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
       let active = false
 
       for (const spring of springs) {
-        let target = 0
-        let pull = 0
-        if (mouse.inside) {
-          const dx = spring.cx - mouse.x
-          const dy = spring.cy - mouse.y
-          const d2 = dx * dx + dy * dy
-          if (d2 < (3 * SPRING_SIGMA) ** 2) {
-            const falloff = Math.exp(-d2 / (2 * SPRING_SIGMA * SPRING_SIGMA))
-            target = SPRING_MAX_LIFT * falloff
-            // inclina levemente na direção do cursor ("puxar")
-            pull = Math.max(-3, Math.min(3, -dx * 0.05)) * falloff
-          }
-        }
-        if (spring.cls && spring.cls === liftRef.current) target = Math.max(target, SPRING_SELECT_LIFT)
+        const target = spring.cls && spring.cls === liftRef.current ? SPRING_LIFT : 0
 
         spring.v += (SPRING_STIFFNESS * (target - spring.z) - SPRING_DAMPING * spring.v) * dt
         spring.z += spring.v * dt
 
         if (Math.abs(target - spring.z) > 0.02 || Math.abs(spring.v) > 0.02) active = true
 
-        const intensity = Math.max(0, spring.z / SPRING_MAX_LIFT)
+        const intensity = Math.max(0, spring.z / SPRING_LIFT)
         spring.el.style.transform =
-          `translate(${(pull * intensity).toFixed(2)}px, ${(-spring.z).toFixed(2)}px) scale(${(1 + 0.055 * intensity).toFixed(4)})`
+          `translateY(${(-spring.z).toFixed(2)}px) scale(${(1 + 0.055 * intensity).toFixed(4)})`
         spring.el.style.filter =
           `drop-shadow(0 ${(1 + 2.5 * intensity).toFixed(1)}px ${(1.5 + 3 * intensity).toFixed(1)}px rgb(0 0 0 / ${Math.round((18 + 16 * intensity))}%))`
         spring.el.style.zIndex = 10 + Math.round(spring.z)
@@ -251,26 +237,10 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
     }
     startRef.current = start
 
-    const onMove = (event) => {
-      const rect = grid.getBoundingClientRect()
-      mouse.x = event.clientX - rect.left
-      mouse.y = event.clientY - rect.top
-      mouse.inside = true
-      start()
-    }
-    const onLeave = () => {
-      mouse.inside = false
-      start()
-    }
     const onResize = () => measure()
-
-    grid.addEventListener('pointermove', onMove)
-    grid.addEventListener('pointerleave', onLeave)
     window.addEventListener('resize', onResize)
 
     return () => {
-      grid.removeEventListener('pointermove', onMove)
-      grid.removeEventListener('pointerleave', onLeave)
       window.removeEventListener('resize', onResize)
       if (rafId !== null) cancelAnimationFrame(rafId)
       rafId = null
