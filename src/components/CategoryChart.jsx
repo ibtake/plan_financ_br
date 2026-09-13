@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, MinusCircle, PieChart as PieChartIcon } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import ChartInfoTooltip from './ChartInfoTooltip.jsx'
@@ -8,13 +8,38 @@ import { formatCurrency, formatPercent } from '../utils/format.js'
 const SMALL_CATEGORY_SHARE = 5
 const HEX_COLUMNS = 13
 const HEX_ROWS = 9
+// Geometria pointy-top de hexágono regular: altura = largura * 1.1547,
+// passo vertical = 75% da altura (+ respiro) e linhas alternadas deslocadas
+// meia célula — mesmas proporções do desenho de referência (42×48.5, passo 46×39.4).
+const HEX_UNIT_X = 46
+const HEX_UNIT_Y = 39.4
+const HEX_W = 42
+const HEX_H = 48.5
+const HEX_GRID_W = HEX_COLUMNS * HEX_UNIT_X + HEX_UNIT_X / 2
+const HEX_GRID_H = (HEX_ROWS - 1) * HEX_UNIT_Y + HEX_H
 const HEX_PATH = 'M30 4Q25 4 22 10L5 44Q2 50 5 56L22 90Q25 96 30 96H70Q75 96 78 90L95 56Q98 50 95 44L78 10Q75 4 70 4Z'
 
+// Sombra de domo: centro mais claro que as bordas, dá a sensação de relevo.
+// Overlay com gradiente radial em vez de fill chapado, funciona com qualquer cor.
 function HexShape() {
   return (
     <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">
       <path d={HEX_PATH} fill="currentColor" />
-      <path d={HEX_PATH} fill="none" stroke="#ffffff" strokeOpacity=".4" strokeWidth="2.5" />
+      <path d={HEX_PATH} fill="url(#hex-dome-shade)" />
+    </svg>
+  )
+}
+
+function HexDomeGradient() {
+  return (
+    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true" focusable="false">
+      <defs>
+        <radialGradient id="hex-dome-shade" cx="50%" cy="40%" r="90%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity=".13" />
+          <stop offset="56%" stopColor="#ffffff" stopOpacity="0" />
+          <stop offset="100%" stopColor="#000000" stopOpacity=".10" />
+        </radialGradient>
+      </defs>
     </svg>
   )
 }
@@ -24,21 +49,24 @@ function buildHexGrid(data) {
 
   for (let row = 0; row < HEX_ROWS; row += 1) {
     for (let column = 0; column < HEX_COLUMNS; column += 1) {
-      const x = (column - (HEX_COLUMNS - 1) / 2) / 5.7
-      const y = (row + (column % 2 ? 0.5 : 0) - (HEX_ROWS - 1) / 2) / 3.8
-      const distance = Math.hypot(x, y * 1.25)
-      
-      const active = distance <= 1.35
+      const x = column * HEX_UNIT_X + (row % 2 ? HEX_UNIT_X / 2 : 0)
+      const y = row * HEX_UNIT_Y
+      const xCenter = x + HEX_W / 2
+      const yCenter = y + HEX_H / 2
+      const xNorm = (xCenter - HEX_GRID_W / 2) / (HEX_GRID_W / 2)
+      const yNorm = (yCenter - HEX_GRID_H / 2) / ((HEX_GRID_H / 2) * 1.15)
 
-      slots.push({ 
-        row, 
-        column, 
-        x, 
-        y, 
-        distance, 
-        active, 
-        scale: 0.975,
-        category: null 
+      const active = Math.hypot(xNorm, yNorm) <= 1.12
+
+      slots.push({
+        row,
+        column,
+        x,
+        y,
+        xCenter,
+        yCenter,
+        active,
+        category: null
       })
     }
   }
@@ -47,14 +75,18 @@ function buildHexGrid(data) {
   if (!activeSlots.length || !data.length) return slots
 
   // Agrupamento contínuo usando varredura angular
-  activeSlots.sort((a, b) => Math.atan2(a.y, a.x) - Math.atan2(b.y, b.x))
+  activeSlots.sort((a, b) => {
+    const aAngle = Math.atan2(a.yCenter - HEX_GRID_H / 2, a.xCenter - HEX_GRID_W / 2)
+    const bAngle = Math.atan2(b.yCenter - HEX_GRID_H / 2, b.xCenter - HEX_GRID_W / 2)
+    return aAngle - bAngle
+  })
 
   let slotIndex = 0
   const totalSlots = activeSlots.length
 
   data.forEach((item) => {
     const count = Math.max(1, Math.round((item.share / 100) * totalSlots))
-    
+
     for (let i = 0; i < count && slotIndex < totalSlots; i++) {
       activeSlots[slotIndex].category = item
       slotIndex++
@@ -68,6 +100,13 @@ function buildHexGrid(data) {
 
   return slots
 }
+
+const hexPosition = (hex) => ({
+  left: `${((hex.x / HEX_GRID_W) * 100).toFixed(3)}%`,
+  top: `${((hex.y / HEX_GRID_H) * 100).toFixed(3)}%`,
+  width: `${((HEX_W / HEX_GRID_W) * 100).toFixed(3)}%`,
+  height: `${((HEX_H / HEX_GRID_H) * 100).toFixed(3)}%`,
+})
 
 function getStatus(item) {
   if (item.target <= 0) return { tone: 'neutral', label: 'Sem meta', Icon: MinusCircle }
@@ -85,10 +124,16 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   const [activeId, setActiveId] = useState(null)
   const [hoveredId, setHoveredId] = useState(null)
   const [selectedHex, setSelectedHex] = useState(null)
+  const [liftedId, setLiftedId] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
   const [showAll, setShowAll] = useState(false)
   const hexRefs = useRef(new Map())
-  
+  const gridRef = useRef(null)
+  const springsRef = useRef([])
+  const liftRef = useRef(null)
+  const mouseRef = useRef({ x: 0, y: 0, inside: false })
+  const startRef = useRef(() => {})
+
   const data = useMemo(() => {
     const rawData = Object.entries(byCategory).filter(([, value]) => value > 0).sort((a, b) => b[1] - a[1]).map(([id, value]) => {
       const cat = getCategory(categories, id)
@@ -106,23 +151,142 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   const displayedLegend = showAll ? data : data.slice(0, 7)
   const displayedRows = showAll ? data : data.slice(0, 7)
   const toggleAll = () => setShowAll((value) => !value)
-  
+
   const hexGrid = useMemo(() => buildHexGrid(data), [data])
-  const focusedId = hoveredId || selectedHex?.id || activeId
+  const focusedId = hoveredId || selectedHex?.id || liftedId || activeId
   const selectedItem = data.find((item) => item.id === selectedHex?.id)
+
+  // ---- molas orgânicas (hover + seleção) ----
+  // Cada hexágono é uma mola sub-amortecida. O cursor define uma altura-alvo
+  // com decaimento gaussiano pela distância (o hex apontado sobe, os vizinhos
+  // acompanham em degradê e tudo assenta com balanço suave). A categoria
+  // selecionada por clique mantém um patamar constante de elevação.
+  const SPRING_MAX_LIFT = 7
+  const SPRING_SELECT_LIFT = 5
+  const SPRING_SIGMA = 55
+  const SPRING_STIFFNESS = 170
+  const SPRING_DAMPING = 9
+
+  useEffect(() => { liftRef.current = liftedId }, [liftedId])
+
+  useEffect(() => {
+    const grid = gridRef.current
+    if (!grid) return
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const springs = springsRef.current
+    const mouse = mouseRef.current
+    let rafId = null
+    let lastT = 0
+
+    const measure = () => {
+      springs.length = 0
+      hexRefs.current.forEach((el) => {
+        springs.push({
+          el,
+          cls: el.dataset.categoryId,
+          cx: el.offsetLeft + el.offsetWidth / 2,
+          cy: el.offsetTop + el.offsetHeight / 2,
+          z: 0,
+          v: 0
+        })
+      })
+    }
+    measure()
+
+    const tick = (now) => {
+      const dt = Math.min((now - lastT) / 1000, 0.033)
+      lastT = now
+      let active = false
+
+      for (const spring of springs) {
+        let target = 0
+        let pull = 0
+        if (mouse.inside) {
+          const dx = spring.cx - mouse.x
+          const dy = spring.cy - mouse.y
+          const d2 = dx * dx + dy * dy
+          if (d2 < (3 * SPRING_SIGMA) ** 2) {
+            const falloff = Math.exp(-d2 / (2 * SPRING_SIGMA * SPRING_SIGMA))
+            target = SPRING_MAX_LIFT * falloff
+            // inclina levemente na direção do cursor ("puxar")
+            pull = Math.max(-3, Math.min(3, -dx * 0.05)) * falloff
+          }
+        }
+        if (spring.cls && spring.cls === liftRef.current) target = Math.max(target, SPRING_SELECT_LIFT)
+
+        spring.v += (SPRING_STIFFNESS * (target - spring.z) - SPRING_DAMPING * spring.v) * dt
+        spring.z += spring.v * dt
+
+        if (Math.abs(target - spring.z) > 0.02 || Math.abs(spring.v) > 0.02) active = true
+
+        const intensity = Math.max(0, spring.z / SPRING_MAX_LIFT)
+        spring.el.style.transform =
+          `translate(${(pull * intensity).toFixed(2)}px, ${(-spring.z).toFixed(2)}px) scale(${(1 + 0.055 * intensity).toFixed(4)})`
+        spring.el.style.filter =
+          `drop-shadow(0 ${(1 + 2.5 * intensity).toFixed(1)}px ${(1.5 + 3 * intensity).toFixed(1)}px rgb(0 0 0 / ${Math.round((18 + 16 * intensity))}%))`
+        spring.el.style.zIndex = 10 + Math.round(spring.z)
+      }
+
+      rafId = active ? requestAnimationFrame(tick) : null
+    }
+
+    const start = () => {
+      if (rafId === null && !reduced) {
+        lastT = performance.now()
+        rafId = requestAnimationFrame(tick)
+      }
+    }
+    startRef.current = start
+
+    const onMove = (event) => {
+      const rect = grid.getBoundingClientRect()
+      mouse.x = event.clientX - rect.left
+      mouse.y = event.clientY - rect.top
+      mouse.inside = true
+      start()
+    }
+    const onLeave = () => {
+      mouse.inside = false
+      start()
+    }
+    const onResize = () => measure()
+
+    grid.addEventListener('pointermove', onMove)
+    grid.addEventListener('pointerleave', onLeave)
+    window.addEventListener('resize', onResize)
+
+    return () => {
+      grid.removeEventListener('pointermove', onMove)
+      grid.removeEventListener('pointerleave', onLeave)
+      window.removeEventListener('resize', onResize)
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      rafId = null
+      startRef.current = () => {}
+    }
+  }, [hexGrid])
 
   const handleHexClick = (event, category) => {
     const wrap = event.currentTarget.closest('.expense-hex-wrap')
-    const hexRect = event.currentTarget.getBoundingClientRect()
-    const wrapRect = wrap.getBoundingClientRect()
-    setActiveId(category.id)
-    setSelectedHex({ id: category.id, left: hexRect.left - wrapRect.left + (hexRect.width / 2), top: hexRect.top - wrapRect.top + (hexRect.height / 2) })
+    if (selectedHex?.id === category.id) {
+      setSelectedHex(null)
+      setActiveId(null)
+      setLiftedId(null)
+    } else {
+      const hexRect = event.currentTarget.getBoundingClientRect()
+      const wrapRect = wrap.getBoundingClientRect()
+      setActiveId(category.id)
+      setLiftedId(category.id)
+      setSelectedHex({ id: category.id, left: hexRect.left - wrapRect.left + (hexRect.width / 2), top: hexRect.top - wrapRect.top + (hexRect.height / 2) })
+    }
+    startRef.current()
   }
-  
+
   const handleHexWrapClick = (event) => {
     if (event.target.closest('.expense-hex:not(.is-empty)')) return
     setSelectedHex(null)
     setActiveId(null)
+    setLiftedId(null)
+    startRef.current()
   }
 
   if (!data.length) return <div className="card"><div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div><div className="empty"><div className="empty-icon"><PieChartIcon size={22} strokeWidth={1.6} /></div><div className="empty-title">Nenhuma saída neste mês</div><div className="text-sm">Adicione lançamentos para ver a distribuição.</div></div></div>
@@ -131,15 +295,17 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
     <section className="card expense-distribution-card">
       <div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div>
       <div className="expense-hex-wrap" onClick={handleHexWrapClick}>
-        <div className="expense-hex-grid" role="group" aria-label="Distribuição por classe de despesa">
+        <HexDomeGradient />
+        <div className="expense-hex-grid" ref={gridRef} role="group" aria-label="Distribuição por classe de despesa">
           {hexGrid.map((hex) => {
             return hex.category ? (
               <button
                 type="button"
                 key={`${hex.row}-${hex.column}`}
-                className={`expense-hex${focusedId && focusedId !== hex.category.id ? ' is-dimmed' : ''}${hoveredId === hex.category.id || selectedHex?.id === hex.category.id ? ' is-sprung' : ''}`}
+                className={`expense-hex${focusedId && focusedId !== hex.category.id ? ' is-dimmed' : ''}`}
                 ref={(element) => { if (element) hexRefs.current.set(`${hex.row}-${hex.column}`, element); else hexRefs.current.delete(`${hex.row}-${hex.column}`) }}
-                style={{ '--hex-color': hex.category.color, '--hex-scale': hex.scale, '--hex-offset-y': hex.column % 2 ? '50%' : '0%' }}
+                style={{ ...hexPosition(hex), '--hex-color': hex.category.color }}
+                data-category-id={hex.category.id}
                 onMouseEnter={() => setHoveredId(hex.category.id)}
                 onMouseLeave={() => setHoveredId(null)}
                 onFocus={() => setHoveredId(hex.category.id)}
@@ -148,10 +314,10 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
                 aria-label={`${hex.category.name}: ${formatCurrency(hex.category.value)}`}
               ><HexShape /></button>
             ) : (
-              <span 
-                className="expense-hex is-empty" 
-                key={`${hex.row}-${hex.column}`} 
-                style={{ '--hex-scale': hex.scale, '--hex-offset-y': hex.column % 2 ? '50%' : '0%' }} 
+              <span
+                className="expense-hex is-empty"
+                key={`${hex.row}-${hex.column}`}
+                style={hexPosition(hex)}
                 aria-hidden="true"
               ><HexShape /></span>
             )
@@ -159,7 +325,7 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
         </div>
         {selectedHex && selectedItem && <div className="expense-hex-tooltip" style={{ left: selectedHex.left, top: selectedHex.top }}><ChartInfoTooltip title={selectedItem.name} value={formatCurrency(selectedItem.value)} color={selectedItem.color} detail={`${formatPercent(selectedItem.share, 1)} do total`} /></div>}
       </div>
-      <div className="expense-donut-legend">{displayedLegend.map((item) => <button type="button" key={item.id} className={`expense-legend-row${activeId === item.id ? ' is-active' : ''}`} onMouseEnter={() => setActiveId(item.id)} onMouseLeave={() => setActiveId(null)} onClick={() => { setActiveId(item.id); setSelectedHex(null) }} aria-label={`${item.name}: ${formatCurrency(item.value)}, ${formatPercent(item.share, 1)} do total`}><span className="chart-dot" style={{ background: item.color }} /><span className="expense-legend-name"><AppIcon emoji={item.icon} /> {item.name}</span><strong>{formatCurrency(item.value)}</strong><span>{formatPercent(item.share, 1)}</span></button>)}</div>
+      <div className="expense-donut-legend">{displayedLegend.map((item) => <button type="button" key={item.id} className={`expense-legend-row${activeId === item.id ? ' is-active' : ''}`} onMouseEnter={() => setActiveId(item.id)} onMouseLeave={() => setActiveId(null)} onClick={() => { setActiveId(item.id); setSelectedHex(null); setLiftedId((current) => current === item.id ? null : item.id); startRef.current() }} aria-label={`${item.name}: ${formatCurrency(item.value)}, ${formatPercent(item.share, 1)} do total`}><span className="chart-dot" style={{ background: item.color }} /><span className="expense-legend-name"><AppIcon emoji={item.icon} /> {item.name}</span><strong>{formatCurrency(item.value)}</strong><span>{formatPercent(item.share, 1)}</span></button>)}</div>
       {data.length > 7 && <ShowAllButton expanded={showAll} onClick={toggleAll} />}
     </section>
 
