@@ -9,53 +9,53 @@
      aliases porque ainda são referenciados em estilos inline.
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 :root {
   /* Superfícies */
-  --bg: #FBFAF6;
+  --bg: #f7f6fc;
   --surface: #ffffff;
-  --surface-2: #f5f2ea;
-  --bg-soft: #f1eee6;
+  --surface-2: #f0eff5;
+  --bg-soft: #f3f2f8;
 
   /* Bordas */
-  --border: #e5e0d4;
-  --border-strong: #d8d0c0;
+  --border: #e9e8f0;
+  --border-strong: #d8d6e5;
 
   /* Texto */
-  --text: #1c1c1e;
-  --text-soft: #4d4d54;
-  --text-muted: #74747d;
+  --text: #202033;
+  --text-soft: #4d4d63;
+  --text-muted: #74758a;
 
   /* Marca */
-  --primary: #0b5d4b;
-  --primary-hover: #084b3d;
-  --primary-soft: #e3f1ec;
+  --primary: #6b58f5;
+  --primary-hover: #5544db;
+  --primary-soft: #eeecff;
 
   /* Semânticas */
-  --income: #12876f;
-  --income-soft: #e5f5f1;
-  --expense: #d13a3a;
-  --expense-soft: #fdecec;
+  --income: #2b9d78;
+  --income-soft: #e9f8f1;
+  --expense: #e95d6a;
+  --expense-soft: #ffe8e7;
   /* Despesa reinvestida: sai da liquidez, mas vira patrimônio */
-  --reinvest: #7c3aed;
-  --reinvest-soft: #f1ebfe;
-  --warning: #b7791f;
-  --warning-soft: #fdf3e3;
-  --info: #2b6cb0;
-  --info-soft: #e9f1fb;
+  --reinvest: #6b58f5;
+  --reinvest-soft: #f1efff;
+  --warning: #a27414;
+  --warning-soft: #fff4d3;
+  --info: #4b9fff;
+  --info-soft: #eaf4ff;
 
   /* Raios */
   --radius-xs: 6px;
   --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 16px;
+  --radius: 16px;
+  --radius-lg: 20px;
 
   /* Sombras */
-  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.04);
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.03);
-  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.06);
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05), 0 10px 30px -12px rgba(16, 24, 40, 0.16);
+  --shadow-xs: 0 2px 8px rgba(49, 48, 93, 0.06);
+  --shadow: 0 8px 24px rgba(49, 48, 93, 0.07);
+  --shadow-md: 0 10px 28px rgba(49, 48, 93, 0.08);
+  --shadow-card: 0 12px 32px rgba(49, 48, 93, 0.09), 0 2px 8px rgba(49, 48, 93, 0.04);
   --shadow-lg: 0 16px 48px rgba(16, 24, 40, 0.14);
 
   /* Layout */
@@ -68,36 +68,36 @@
 }
 
 [data-theme='dark'] {
-  --bg: #17332D;
-  --surface: #20433b;
-  --surface-2: #294e45;
-  --bg-soft: #1c3c35;
+  --bg: #151426;
+  --surface: #211f37;
+  --surface-2: #302b55;
+  --bg-soft: #1c1a2e;
 
-  --border: #31574d;
-  --border-strong: #467064;
+  --border: #3c3855;
+  --border-strong: #514b70;
 
-  --text: #f2f2f4;
-  --text-soft: #bdbdc7;
-  --text-muted: #9c9ca8;
+  --text: #f7f5ff;
+  --text-soft: #d0cbe2;
+  --text-muted: #b9b5ce;
 
-  --primary: #67c6a9;
-  --primary-hover: #8bdbc3;
-  --primary-soft: #1d5044;
+  --primary: #8b7cff;
+  --primary-hover: #a79cff;
+  --primary-soft: #302b55;
 
-  --income: #3fc79f;
-  --income-soft: #102b25;
-  --expense: #f0736f;
-  --expense-soft: #2e1414;
-  --reinvest: #b39bf6;
-  --reinvest-soft: #211a35;
-  --warning: #e0a03c;
-  --warning-soft: #2b2110;
-  --info: #66a5e8;
-  --info-soft: #101f31;
+  --income: #71d6b0;
+  --income-soft: #24483d;
+  --expense: #ff8f9a;
+  --expense-soft: #4a2d35;
+  --reinvest: #a79cff;
+  --reinvest-soft: #302b55;
+  --warning: #f4c95d;
+  --warning-soft: #4b3c1e;
+  --info: #78b9ff;
+  --info-soft: #243a56;
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-xs: 0 2px 8px rgba(0, 0, 0, 0.24);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.32);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -12px rgba(0, 0, 0, 0.6);
 }
@@ -124,7 +124,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: 'Inter Tight', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
   line-height: 1.55;
   letter-spacing: -0.006em;
@@ -137,6 +137,16 @@ body {
   touch-action: manipulation;
   /* Trava definitiva contra overflow horizontal */
   overflow-x: hidden;
+}
+
+/* Typography split: Inter for copy, Plus Jakarta Sans for financial values. */
+.kpi-value,
+.balance-hero-value,
+.tx-amount,
+.reserve-v,
+.mono {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  font-variant-numeric: tabular-nums;
 }
 
 :where(button, a, input, select, textarea):focus-visible {
@@ -4721,64 +4731,64 @@ dialog.modal-backdrop {
    Glass fica restrito a controles flutuantes; cards de dados permanecem opacos
    para preservar leitura, contraste e performance. */
 :root {
-  --bg: #f3f5f8;
+  --bg: #f7f6fc;
   --surface: #ffffff;
-  --surface-2: #eef2f7;
-  --bg-soft: #e9eef5;
-  --border: #dce3ec;
-  --border-strong: #c7d2e0;
-  --text: #172238;
-  --text-soft: #516075;
-  --text-muted: #6d7788;
-  --primary: #1764d8;
-  --primary-hover: #0f52b8;
-  --primary-soft: #e8f0ff;
-  --income: #15965d;
-  --income-soft: #e8f7ef;
-  --trend-income-fill: rgb(21 150 93 / 0.28);
-  --expense: #f06b35;
-  --expense-soft: #fff0e9;
-  --trend-expense-fill: rgb(240 107 53 / 0.26);
-  --warning: #e69a37;
-  --warning-soft: #fff5df;
-  --info: #1764d8;
-  --info-soft: #e8f0ff;
-  --shadow-xs: 0 1px 2px rgb(23 34 56 / 0.04);
-  --shadow: 0 8px 24px rgb(23 34 56 / 0.06);
-  --shadow-md: 0 14px 40px rgb(23 34 56 / 0.12);
+  --surface-2: #f0eff5;
+  --bg-soft: #f3f2f8;
+  --border: #e9e8f0;
+  --border-strong: #d8d6e5;
+  --text: #202033;
+  --text-soft: #4d4d63;
+  --text-muted: #74758a;
+  --primary: #6b58f5;
+  --primary-hover: #5544db;
+  --primary-soft: #eeecff;
+  --income: #2b9d78;
+  --income-soft: #e9f8f1;
+  --trend-income-fill: rgb(43 157 120 / 0.28);
+  --expense: #e95d6a;
+  --expense-soft: #ffe8e7;
+  --trend-expense-fill: rgb(233 93 106 / 0.26);
+  --warning: #a27414;
+  --warning-soft: #fff4d3;
+  --info: #4b9fff;
+  --info-soft: #eaf4ff;
+  --shadow-xs: 0 2px 8px rgba(49, 48, 93, 0.06);
+  --shadow: 0 8px 24px rgba(49, 48, 93, 0.07);
+  --shadow-md: 0 10px 28px rgba(49, 48, 93, 0.08);
   /* Sombra em camadas dos cards de dados; a borda continua (styles do .card). */
-  --shadow-card: 0 1px 2px rgb(23 34 56 / 0.05), 0 10px 30px -12px rgb(23 34 56 / 0.16);
+  --shadow-card: 0 12px 32px rgba(49, 48, 93, 0.09), 0 2px 8px rgba(49, 48, 93, 0.04);
   --glass-surface: color-mix(in srgb, var(--surface) 78%, transparent);
   --glass-border: color-mix(in srgb, var(--text) 12%, transparent);
 }
 
 [data-theme='dark'] {
-  --bg: #0d1117;
-  --surface: #151b23;
-  --surface-2: #1d2632;
-  --bg-soft: #111923;
-  --border: #2b3745;
-  --border-strong: #3a4a5d;
-  --text: #f3f7fc;
-  --text-soft: #c0cbd8;
-  --text-muted: #98a5b5;
-  --primary: #4c8dff;
-  --primary-hover: #74a7ff;
-  --primary-soft: #172e58;
-  --income: #45c58b;
-  --income-soft: #102c22;
-  --trend-income-fill: rgb(69 197 139 / 0.34);
-  --expense: #ff8b56;
-  --expense-soft: #3b2118;
-  --trend-expense-fill: rgb(255 139 86 / 0.32);
-  --warning: #efb45d;
-  --warning-soft: #382a15;
-  --info: #6aa2ff;
-  --info-soft: #172e58;
-  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.28);
-  --shadow: 0 8px 24px rgb(0 0 0 / 0.24);
-  --shadow-md: 0 14px 40px rgb(0 0 0 / 0.42);
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+  --bg: #151426;
+  --surface: #211f37;
+  --surface-2: #302b55;
+  --bg-soft: #1c1a2e;
+  --border: #3c3855;
+  --border-strong: #514b70;
+  --text: #f7f5ff;
+  --text-soft: #d0cbe2;
+  --text-muted: #b9b5ce;
+  --primary: #8b7cff;
+  --primary-hover: #a79cff;
+  --primary-soft: #302b55;
+  --income: #71d6b0;
+  --income-soft: #24483d;
+  --trend-income-fill: rgb(113 214 176 / 0.34);
+  --expense: #ff8f9a;
+  --expense-soft: #4a2d35;
+  --trend-expense-fill: rgb(255 143 154 / 0.32);
+  --warning: #f4c95d;
+  --warning-soft: #4b3c1e;
+  --info: #78b9ff;
+  --info-soft: #243a56;
+  --shadow-xs: 0 2px 8px rgba(0, 0, 0, 0.24);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.32);
+  --shadow-card: 0 12px 32px rgba(0, 0, 0, 0.42), 0 2px 8px rgba(0, 0, 0, 0.24);
   --glass-surface: color-mix(in srgb, var(--surface) 76%, transparent);
   --glass-border: color-mix(in srgb, #fff 16%, transparent);
 }
