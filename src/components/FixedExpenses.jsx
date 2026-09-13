@@ -2,28 +2,25 @@ import { useMemo } from 'react'
 import { AlertTriangle, Check, ChevronRight, ReceiptText } from 'lucide-react'
 import AppIcon from './AppIcon.jsx'
 import { getCategory } from '../utils/categories.js'
-import { isRecurring } from '../utils/recurrence.js'
 import { daysUntil, formatCurrency, formatDate } from '../utils/format.js'
 
 // Teto de itens exibidos na home; o resto fica na aba Lançamentos (TASK-008).
 const MAX_VISIBLE = 4
 
 export default function FixedExpenses({ occurrences, categories, onTogglePaid, onOpenDetails }) {
-  // Ordena pela proximidade da data de hoje (TASK-008): as contas mais próximas
-  // de vencer no topo, para o corte a 4 mostrar o que importa na data de acesso.
-  // Desempate por data para ordem estável.
+  // Apenas contas a pagar: uma vez pagas, somem deste card (continuam na aba
+  // Lançamentos). Ordena por vencimento crescente — atrasadas primeiro,
+  // depois as mais próximas; desempate por data para ordem estável.
   const items = useMemo(
     () =>
       occurrences
-        .filter((t) => t.type === 'expense' && (isRecurring(t) || !t.paid))
-        .sort((a, b) => Math.abs(daysUntil(a.date)) - Math.abs(daysUntil(b.date)) || (a.date < b.date ? -1 : 1)),
+        .filter((t) => t.type === 'expense' && !t.paid)
+        .sort((a, b) => daysUntil(a.date) - daysUntil(b.date) || (a.date < b.date ? -1 : 1)),
     [occurrences],
   )
 
   // Totais seguem sobre a lista completa; o corte e so de apresentacao.
   const total = items.reduce((s, t) => s + t.amount, 0)
-  const pending = items.filter((t) => !t.paid)
-  const pendingTotal = pending.reduce((s, t) => s + t.amount, 0)
   const visible = items.slice(0, MAX_VISIBLE)
   const hidden = items.length - visible.length
 
@@ -33,13 +30,7 @@ export default function FixedExpenses({ occurrences, categories, onTogglePaid, o
         <div style={{ minWidth: 0 }}>
           <div className="card-title">Contas do mês</div>
           <div className="card-sub">
-            Fixas e pendentes • {formatCurrency(total)} no total
-            {pending.length > 0 && (
-              <>
-                {' '}
-                • <span className="text-expense fw-600">{formatCurrency(pendingTotal)} a pagar</span>
-              </>
-            )}
+            Fixas e pendentes • <span className="text-expense fw-600">{formatCurrency(total)} a pagar</span>
           </div>
         </div>
       </div>

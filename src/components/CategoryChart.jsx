@@ -6,8 +6,8 @@ import { getCategory } from '../utils/categories.js'
 import { formatCurrency, formatPercent } from '../utils/format.js'
 
 const SMALL_CATEGORY_SHARE = 5
-const HEX_COLUMNS = 18
-const HEX_ROWS = 11
+const HEX_COLUMNS = 15
+const HEX_ROWS = 13
 // Geometria pointy-top de hexágono regular: altura = largura * 1.1547,
 // passo vertical = 75% da altura (+ respiro) e linhas alternadas deslocadas
 // meia célula — mesmas proporções do desenho de referência (42×48.5, passo 46×39.4).

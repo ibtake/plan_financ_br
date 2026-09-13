@@ -2754,6 +2754,10 @@ dialog.modal-backdrop {
 .expense-hex-wrap { position: relative; height: 320px; min-width: 0; }
 .expense-hex-wrap { height: 320px; }
 .expense-hex-grid { position: absolute; top: 50%; left: 50%; width: min(100%, 380px); aspect-ratio: 1.923; transform: translate(-50%, -50%); }
+/* Gráfico maior somente no card de distribuição (as classes .expense-hex-*
+   só existem nele, mas o escopo abaixo deixa isso explícito e isolado). */
+.expense-distribution-card .expense-hex-wrap { height: 360px; }
+.expense-distribution-card .expense-hex-grid { width: min(100%, 500px); aspect-ratio: 1.368; }
 .expense-hex { position: absolute; padding: 0; border: 0; background: transparent; color: var(--hex-color, var(--surface-2)); cursor: pointer; transform-origin: center; }
 .expense-hex:not(.is-empty) { will-change: transform, filter; filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 18%)); }
 .expense-hex svg { display: block; width: 100%; height: 100%; }
@@ -2792,6 +2796,8 @@ dialog.modal-backdrop {
   .expense-donut-wrap,
   .expense-hex-wrap { height: 276px; }
   .expense-hex-grid { width: min(100%, 280px); gap: 0; }
+  .expense-distribution-card .expense-hex-wrap { height: 320px; }
+  .expense-distribution-card .expense-hex-grid { width: min(100%, 440px); }
   .expense-legend-row { grid-template-columns: 9px minmax(0, 1fr) auto 34px; font-size: 10.5px; }
 }
 
@@ -5242,8 +5248,13 @@ body:has(.modal-backdrop) .fab {
 /* Mobile: anel acima dos números (o app tem bottom-nav e overflow-x oculto) */
 @media (max-width: 560px) {
   .reserve-top { flex-wrap: nowrap; }
-  .reserve-adjust { flex: none; width: 34px; height: 34px; padding: 0; }
+  .reserve-adjust { flex: none; width: 34px; height: 34px; padding: 0; margin-top: 1px; }
   .reserve-adjust .reserve-adjust-label { display: none; }
+  /* Título quebrado em 2 linhas deixava o ícone flutuando no meio do bloco
+     e o botão desalinhado; alinhamos tudo ao topo e compactamos o título. */
+  .reserve-heading { align-items: flex-start; flex: 1 1 0; min-width: 0; }
+  .reserve-icon { margin-top: 1px; }
+  .reserve-card .card-title { font-size: 17px; line-height: 21px; }
   .reserve-body { grid-template-columns: 1fr; gap: 18px; justify-items: center; }
   .reserve-figs { width: 100%; }
   .reserve-cover { text-align: center; }
