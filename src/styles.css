@@ -2759,7 +2759,12 @@ dialog.modal-backdrop {
 .expense-distribution-card .expense-hex-wrap { height: 360px; }
 .expense-distribution-card .expense-hex-grid { width: min(100%, 500px); aspect-ratio: 1.368; }
 .expense-hex { position: absolute; padding: 0; border: 0; background: transparent; color: var(--hex-color, var(--surface-2)); cursor: pointer; transform-origin: center; }
-.expense-hex:not(.is-empty) { will-change: transform, filter; filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 18%)); }
+/* BUG-008: will-change estatico em ~140 hexagonos ativos criava ~140 camadas
+   de composicao e pesava a rolagem (iOS Safari), mesmo com o grafico parado.
+   A promocao de camada fica so nos hexagonos erguidos: a mola adiciona
+   .is-lifted enquanto anima e remove quando o hexagono volta ao repouso. */
+.expense-hex:not(.is-empty) { filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 18%)); }
+.expense-hex.is-lifted { will-change: transform, filter; }
 .expense-hex svg { display: block; width: 100%; height: 100%; }
 .expense-hex path { vector-effect: non-scaling-stroke; }
 .expense-hex:focus-visible { z-index: 60; outline: 2px solid var(--primary); outline-offset: 2px; }
