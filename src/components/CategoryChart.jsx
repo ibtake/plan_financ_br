@@ -216,14 +216,37 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
         spring.v += (SPRING_STIFFNESS * (target - spring.z) - SPRING_DAMPING * spring.v) * dt
         spring.z += spring.v * dt
 
-        if (Math.abs(target - spring.z) > 0.02 || Math.abs(spring.v) > 0.02) active = true
+        const moving = Math.abs(target - spring.z) > 0.02 || Math.abs(spring.v) > 0.02
+        if (moving) active = true
 
+        // BUG-008: escreve estilo inline somente nos hexágonos em movimento
+        // (a categoria erguida e os que ainda assentam de volta); os ~140 em
+        // repouso saem do trabalho por frame. Ao assentar, o inline é limpo e
+        // o controle volta ao CSS — o zIndex inline parado também não fica
+        // mais sobreposto ao foco visível do CSS.
+        if (!moving && !spring.dirty) continue
+
+        if (!moving) {
+          if (target === SPRING_LIFT) {
+            spring.el.classList.add('is-lifted')
+          } else {
+            spring.el.style.transform = ''
+            spring.el.style.filter = ''
+            spring.el.style.zIndex = ''
+            spring.el.classList.remove('is-lifted')
+          }
+          spring.dirty = false
+          continue
+        }
+
+        if (!spring.dirty) spring.el.classList.add('is-lifted')
         const intensity = Math.max(0, spring.z / SPRING_LIFT)
         spring.el.style.transform =
           `translateY(${(-spring.z).toFixed(2)}px) scale(${(1 + 0.055 * intensity).toFixed(4)})`
         spring.el.style.filter =
           `drop-shadow(0 ${(1 + 2.5 * intensity).toFixed(1)}px ${(1.5 + 3 * intensity).toFixed(1)}px rgb(0 0 0 / ${Math.round((18 + 16 * intensity))}%))`
         spring.el.style.zIndex = 10 + Math.round(spring.z)
+        spring.dirty = true
       }
 
       rafId = active ? requestAnimationFrame(tick) : null
