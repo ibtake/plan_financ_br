@@ -2752,7 +2752,8 @@ dialog.modal-backdrop {
 .expense-analysis-card { container-type: inline-size; }
 .expense-donut-wrap,
 .expense-hex-wrap { position: relative; height: 320px; min-width: 0; }
-.expense-hex-wrap { height: 320px; }
+/* BUG-008 (retificação): respiro entre o gráfico e a legenda do card. */
+.expense-hex-wrap { height: 320px; margin-bottom: 14px; }
 .expense-hex-grid { position: absolute; top: 50%; left: 50%; width: min(100%, 380px); aspect-ratio: 1.923; transform: translate(-50%, -50%); }
 /* Gráfico maior somente no card de distribuição (as classes .expense-hex-*
    só existem nele, mas o escopo abaixo deixa isso explícito e isolado). */

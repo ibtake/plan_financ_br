@@ -21,6 +21,19 @@ const HEX_GRID_H = (HEX_ROWS - 1) * HEX_UNIT_Y + HEX_H
 // mesma silhueta do desenho de referência.
 const HEX_PATH = 'M16.67 2.5 Q21 0 25.33 2.5 L37.67 9.625 Q42 12.125 42 17.125 L42 31.375 Q42 36.375 37.67 38.875 L25.33 46 Q21 48.5 16.67 46 L4.33 38.875 Q0 36.375 0 31.375 L0 17.125 Q0 12.125 4.33 9.625 Z'
 
+// BUG-008 (retificação): hexágono em tamanho constante. Antes a grade era
+// esticada por CSS (min(100%, 500px) no desktop vs 440px no mobile) e o
+// hexágono crescia com a tela (~29px no desktop vs ~19px no iPhone). Agora a
+// largura do hexágono é fixa (19px, a do iPhone) e o que varia com o espaço
+// disponível é a QUANTIDADE de colunas/linhas, dentro de limites de segurança.
+const HEX_W_PX = 19
+const HEX_SCALE = HEX_W_PX / HEX_W
+const HEX_UNIT_X_PX = HEX_UNIT_X * HEX_SCALE
+const HEX_MIN_COLUMNS = HEX_COLUMNS
+const HEX_MAX_COLUMNS = 28
+const HEX_MIN_ROWS = HEX_ROWS
+const HEX_MAX_ROWS = 20
+
 // Sombra de domo: centro mais claro que as bordas, dá a sensação de relevo.
 // Overlay com gradiente radial em vez de fill chapado, funciona com qualquer cor.
 function HexShape() {
@@ -46,23 +59,25 @@ function HexDomeGradient() {
   )
 }
 
-function buildHexGrid(data) {
+function buildHexGrid(data, columnsCount = HEX_COLUMNS, rowsCount = HEX_ROWS) {
   const slots = []
+  const gridW = columnsCount * HEX_UNIT_X + HEX_UNIT_X / 2
+  const gridH = (rowsCount - 1) * HEX_UNIT_Y + HEX_H
 
-  for (let row = 0; row < HEX_ROWS; row += 1) {
-    for (let column = 0; column < HEX_COLUMNS; column += 1) {
+  for (let row = 0; row < rowsCount; row += 1) {
+    for (let column = 0; column < columnsCount; column += 1) {
       const x = column * HEX_UNIT_X + (row % 2 ? HEX_UNIT_X / 2 : 0)
       const y = row * HEX_UNIT_Y
       const xCenter = x + HEX_W / 2
       const yCenter = y + HEX_H / 2
-      const xNorm = (xCenter - HEX_GRID_W / 2) / (HEX_GRID_W / 2)
-      const yNorm = (yCenter - HEX_GRID_H / 2) / ((HEX_GRID_H / 2) * 1.15)
+      const xNorm = (xCenter - gridW / 2) / (gridW / 2)
+      const yNorm = (yCenter - gridH / 2) / ((gridH / 2) * 1.15)
 
       // Moldura de "mesa": a fileira de borda nunca é usada — fica sempre
       // cinza-claro em volta do mapa. O jitter determinístico na fronteira
       // interna (estável entre renders) dá um recorte orgânico ao conjunto.
-      const borderRow = row === 0 || row === HEX_ROWS - 1
-      const borderCol = column === 0 || column === HEX_COLUMNS - 1
+      const borderRow = row === 0 || row === rowsCount - 1
+      const borderCol = column === 0 || column === columnsCount - 1
       const jitter = (((row + 1) * 73856093) ^ ((column + 1) * 19349663)) % 100 / 100
       const active = !borderRow && !borderCol
         && Math.hypot(xNorm, yNorm) <= 1.0 + (jitter - 0.5) * 0.16
@@ -114,7 +129,7 @@ function buildHexGrid(data) {
   return slots
 }
 
-const hexPosition = (hex) => ({
+const hexPosition = (hex, gridW = HEX_GRID_W, gridH = HEX_GRID_H) => ({
   left: `${((hex.x / HEX_GRID_W) * 100).toFixed(3)}%`,
   top: `${((hex.y / HEX_GRID_H) * 100).toFixed(3)}%`,
   width: `${((HEX_W / HEX_GRID_W) * 100).toFixed(3)}%`,
@@ -140,8 +155,10 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   const [liftedId, setLiftedId] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
   const [showAll, setShowAll] = useState(false)
+  const [gridSize, setGridSize] = useState(null)
   const hexRefs = useRef(new Map())
   const gridRef = useRef(null)
+  const wrapRef = useRef(null)
   const springsRef = useRef([])
   const liftRef = useRef(null)
   const startRef = useRef(() => {})
@@ -164,9 +181,37 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   const displayedRows = showAll ? data : data.slice(0, 7)
   const toggleAll = () => setShowAll((value) => !value)
 
-  const hexGrid = useMemo(() => buildHexGrid(data), [data])
+  const columns = gridSize?.columns ?? HEX_COLUMNS
+  const rows = gridSize?.rows ?? HEX_ROWS
+  const gridW = columns * HEX_UNIT_X + HEX_UNIT_X / 2
+  const gridH = (rows - 1) * HEX_UNIT_Y + HEX_H
   const focusedId = hoveredId || selectedHex?.id || liftedId || activeId
   const selectedItem = data.find((item) => item.id === selectedHex?.id)
+  const hexGrid = useMemo(() => buildHexGrid(data, columns, rows), [data, columns, rows])
+
+  // BUG-008 (retificação): mede o card e dimensiona a grade em colunas/linhas
+  // para manter o hexágono em tamanho constante (HEX_W_PX). O padrão 15x13 do
+  // iPhone é o piso; telas largas ganham colunas/linhas, até os limites.
+  useEffect(() => {
+    const wrap = wrapRef.current
+    if (!wrap) return undefined
+    const medir = () => {
+      const width = wrap.clientWidth
+      const height = wrap.clientHeight
+      if (!width || !height) return
+      const columns = Math.min(HEX_MAX_COLUMNS, Math.max(HEX_MIN_COLUMNS, Math.floor((width - HEX_UNIT_X_PX / 2) / HEX_UNIT_X_PX)))
+      const nextRows = Math.min(HEX_MAX_ROWS, Math.max(HEX_MIN_ROWS, Math.floor((height - HEX_H * HEX_SCALE) / (HEX_UNIT_Y * HEX_SCALE)) + 1))
+      setGridSize((atual) => (atual && atual.columns === columns && atual.rows === nextRows ? atual : { columns, rows: nextRows }))
+    }
+    medir()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', medir)
+      return () => window.removeEventListener('resize', medir)
+    }
+    const observer = new ResizeObserver(medir)
+    observer.observe(wrap)
+    return () => observer.disconnect()
+  }, [])
 
   // ---- mola na seleção ----
   // Cada hexágono é uma mola sub-amortecida, mas o único gatilho é o clique:
@@ -304,9 +349,15 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   return <div className="expense-cards-layout">
     <section className="card expense-distribution-card">
       <div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div>
-      <div className="expense-hex-wrap" onClick={handleHexWrapClick}>
+      <div className="expense-hex-wrap" ref={wrapRef} onClick={handleHexWrapClick}>
         <HexDomeGradient />
-        <div className="expense-hex-grid" ref={gridRef} role="group" aria-label="Distribuição por classe de despesa">
+        <div
+          className="expense-hex-grid"
+          ref={gridRef}
+          style={{ width: `${(gridW * HEX_SCALE).toFixed(1)}px`, height: `${(gridH * HEX_SCALE).toFixed(1)}px` }}
+          role="group"
+          aria-label="Distribuição por classe de despesa"
+        >
           {hexGrid.map((hex) => {
             return hex.category ? (
               <button
@@ -314,7 +365,7 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
                 key={`${hex.row}-${hex.column}`}
                 className={`expense-hex${focusedId && focusedId !== hex.category.id ? ' is-dimmed' : ''}`}
                 ref={(element) => { if (element) hexRefs.current.set(`${hex.row}-${hex.column}`, element); else hexRefs.current.delete(`${hex.row}-${hex.column}`) }}
-                style={{ ...hexPosition(hex), '--hex-color': hex.category.color }}
+                style={{ ...hexPosition(hex, gridW, gridH), '--hex-color': hex.category.color }}
                 data-category-id={hex.category.id}
                 onMouseEnter={() => setHoveredId(hex.category.id)}
                 onMouseLeave={() => setHoveredId(null)}
@@ -327,7 +378,7 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
               <span
                 className="expense-hex is-empty"
                 key={`${hex.row}-${hex.column}`}
-                style={hexPosition(hex)}
+                style={hexPosition(hex, gridW, gridH)}
                 aria-hidden="true"
               ><HexShape /></span>
             )
