@@ -351,7 +351,7 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
   return <div className="expense-cards-layout">
     <section className="card expense-distribution-card">
       <div className="card-head"><div><div className="card-title">Distribuição das despesas</div><div className="card-sub">Total gasto no mês</div></div></div>
-      <div className="expense-hex-wrap" ref={wrapRef} onClick={handleHexWrapClick}>
+      <div className="expense-hex-wrap" ref={wrapRef} style={{ height: `${(gridH * HEX_SCALE).toFixed(1)}px` }} onClick={handleHexWrapClick}>
         <HexDomeGradient />
         <div
           className="expense-hex-grid"
