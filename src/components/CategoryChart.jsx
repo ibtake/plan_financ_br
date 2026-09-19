@@ -130,10 +130,10 @@ function buildHexGrid(data, columnsCount = HEX_COLUMNS, rowsCount = HEX_ROWS) {
 }
 
 const hexPosition = (hex, gridW = HEX_GRID_W, gridH = HEX_GRID_H) => ({
-  left: `${((hex.x / HEX_GRID_W) * 100).toFixed(3)}%`,
-  top: `${((hex.y / HEX_GRID_H) * 100).toFixed(3)}%`,
-  width: `${((HEX_W / HEX_GRID_W) * 100).toFixed(3)}%`,
-  height: `${((HEX_H / HEX_GRID_H) * 100).toFixed(3)}%`,
+  left: `${((hex.x / gridW) * 100).toFixed(3)}%`,
+  top: `${((hex.y / gridH) * 100).toFixed(3)}%`,
+  width: `${((HEX_W / gridW) * 100).toFixed(3)}%`,
+  height: `${((HEX_H / gridH) * 100).toFixed(3)}%`,
 })
 
 function getStatus(item) {
@@ -211,7 +211,9 @@ export default function CategoryChart({ byCategory, categories, total, incomeTot
     const observer = new ResizeObserver(medir)
     observer.observe(wrap)
     return () => observer.disconnect()
-  }, [])
+    // data.length: o wrap só existe com dados; se o card montou vazio, remeasure
+    // quando os primeiros lançamentos chegarem.
+  }, [data.length])
 
   // ---- mola na seleção ----
   // Cada hexágono é uma mola sub-amortecida, mas o único gatilho é o clique:
