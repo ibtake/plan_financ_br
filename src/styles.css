@@ -2755,6 +2755,11 @@ dialog.modal-backdrop {
 /* BUG-008 (retificação): respiro entre o gráfico e a legenda do card. */
 .expense-hex-wrap { height: 320px; margin-bottom: 14px; }
 .expense-hex-grid { position: absolute; top: 50%; left: 50%; width: min(100%, 380px); aspect-ratio: 1.923; transform: translate(-50%, -50%); }
+/* BUG-008 (retificação 3): a grade inteira vira UMA camada de composicao — a
+   rasterizacao dos ~400 hexágonos com drop-shadow acontece uma vez e a rolagem
+   move textura, em vez de repintar tiles a cada passada (jank de scroll no PC).
+   Diferente do will-change individual removido antes: e 1 camada, nao ~140. */
+.expense-hex-grid { will-change: transform; }
 /* Gráfico maior somente no card de distribuição (as classes .expense-hex-*
    só existem nele, mas o escopo abaixo deixa isso explícito e isolado). */
 .expense-distribution-card .expense-hex-wrap { height: 360px; }
