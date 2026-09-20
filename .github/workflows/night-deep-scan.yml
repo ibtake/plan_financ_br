@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   deep-scan:
-    runs-on: avrea-ubuntu-latest-2-vcpu
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
