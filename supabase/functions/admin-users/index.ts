@@ -134,6 +134,7 @@ const ADMIN_REDIS_LIMITS: Record<string, number> = {
   'list-users': 30,
   'widget-metrics': 30,
   'complete-password-change': 10,
+  'delete-user': 3,
 }
 
 async function enforceAdminRedisLimit(request: Request, adminId: string, action: string) {
@@ -144,6 +145,20 @@ async function enforceAdminRedisLimit(request: Request, adminId: string, action:
 }
 
 Deno.serve(async (request) => {
+  // AUDT-011: try/catch de borda. Uma excecao nao tratada dentro de
+  // handleAdminUsers vira um 503 padronizado com os headers da funcao (CORS
+  // inclusos, via response(request, ...)), em vez de vazar o 500 cru do runtime.
+  // Fluxos normais passam intactos: todo retorno legitimo sai de dentro de
+  // handleAdminUsers.
+  try {
+    return await handleAdminUsers(request)
+  } catch (error) {
+    console.error('admin_users_unhandled', { error: error instanceof Error ? error.message : String(error) })
+    return response(request, 503, { error: 'Serviço indisponível.' })
+  }
+})
+
+async function handleAdminUsers(request: Request): Promise<Response> {
   if (request.method === 'OPTIONS') {
     const headers = corsHeaders(request)
     if (!headers['Access-Control-Allow-Origin']) return new Response(null, { status: 403 })
@@ -305,7 +320,7 @@ Deno.serve(async (request) => {
     return response(request, 403, { error: 'Acesso administrativo não autorizado.' })
   }
 
-  if (['status', 'list-users', 'create-user', 'widget-metrics'].includes(action)) {
+  if (['status', 'list-users', 'create-user', 'widget-metrics', 'delete-user'].includes(action)) {
     const redisBlocked = await enforceAdminRedisLimit(request, user.id, action)
     if (redisBlocked) return redisBlocked
     const { data: allowed, error: rateError } = await admin.rpc('consume_admin_rate_limit', {
@@ -419,5 +434,59 @@ Deno.serve(async (request) => {
     })
   }
 
+  if (action === 'delete-user') {
+    // TASK-013: exclusao completa de uma conta. Mesmo step-up das demais
+    // acoes sensiveis (aal2 ja checado acima + MFA fresco aqui).
+    if (!hasFreshMfa(claimsData.claims as Record<string, unknown>)) {
+      return response(request, 403, {
+        error: 'Confirme novamente seu código MFA antes de excluir o usuário.',
+        code: 'fresh_mfa_required',
+      })
+    }
+
+    const targetId = String(body.targetId || '').trim()
+    if (!/^[0-9a-f-]{36}$/i.test(targetId)) {
+      return response(request, 400, { error: 'Usuário alvo inválido.' })
+    }
+    // Auto-exclusao bloqueada: um admin apagando a propria conta poderia
+    // deixar a instalacao sem administrador (AUDT-019, decisao de produto).
+    if (targetId.toLowerCase() === user.id.toLowerCase()) {
+      return response(request, 400, { error: 'Não é possível excluir a própria conta de administrador por aqui.' })
+    }
+
+    // Deletes explicitos das 6 tabelas canonicas (mesmo conjunto de
+    // delete_my_data), depois deleteUser. As FKs por usuario sao ON DELETE
+    // CASCADE, entao deleteUser sozinho ja limparia tudo; os deletes
+    // explicitos tornam a limpeza dos dados financeiros independente do
+    // cascade. Auditoria do evento vai no registro DO ADMIN: o
+    // security_events do alvo e apagado pelo proprio cascade.
+    for (const table of ['transactions', 'budgets', 'goals', 'categories', 'pgbl_plans', 'emergency_reserve']) {
+      const { error } = await admin.from(table).delete().eq('user_id', targetId)
+      if (error) {
+        console.error('delete_user_data_failed', { targetId, table, errorCode: error.code || 'unknown' })
+        return response(request, 503, { error: 'Não foi possível remover os dados do usuário. Nada foi excluído.' })
+      }
+    }
+
+    const { error: deleteError } = await admin.auth.admin.deleteUser(targetId)
+    if (deleteError) {
+      console.error('delete_user_auth_failed', { targetId, error: deleteError.message })
+      return response(request, 500, { error: 'Os dados foram removidos, mas não foi possível excluir a conta.' })
+    }
+
+    const { error: auditError } = await admin.from('security_events').insert({
+      user_id: user.id,
+      event_type: 'admin_user_deleted',
+      severity: 'warning',
+      details: { target_user_id: targetId },
+      user_agent: 'admin-users',
+    })
+    if (auditError) {
+      console.error('delete_user_audit_failed', { targetId, errorCode: auditError.code || 'unknown' })
+    }
+
+    return response(request, 200, { ok: true, deletedId: targetId })
+  }
+
   return response(request, 400, { error: 'Ação inválida.' })
-})
+}

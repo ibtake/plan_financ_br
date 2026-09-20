@@ -390,7 +390,8 @@ grant execute on function public.log_security_event(text, text, jsonb, text) to 
 create table if not exists public.admin_action_rate_limits (
   admin_id uuid not null references auth.users(id) on delete cascade,
   -- v42: complete-password-change entra no teto server-side (10/min).
-  action text not null check (action in ('status', 'list-users', 'create-user', 'widget-metrics', 'complete-password-change')),
+  -- v51 (TASK-013): delete-user entra com teto apertado (3/min).
+  action text not null check (action in ('status', 'list-users', 'create-user', 'widget-metrics', 'complete-password-change', 'delete-user')),
   window_started_at timestamptz not null default now(),
   request_count integer not null default 0 check (request_count >= 0),
   primary key (admin_id, action)
@@ -402,8 +403,8 @@ create or replace function public.consume_admin_rate_limit(p_admin_id uuid, p_ac
 returns boolean language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_count integer; v_started timestamptz; v_limit integer;
 begin
-  if p_action not in ('status', 'list-users', 'create-user', 'widget-metrics', 'complete-password-change') then raise exception 'acao invalida'; end if;
-  v_limit := case p_action when 'create-user' then 5 when 'list-users' then 30 when 'widget-metrics' then 30 when 'complete-password-change' then 10 else 60 end;
+  if p_action not in ('status', 'list-users', 'create-user', 'widget-metrics', 'complete-password-change', 'delete-user') then raise exception 'acao invalida'; end if;
+  v_limit := case p_action when 'create-user' then 5 when 'list-users' then 30 when 'widget-metrics' then 30 when 'complete-password-change' then 10 when 'delete-user' then 3 else 60 end;
   insert into public.admin_action_rate_limits(admin_id, action, window_started_at, request_count)
   values (p_admin_id, p_action, now(), 1)
   on conflict (admin_id, action) do update set
@@ -428,6 +429,7 @@ create table if not exists public.standard_goal_contributions (
 create index if not exists standard_goal_contributions_goal_date_idx on public.standard_goal_contributions(user_id,goal_id,occurred_on desc,id desc);
 alter table public.standard_goal_contributions enable row level security;
 alter table public.standard_goal_contributions force row level security;
+drop policy if exists "own standard goal contributions select" on public.standard_goal_contributions;
 create policy "own standard goal contributions select" on public.standard_goal_contributions for select to authenticated using (auth.uid()=user_id and public.is_token_valid() and public.has_required_aal());
 grant select on public.standard_goal_contributions to authenticated;
 
@@ -698,7 +700,9 @@ create table if not exists public.transactions (
   constraint transactions_recurrence_check
     check (recurrence in ('none','weekly','monthly','bimonthly','quarterly','yearly')),
   constraint transactions_date_range
-    check (date >= '1970-01-01' and date <= '2200-01-01')
+    check (date >= '1970-01-01' and date <= '2200-01-01'),
+  constraint transactions_recurrence_end_check
+    check (recurrence_end is null or recurrence_end >= date)
 );
 
 create index if not exists transactions_user_date_idx
@@ -707,6 +711,24 @@ create index if not exists transactions_user_date_idx
 -- Otimiza os filtros por tipo (receita/despesa) usados no resumo mensal.
 create index if not exists transactions_user_type_date_idx
   on public.transactions (user_id, type, date desc);
+
+-- AUDT-027 (v49): estado consolidado da constraint que nasce inline acima. O
+-- bloco repete a adicao para uma instalacao que ja tinha a tabela e reexecuta
+-- este schema (mesmo padrao de SEC-03, no fim do arquivo). A validacao das
+-- linhas antigas fica na migration posterior ao inventario.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'transactions_recurrence_end_check'
+      and conrelid = 'public.transactions'::regclass
+  ) then
+    alter table public.transactions
+      add constraint transactions_recurrence_end_check
+      check (recurrence_end is null or recurrence_end >= date) not valid;
+  end if;
+end;
+$$;
 
 alter table public.transactions enable row level security;
 alter table public.transactions force row level security;
@@ -1147,20 +1169,30 @@ revoke all on table public.widget_rate_limits from public, anon, authenticated;
 revoke all on function public.consume_widget_rate_limit(text, text) from public, anon, authenticated;
 grant execute on function public.consume_widget_rate_limit(text, text) to service_role;
 
--- v40 (SEC-01): contador global de tentativas invalidas + purge. Chamado
--- somente apos falha de validacao de credencial; valores aleatorios nao
--- criam mais linhas por credencial (ver migration v40).
-create or replace function public.consume_widget_invalid_attempt_limit()
+-- v40 (SEC-01): contador de tentativas invalidas + purge. Chamado somente
+-- apos falha de validacao de credencial; valores aleatorios nao criam mais
+-- linhas por credencial (ver migration v40).
+-- v50 (AUDT-001): chaveado por hash do IP (cf-connecting-ip) quando a Edge
+-- Function fornece p_key_hash; sem ele, cai na chave global constante. Teto
+-- 60/h por IP, 600/h no fallback global (comportamento da v40).
+create or replace function public.consume_widget_invalid_attempt_limit(p_key_hash text default null)
 returns table (allowed boolean, retry_after_seconds integer)
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_key constant text := encode(sha256('SEC-01-global-invalid-attempts'::bytea), 'hex');
+  -- Chave por IP quando fornecida; senao a chave global constante da v40.
+  v_scoped constant boolean := nullif(btrim(coalesce(p_key_hash, '')), '') is not null;
+  v_key constant text := case
+    when v_scoped then btrim(p_key_hash)
+    else encode(sha256('SEC-01-global-invalid-attempts'::bytea), 'hex')
+  end;
   v_count integer;
   v_started timestamptz;
-  v_limit constant integer := 600;
+  -- Por IP: 60/h aperta o abuso individual. Global (fallback sem IP):
+  -- 600/h, identico a v40 - nunca pior que o comportamento anterior.
+  v_limit constant integer := case when v_scoped then 60 else 600 end;
   v_window_seconds constant integer := 3600;
 begin
   -- Contenção de lock: decisao de rate limit nunca pode travar.
@@ -1190,8 +1222,8 @@ begin
 end;
 $$;
 
-revoke all on function public.consume_widget_invalid_attempt_limit() from public, anon, authenticated;
-grant execute on function public.consume_widget_invalid_attempt_limit() to service_role;
+revoke all on function public.consume_widget_invalid_attempt_limit(text) from public, anon, authenticated;
+grant execute on function public.consume_widget_invalid_attempt_limit(text) to service_role;
 
 -- BLOCO 22 - Exclusao confirmada de metas (estado final para instalacao limpa)
 create or replace function public.delete_goal(p_goal_id text)
@@ -1276,7 +1308,7 @@ create trigger on_auth_user_created
 -- reverse_goal_retention_settings); o cliente recebe só SELECT sob RLS.
 -- Criada antes do BLOCO 15 porque delete_my_data/replace_my_data a apagam.
 -- =====================================================================
-create table public.emergency_reserve (
+create table if not exists public.emergency_reserve (
   user_id uuid primary key references auth.users(id) on delete cascade,
   target_months smallint check (target_months between 1 and 60),
   baseline_amount numeric(14,2) not null default 0 check (baseline_amount >= 0),
@@ -1285,6 +1317,7 @@ create table public.emergency_reserve (
 );
 alter table public.emergency_reserve enable row level security;
 alter table public.emergency_reserve force row level security;
+drop policy if exists "own emergency reserve select" on public.emergency_reserve;
 create policy "own emergency reserve select" on public.emergency_reserve for select to authenticated using (auth.uid() = user_id and public.is_token_valid() and public.has_required_aal());
 revoke all on table public.emergency_reserve from anon;
 revoke all on table public.emergency_reserve from authenticated;

@@ -1,9 +1,9 @@
 import { useCallback, useMemo } from 'react'
 import { supabase, translateAuthError } from '../lib/supabase.js'
-import { generateVerifier, deriveChallenge } from '../lib/pkce.js'
 import { recoveryVerifier } from '../lib/recoveryCode.js'
 import { rememberedAccounts } from '../lib/rememberedAccounts.js'
 import { corpoVazioDoSdk } from '../lib/passkeyErrors.js'
+import { normalizeFactors } from '../lib/mfaFactors.js'
 import { AUTH_EVENTS, logAuthEvent } from './authAudit.js'
 import {
   registerFailedLogin,
@@ -12,8 +12,10 @@ import {
 } from './loginAttempts.js'
 
 // O reset de senha fala direto com o GoTrue em vez de usar o SDK (BUG-003):
-// resetPasswordForEmail amarra o code_verifier ao storage de quem pediu, e o
-// link do e-mail abre em outro navegador. Aqui o verifier vai no proprio link.
+// resetPasswordForEmail forcaria o code_challenge do fluxo do SDK. Falando com o
+// /recover cru, o pedido nao manda code_challenge e o GoTrue responde no fluxo
+// implicit (token no fragmento), que funciona cross-device (AUDT-022). O ramo
+// legado com ?v= segue em exchangeRecoveryCode como fallback de transicao.
 // A anon key e publica por natureza no bundle - mesmo padrao de widgetApi.js.
 const AUTH_URL = `${import.meta.env.VITE_SUPABASE_URL}/auth/v1`
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -53,7 +55,11 @@ export function useAuthOperations({ refreshAssurance }) {
     })
     if (error) {
       const attempt = registerFailedLogin()
-      await logAuthEvent(AUTH_EVENTS.LOGIN_FAILED, 'warning', { attempts: attempt.attempts })
+      // login_failed nao e auditado aqui: apos a falha nao ha sessao, e
+      // log_security_event ignora chamada anonima (if v_uid is null or not
+      // is_token_valid() then return), entao a gravacao nunca aconteceria.
+      // Capturar tentativa anonima exigiria hook de auth ou Edge Function
+      // dedicada - decisao de risco aceito ate la (AUDT-021).
       const restantes = attempt.max - attempt.attempts
       const aviso = !attempt.locked && restantes > 0 && restantes <= 2
         ? ` Restam ${restantes} tentativa(s) antes do bloqueio temporário.`
@@ -167,11 +173,11 @@ export function useAuthOperations({ refreshAssurance }) {
 
   const resetPassword = useCallback(async (email, captchaToken) => {
     if (!supabase) return { error: 'Supabase não configurado.' }
-    const verifier = generateVerifier()
-    const challenge = await deriveChallenge(verifier)
-    // O verifier viaja no redirect_to. O GoTrue preserva a query string do
-    // redirect_to (o proprio SDK depende disso para o seu sb_flow_id).
-    const redirectTo = `${window.location.origin}/reset-password?v=${verifier}`
+    // AUDT-022: fluxo implicit. Sem code_challenge e sem ?v= no link — o GoTrue
+    // devolve o token no fragmento (#access_token) do redirect_to, capturado pelo
+    // detectSessionInUrl. Isso destrava o reset cross-device (BUG-003) sem embutir
+    // segredo na URL: o link deixa de carregar as duas metades do PKCE.
+    const redirectTo = `${window.location.origin}/reset-password`
     try {
       const response = await fetch(
         `${AUTH_URL}/recover?redirect_to=${encodeURIComponent(redirectTo)}`,
@@ -180,8 +186,6 @@ export function useAuthOperations({ refreshAssurance }) {
           headers: AUTH_HEADERS,
           body: JSON.stringify({
             email: String(email || '').trim().toLowerCase(),
-            code_challenge: challenge,
-            code_challenge_method: 's256',
             ...(captchaToken ? { gotrue_meta_security: { captcha_token: captchaToken } } : {}),
           }),
         },
@@ -195,7 +199,10 @@ export function useAuthOperations({ refreshAssurance }) {
     } catch (networkError) {
       return { error: translateAuthError(networkError) }
     }
-    await logAuthEvent(AUTH_EVENTS.PASSWORD_RESET, 'warning', {})
+    // password_reset_requested nao e auditado aqui: quem pede a recuperacao nao
+    // esta logado, entao log_security_event ignora a chamada anonima (mesmo
+    // v_uid null da RPC). Captura server-side exigiria hook de auth - risco
+    // aceito ate la (AUDT-021).
     return { ok: true }
   }, [])
 
@@ -255,8 +262,9 @@ export function useAuthOperations({ refreshAssurance }) {
     const normalizedCode = String(code || '').trim()
     if (!normalizedCode) return { error: 'Link de recuperação inválido ou expirado.' }
     const invalido = 'Link de recuperação inválido ou expirado.'
-    // Caminho novo: o verifier veio no link, entao a troca nao depende do
-    // storage do navegador onde o reset nasceu.
+    // Caminho legado (AUDT-022): links antigos ainda trazem o verifier no ?v=,
+    // entao a troca nao depende do storage do navegador onde o reset nasceu.
+    // Links novos usam flowType 'implicit' e caem no fallback abaixo.
     if (recoveryVerifier) {
       try {
         const response = await fetch(`${AUTH_URL}/token?grant_type=pkce`, {
@@ -285,10 +293,12 @@ export function useAuthOperations({ refreshAssurance }) {
   }, [])
 
   const listFactors = useCallback(async () => {
-    if (!supabase) return []
-    const { data, error } = await supabase.auth.mfa.listFactors()
-    if (error) return []
-    return (data?.totp || []).filter((f) => f.status === 'verified')
+    // AUDT-026: distinguir "sem fator" de "falha de leitura". Antes o erro virava
+    // [] igual ao caso sem MFA, e os quatro consumidores tratavam falha transitoria
+    // da API como "conta sem MFA". Mesmo idioma do refreshAssurance (authSession.js):
+    // erro sai como { error } distinto do array vazio, e quem chama decide.
+    if (!supabase) return { factors: [] }
+    return normalizeFactors(await supabase.auth.mfa.listFactors())
   }, [])
 
   const enrollMfa = useCallback(async () => {
@@ -330,7 +340,8 @@ export function useAuthOperations({ refreshAssurance }) {
 
   const verifyMfaChallenge = useCallback(async (code) => {
     if (!supabase) return { error: 'Supabase não configurado.' }
-    const factors = await listFactors()
+    const { factors, error: listError } = await listFactors()
+    if (listError) return { error: 'Não foi possível verificar o segundo fator. Tente novamente.' }
     if (!factors.length) return { error: 'Nenhum aplicativo autenticador configurado.' }
     const { error } = await supabase.auth.mfa.challengeAndVerify({
       factorId: factors[0].id,
@@ -351,7 +362,8 @@ export function useAuthOperations({ refreshAssurance }) {
 
   const disableMfa = useCallback(async (code) => {
     if (!supabase) return { error: 'Supabase não configurado.' }
-    const factors = await listFactors()
+    const { factors, error: listError } = await listFactors()
+    if (listError) return { error: 'Não foi possível verificar o segundo fator. Tente novamente.' }
     if (!factors.length) return { error: 'Nenhum fator ativo.' }
     const verify = await supabase.auth.mfa.challengeAndVerify({
       factorId: factors[0].id,

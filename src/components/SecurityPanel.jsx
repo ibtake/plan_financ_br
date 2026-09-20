@@ -279,7 +279,13 @@ export default function SecurityPanel() {
   const [confirmMfa, mfaConfirmDialog] = useConfirm()
 
   const refresh = useCallback(async () => {
-    const factors = await auth.listFactors()
+    // AUDT-026: falha de leitura nao rebaixa o painel para "MFA desativado".
+    // Preserva o estado anterior e avisa; so mexe em enabled quando a leitura veio.
+    const { factors, error } = await auth.listFactors()
+    if (error) {
+      setMessage({ tone: 'danger', text: 'Não foi possível verificar o status do segundo fator. Tente novamente.' })
+      return
+    }
     setEnabled(factors.length > 0)
   }, [auth])
 

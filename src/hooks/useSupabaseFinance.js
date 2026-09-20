@@ -40,6 +40,10 @@ export function useSupabaseFinance() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null)
   const [offlineStorageError, setOfflineStorageError] = useState('')
   const latestLoadRequest = useRef(0)
+  // AUDT-020: contador de mutações confirmadas. Bumpado por todo persist bem-sucedido;
+  // capturado no início da carga e comparado antes de aplicar o snapshot, para uma
+  // carga em voo não regravar estado anterior a uma mutação já confirmada.
+  const dataVersion = useRef(0)
   const currentUserId = useRef(user?.id || null)
   const currentSessionRevision = useRef(sessionRevision)
   const initializedUser = useRef(null)
@@ -112,11 +116,12 @@ export function useSupabaseFinance() {
   // seguro, um `load()` novo escrito sem o parametro nao derruba mais a UI montada.
   const load = useCallback(async ({ preserveError = false, preserveLoading = true, hydrate = false } = {}) => {
     const requestId = ++latestLoadRequest.current
-    const captured = { requestId, userId: user?.id || null, sessionRevision }
+    const captured = { requestId, userId: user?.id || null, sessionRevision, dataVersion: dataVersion.current }
     const stillCurrent = () => isCurrentLoad(captured, {
       requestId: latestLoadRequest.current,
       userId: currentUserId.current,
       sessionRevision: currentSessionRevision.current,
+      dataVersion: dataVersion.current,
     })
     try {
       if (!user || !supabase) {
@@ -353,6 +358,10 @@ export function useSupabaseFinance() {
       reportError(result.error, { reloaded, restored: Boolean(rollback) })
       return false
     }
+    // AUDT-020: mutação confirmada — invalida qualquer carga em voo iniciada antes
+    // deste ponto (guard em stillCurrent), para o snapshot dela não regravar o
+    // estado anterior sobre o que o servidor acabou de confirmar.
+    dataVersion.current += 1
     return true
   }, [load, reportError, scheduleSessionRetry])
 

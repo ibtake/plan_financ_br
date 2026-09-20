@@ -99,18 +99,34 @@ async function enforceRateLimit(admin: AdminClient, keyHash: string, operation: 
   return null
 }
 
-// Contador global de credenciais invalidas: unico caminho que persiste
-// estado para valores nao verificados. Sem resposta do contador, credencial
-// invalida NAO passa (fail-closed) - protege o armazenamento do plano gratuito.
-async function enforceInvalidAttemptLimit(admin: AdminClient) {
-  // Chave unica para toda a instalacao, como a key_hash constante da RPC
-  // (schema.sql:1157). Janela de 1 hora, teto 600.
-  const redis = await consumeRedisLimit('wial', 600, 3600)
+// AUDT-001: derivacao do IP de origem para chavear o teto de invalidas.
+// `cf-connecting-ip` e setado pela borda Cloudflare da plataforma; o cliente
+// nao consegue forja-lo porque a funcao so e alcancavel via CF. O
+// `x-forwarded-for` (leftmost) e spoofavel e NAO e usado. Ausente o header
+// (cenario degradado), retorna '' e ambos os gates caem no balde global.
+async function clientIpHash(request: Request) {
+  const ip = request.headers.get('cf-connecting-ip')?.trim() || ''
+  return ip ? await hash(ip) : ''
+}
+
+// Contador de credenciais invalidas: unico caminho que persiste estado para
+// valores nao verificados. Sem resposta do contador, credencial invalida NAO
+// passa (fail-closed) - protege o armazenamento do plano gratuito.
+// AUDT-001: chaveado por hash do IP. Um IP em flood so esgota o proprio balde;
+// os demais seguem atendidos. Sem IP, cai no balde global (600/h), como antes.
+async function enforceInvalidAttemptLimit(admin: AdminClient, ipHash: string) {
+  // Redis per-IP (fail-open, gate barato) na frente; RPC per-IP (fail-closed,
+  // fonte de verdade) atras. Chave Redis inclui o IP; janela 1h, teto 60 por
+  // IP. Sem IP, chave global 'wial' e teto 600, identico ao comportamento v40.
+  const redisKey = ipHash ? `wial:${ipHash}` : 'wial'
+  const redisLimit = ipHash ? 60 : 600
+  const redis = await consumeRedisLimit(redisKey, redisLimit, 3600)
   if (redis && !redis.allowed) {
     authLog({ rateLimit: 'redis_blocked', operation: 'invalid' })
     return response(429, { error: 'Muitas tentativas. Tente novamente mais tarde.' }, { 'Retry-After': String(redis.retryAfter) })
   }
-  const { data, error } = await admin.rpc('consume_widget_invalid_attempt_limit')
+  // p_key_hash omitido (undefined) quando nao ha IP: a RPC cai na chave global.
+  const { data, error } = await admin.rpc('consume_widget_invalid_attempt_limit', ipHash ? { p_key_hash: ipHash } : {})
   if (error) return response(503, { error: 'Serviço indisponível.' })
   const result = Array.isArray(data) ? data[0] : data
   if (!result?.allowed) {
@@ -212,6 +228,20 @@ async function readJsonWithinLimit(request: Request): Promise<Record<string, any
 }
 
 Deno.serve(async (request) => {
+  // AUDT-011: try/catch de borda. Uma excecao nao tratada dentro de
+  // handleWidgetData (falha inesperada de runtime, nao os erros ja tratados nos
+  // caminhos internos) vira um 503 padronizado com os headers da funcao, em vez
+  // de vazar o 500 cru do runtime. Fluxos normais passam intactos: todo retorno
+  // legitimo sai de dentro de handleWidgetData.
+  try {
+    return await handleWidgetData(request)
+  } catch (error) {
+    console.error('widget_data_unhandled', { error: error instanceof Error ? error.message : String(error) })
+    return response(503, { error: 'Serviço indisponível.' })
+  }
+})
+
+async function handleWidgetData(request: Request): Promise<Response> {
   if (request.method !== 'POST') return response(405, { error: 'Método não permitido.' })
   // Recusa barata antes de ler o corpo e antes do contador global de invalidas:
   // text/plain e CORS-safelisted, logo POST cross-origin sem preflight queimaria
@@ -245,11 +275,13 @@ Deno.serve(async (request) => {
   // antecipando o 429 contra widgets legitimos. Consome uma unica vez por
   // requisicao: a primeira invalida paga a unidade e decide o 429; as seguintes
   // reaproveitam sem incrementar. O teto e por instalacao, nao por credencial.
+  // AUDT-001: hash do IP derivado uma vez por requisicao; reusado pelo gate.
+  const ipHash = await clientIpHash(request)
   let invalidChecked = false
   const enforceInvalidOnce = async () => {
     if (invalidChecked) return null
     invalidChecked = true
-    return await enforceInvalidAttemptLimit(admin)
+    return await enforceInvalidAttemptLimit(admin, ipHash)
   }
 
   // Pentest 16/08: requisicao sem NENHUMA credencial nunca e legitima - o
@@ -371,7 +403,10 @@ Deno.serve(async (request) => {
   const { data: rows, error } = await admin.from('transactions')
     .select('description,amount,date,paid,recurrence,recurrence_end,installments,paid_occurrences,type')
     .eq('user_id', userId)
-    .eq('type', 'expense')
+    // BUG-006: 'reinvested' (Despesa Reinvestida: aporte/reserva) tambem sai da
+    // liquidez na data, entao entra no widget junto de 'expense'. 'income' fica
+    // fora - e entrada, nao e conta a vencer.
+    .in('type', ['expense', 'reinvested'])
     .lte('date', date)
     .or(`date.eq.${date},recurrence.neq.none,installments.gt.1`)
     .order('date', { ascending: false })
@@ -387,4 +422,4 @@ Deno.serve(async (request) => {
   })
   if (tokenHash && !responseToken) await admin.from('widget_tokens').update({ last_used_at: new Date().toISOString() }).eq('token_hash', tokenHash)
   return response(200, { date, bills, total: bills.reduce((sum, bill) => sum + bill.amount, 0), ...(responseToken ? { token: responseToken, refreshToken: responseRefreshToken } : {}) })
-})
+}

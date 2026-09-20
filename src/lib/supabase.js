@@ -61,8 +61,15 @@ export const supabase = isSupabaseConfigured
         // de clientes de email que podem corromper o redirect_to.
         // ResetPasswordScreen tambem tenta extracao manual como fallback.
         detectSessionInUrl: true,
-        // PKCE: fluxo recomendado para aplicacoes que rodam no navegador
-        flowType: 'pkce',
+        // AUDT-022: fluxo implicit. O app nao tem OAuth nem magic link; o unico
+        // fluxo que usava a troca code->sessao do PKCE era o reset de senha, e o
+        // verifier preso ao storage de quem pediu quebrava o reset cross-device
+        // (BUG-003: PWA iOS abre o link no Safari, outro storage). O implicit
+        // devolve o token no fragmento (#access_token), auto-suficiente em
+        // qualquer dispositivo, sem ?v= no link. O fragmento nao vai ao servidor
+        // (por design), entao nao vaza em log de request. PKCE so seria necessario
+        // se houvesse troca server-side, que o reset client-side aqui nao faz.
+        flowType: 'implicit',
         // IMPR-010 Fase 1: destrava a API de passkey do cliente (Beta). Sem a
         // flag, signInWithPasskey(), registerPasskey() e auth.passkey.* lancam.
         // A flag so expoe a API - nenhum fluxo do app chama passkey ainda, e o

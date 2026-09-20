@@ -46,5 +46,10 @@ export function isRetryableConnectionError(error) {
 export function isCurrentLoad(captured, current) {
   return captured.requestId === current.requestId &&
     captured.userId === current.userId &&
-    captured.sessionRevision === current.sessionRevision
+    captured.sessionRevision === current.sessionRevision &&
+    // AUDT-020: uma mutação confirmada entre o início da carga e a aplicação do
+    // snapshot invalida a carga — senão um SELECT em voo, disparado antes de um
+    // UPDATE confirmar, chega depois e regrava o estado antigo (inclusive no cache
+    // offline). `dataVersion` ausente nos dois lados (chamadas legadas) é igual.
+    (captured.dataVersion ?? null) === (current.dataVersion ?? null)
 }

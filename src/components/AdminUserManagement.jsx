@@ -14,6 +14,8 @@ export default function AdminUserManagement() {
   const [message, setMessage] = useState(null)
   const [busy, setBusy] = useState(false)
   const [metrics, setMetrics] = useState([])
+  const [deleting, setDeleting] = useState(null) // { id, email } do alvo em confirmacao
+  const [deleteCode, setDeleteCode] = useState('')
 
   const loadUsers = useCallback(async () => {
     const result = await callAdminApi('list-users')
@@ -75,6 +77,36 @@ export default function AdminUserManagement() {
     setMessage({ tone: 'success', text: 'Usuário criado. Entregue a senha temporária por um canal seguro.' })
   }
 
+  const startDelete = (item) => {
+    setMessage(null)
+    setDeleteCode('')
+    setDeleting({ id: item.id, email: item.email })
+  }
+
+  const confirmDelete = async () => {
+    setMessage(null)
+    if (deleteCode.length !== 6) {
+      return setMessage({ tone: 'danger', field: 'delete-code', text: 'Informe o código MFA atual para autorizar a exclusão.' })
+    }
+    setBusy(true)
+    const verified = await auth.verifyMfaChallenge(deleteCode)
+    if (verified.error) {
+      setBusy(false)
+      setDeleteCode('')
+      return setMessage({ tone: 'danger', field: 'delete-code', text: verified.error })
+    }
+
+    const targetId = deleting.id
+    const result = await callAdminApi('delete-user', { targetId })
+    setBusy(false)
+    setDeleteCode('')
+    if (result.error) return setMessage({ tone: 'danger', text: result.error })
+
+    setUsers((current) => current.filter((item) => item.id !== targetId))
+    setDeleting(null)
+    setMessage({ tone: 'success', text: 'Usuário e todos os seus dados foram excluídos.' })
+  }
+
   return (
     <section className="card admin-users">
       <div className="card-head">
@@ -108,8 +140,19 @@ export default function AdminUserManagement() {
               <div className="admin-user-row" key={item.id}>
                 <div><strong>{item.fullName || 'Sem nome'}</strong><span>{item.email}</span></div>
                 <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleDateString('pt-BR')}</time>
+                <button className="btn btn-sm btn-danger" type="button" onClick={() => startDelete(item)} disabled={busy}>Excluir</button>
               </div>
             ))}
+            {deleting && (
+              <div className="notice danger stack" role="alertdialog" aria-label="Confirmar exclusão de usuário">
+                <p>Excluir <strong>{deleting.email}</strong> e todos os seus dados? Esta ação não pode ser desfeita.</p>
+                <div className="field"><span className="label" id="delete-mfa-label">Confirmação MFA</span><CodeInput value={deleteCode} onChange={setDeleteCode} disabled={busy} errorId={message?.field === 'delete-code' ? 'admin-message' : undefined} labelledBy="delete-mfa-label" /></div>
+                <div className="input-action-row">
+                  <button className="btn btn-danger" type="button" onClick={confirmDelete} disabled={busy} aria-busy={busy}>{busy ? 'Excluindo...' : 'Excluir definitivamente'}</button>
+                  <button className="btn" type="button" onClick={() => { setDeleting(null); setDeleteCode('') }} disabled={busy}>Cancelar</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

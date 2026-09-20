@@ -20,6 +20,10 @@ export function normalizeTransaction(input) {
     note: String(input.note || ''),
     paidOccurrences: input.paidOccurrences || {},
     createdAt: input.createdAt || new Date().toISOString(),
+    // AUDT-020: updated_at do servidor (trigger set_updated_at) viaja no estado
+    // local só para servir de pré-condição de concorrência no update. Nunca é
+    // enviado em insert/update (é gerido pelo trigger); null quando desconhecido.
+    updatedAt: input.updatedAt || null,
   }
 }
 
@@ -30,11 +34,25 @@ export const toTxRow = (tx, userId) => ({
   tags: tx.tags, note: tx.note || null, paid_occurrences: tx.paidOccurrences, created_at: tx.createdAt,
 })
 
+// AUDT-020: payload de UPDATE colunar. Sempre exclui `paid_occurrences` (só a RPC
+// toggle_paid_occurrence o gerencia; o formulário nunca o edita). Exclui também
+// `paid` quando a edição é de uma ocorrência recorrente/parcelada (occurrenceIndex
+// > 0), onde a coluna base `paid` não pertence à edição — o caminho de patch já
+// remove `paid` do input nesse caso, mas a linha montada por normalizeTransaction
+// ainda carregava o valor antigo. Ocorrência 0 mantém `paid` (checkbox do form).
+export const toTxUpdateRow = (tx, userId, occurrenceIndex = 0) => {
+  const row = toTxRow(tx, userId)
+  delete row.paid_occurrences
+  if (Number(occurrenceIndex) > 0) delete row.paid
+  return row
+}
+
 export const fromTxRow = (row) => normalizeTransaction({
   id: row.id, type: row.type, description: row.description, amount: Number(row.amount),
   categoryId: row.category_id, date: row.date, method: row.method, paid: row.paid,
   recurrence: row.recurrence, recurrenceEnd: row.recurrence_end || '', installments: row.installments,
   tags: row.tags || [], note: row.note || '', paidOccurrences: row.paid_occurrences || {}, createdAt: row.created_at,
+  updatedAt: row.updated_at || null,
 })
 
 export const fromCategory = (row) => ({

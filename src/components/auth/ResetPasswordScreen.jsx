@@ -33,6 +33,7 @@ export default function ResetPasswordScreen() {
   const [mfaCode, setMfaCode] = useState('')
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
+  const [warning, setWarning] = useState('')
 
   const settled = useRef(false)
 
@@ -62,7 +63,13 @@ export default function ResetPasswordScreen() {
       // CAMADA 1: auto-detect funcionou (detectSessionInUrl)
       if (auth.session) {
         setBusy(false)
-        const factors = await auth.listFactors()
+        // AUDT-026: falha ao ler fatores nao libera o formulario como se nao
+        // houvesse MFA. Segura e pede nova tentativa; so decide com leitura confiavel.
+        const { factors, error } = await auth.listFactors()
+        if (error) {
+          setError('Não foi possível verificar o segundo fator. Recarregue a página e tente novamente.')
+          return
+        }
         if (factors.length) setMfaRequired(true)
         else setReady(true)
         // Limpa a URL apos sucesso
@@ -82,8 +89,12 @@ export default function ResetPasswordScreen() {
           return
         }
         if (result && result.data) {
-          const factors = await auth.listFactors()
+          const { factors, error } = await auth.listFactors()
           setBusy(false)
+          if (error) {
+            setError('Não foi possível verificar o segundo fator. Recarregue a página e tente novamente.')
+            return
+          }
           if (factors.length) setMfaRequired(true)
           else setReady(true)
           // Limpa a URL apos sucesso
@@ -171,6 +182,7 @@ export default function ResetPasswordScreen() {
       setError(result.error)
       return
     }
+    if (result.warning) setWarning(result.warning)
     setDone(true)
   }
 
@@ -184,10 +196,11 @@ export default function ResetPasswordScreen() {
 
         <div style={{ marginTop: 22 }}>
           <h1 className="auth-title">{done ? 'Senha alterada' : 'Defina uma nova senha'}</h1>
-          <div className="text-sm text-muted">{done ? 'Todas as sessões foram encerradas.' : 'Use uma senha forte para proteger sua conta.'}</div>
+          <div className="text-sm text-muted">{done ? (warning ? 'Sua senha foi atualizada.' : 'Todas as sessões foram encerradas.') : 'Use uma senha forte para proteger sua conta.'}</div>
         </div>
 
         {error && <div id="reset-error" className="notice danger" style={{ marginTop: 16 }} role="alert">{error}</div>}
+        {done && warning && <div className="notice warning" style={{ marginTop: 16 }} role="status">{warning}</div>}
 
         {done && <a className="btn btn-primary btn-block" style={{ marginTop: 18 }} href="/">Voltar para o login</a>}
 

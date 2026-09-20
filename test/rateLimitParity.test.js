@@ -57,12 +57,28 @@ test('limites do gate do widget batem com consume_widget_rate_limit', () => {
   assert.ok(schema.includes('v_window_seconds integer := 60;'))
 })
 
-test('teto global de tentativas invalidas bate com a RPC v40', () => {
-  const limite = Number(schema.match(/v_limit constant integer := (\d+);/)[1])
+test('teto de tentativas invalidas per-IP/global bate entre RPC v50 e gate Redis', () => {
+  // v50 (AUDT-001): v_limit virou condicional (60 por IP, 600 no fallback global).
+  const caseLimite = schema.match(/v_limit constant integer := case when v_scoped then (\d+) else (\d+) end;/)
+  assert.ok(caseLimite, 'v_limit condicional (per-IP/global) nao encontrado no schema.sql')
+  const perIp = Number(caseLimite[1])
+  const global = Number(caseLimite[2])
   const janela = Number(schema.match(/v_window_seconds constant integer := (\d+);/)[1])
-  assert.equal(limite, 600)
+  assert.equal(perIp, 60)
+  assert.equal(global, 600)
   assert.equal(janela, 3600)
-  assert.ok(widgetData.includes(`consumeRedisLimit('wial', ${limite}, ${janela})`), 'gate global diverge da RPC v40')
+  // O gate Redis da Edge Function espelha os dois tetos e a janela de 1h.
+  assert.ok(widgetData.includes(`const redisLimit = ipHash ? ${perIp} : ${global}`), 'gate Redis diverge dos tetos per-IP/global da RPC v50')
+  assert.ok(widgetData.includes(`consumeRedisLimit(redisKey, redisLimit, ${janela})`), 'janela do gate Redis diverge da RPC v50')
+})
+
+test('teto de delete-user (TASK-013) bate entre RPC e gate Redis do admin', () => {
+  // v51: delete-user no case da RPC (3/min) e no mapa Redis do admin-users.
+  const { limites } = plpgsqlCase('case p_action when')
+  assert.equal(limites['delete-user'], 3, "case p_action da RPC nao registra delete-user = 3")
+  assert.equal(tsLimits(adminUsers, 'ADMIN_REDIS_LIMITS')['delete-user'], 3, 'ADMIN_REDIS_LIMITS diverge do teto 3 de delete-user')
+  // delete-user precisa estar entre as acoes que passam pelo gate no handler.
+  assert.ok(adminUsers.includes("'delete-user'].includes(action)"), 'delete-user fora do array de acoes com rate limit no handler')
 })
 
 test('as tres copias de consumeRedisLimit sao identicas', () => {

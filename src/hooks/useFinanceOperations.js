@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
-import { fromTxRow, normalizeTransaction, toCategory, toTxRow } from '../lib/financeTransforms.js'
+import { fromTxRow, normalizeTransaction, toCategory, toTxRow, toTxUpdateRow } from '../lib/financeTransforms.js'
 import { fallbackCategoryId, normalizeType } from '../utils/categories.js'
 import { uid } from '../utils/format.js'
 
@@ -44,7 +44,29 @@ export function useFinanceOperations({ persist, user, transactions, categories, 
     const rollback = versionedRollback(`transaction:${rootId}`, () => {
       setTransactions((prev) => prev.map((tx) => (tx.id === rootId ? current : tx)))
     })
-    void persist(() => supabase.from('transactions').update(toTxRow(updated, user.id)).eq('id', rootId).eq('user_id', user.id), { table: 'transactions', action: 'update' }, rollback)
+    // AUDT-020: update colunar (sem paid_occurrences; sem paid em ocorrência > 0)
+    // + pré-condição de concorrência por updated_at. `.select()` devolve as linhas
+    // afetadas: se a linha mudou no servidor entre a carga e o update (outra aba,
+    // toggle de pago), o filtro não casa, zero linhas voltam e devolvemos um erro
+    // sintético `concurrent_update` — o persist faz rollback do otimista e recarrega
+    // a verdade do servidor. Sem updated_at conhecido (cache antigo), cai no update
+    // sem pré-condição, comportamento anterior. Em sucesso, sincroniza o estado
+    // local com a linha confirmada (traz o updated_at novo para o próximo update).
+    void persist(async () => {
+      let query = supabase.from('transactions')
+        .update(toTxUpdateRow(updated, user.id, occurrenceIndex))
+        .eq('id', rootId).eq('user_id', user.id)
+      if (current.updatedAt) query = query.eq('updated_at', current.updatedAt)
+      const result = await query.select()
+      if (!result.error && current.updatedAt && (result.data?.length ?? 0) === 0) {
+        return { error: { code: 'concurrent_update', message: 'Este lançamento mudou em outra sessão.' } }
+      }
+      if (!result.error && result.data?.[0]) {
+        const confirmed = fromTxRow(result.data[0])
+        setTransactions((prev) => prev.map((tx) => (tx.id === rootId ? confirmed : tx)))
+      }
+      return result
+    }, { table: 'transactions', action: 'update' }, rollback)
   }, [persist, setTransactions, transactions, user, versionedRollback])
 
   const deleteTransaction = useCallback((id) => {

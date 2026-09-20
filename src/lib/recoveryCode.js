@@ -28,11 +28,12 @@ const implicitToken = hashParams.get('access_token')
 export const recoveryCode = pkceCode || implicitToken
 
 /**
- * Verifier PKCE que viaja no proprio link (?v=), capturado junto com o code.
+ * Verifier PKCE que viajava no proprio link (?v=), capturado junto com o code.
  *
- * O Supabase guardaria o verifier no localStorage de quem pediu o reset.
- * Quando o link abre em outro navegador (PWA do iOS -> Safari) esse storage
- * nao existe, a troca falha e o usuario ve um erro sem causa aparente.
- * Com o verifier no link, a troca funciona em qualquer contexto.
+ * LEGADO: o fluxo passou a `flowType: 'implicit'` (AUDT-022), entao os links
+ * novos NAO carregam mais `?v=` nem code_verifier. Este captura permanece so
+ * para links antigos ainda em transito na caixa de e-mail; quando presente,
+ * a troca funciona em qualquer navegador (inclusive PWA do iOS -> Safari),
+ * que era a razao original de por o verifier no link.
  */
 export const recoveryVerifier = url.searchParams.get('v')

@@ -1296,6 +1296,17 @@ body:has(.modal-backdrop) .fab {
     overflow-y: auto;
     padding-right: 4px;
   }
+
+  /* BUG-005: no desktop o card tem teto de 390px e a .tx-list rola por dentro;
+     o "Mais detalhes" era o último item da lista e ficava abaixo da dobra do
+     scroll interno (não óbvio), sumindo. Fixa o botão no fim da área visível,
+     sempre alcançável. Fundo sólido para as linhas não vazarem por trás.
+     Escopo só desktop: no mobile não há teto nem scroll, fluxo normal intacto. */
+  .dashboard-bottom-panels > .card > .tx-list > .fixed-expense-more {
+    position: sticky;
+    bottom: 0;
+    background: var(--surface);
+  }
 }
 
 /* ---------- KPI ---------- */
