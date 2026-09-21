@@ -238,6 +238,12 @@ export function useAuthOperations({ refreshAssurance }) {
     // troca que falhasse (senha fraca, rede) deixava o usuario sem widget a toa.
     const { error } = await supabase.auth.updateUser({ password: newPassword })
     if (error) return { error: translateAuthError(error), code: error.code || null }
+    // BUG-009: updateUser empurra users.updated_at para agora, mas o access token
+    // em memoria mantem o iat da sessao de recovery (anterior). is_token_valid()
+    // rejeita esse token defasado - o que faria o log abaixo e o revoke do widget
+    // falharem (widget-setup: 401; log_security_event: descarte silencioso).
+    // refreshSession reemite o token com iat >= updated_at e preserva o AAL.
+    await supabase.auth.refreshSession()
     await logAuthEvent(AUTH_EVENTS.PASSWORD_CHANGED, 'warning', {})
     // Daqui pra frente a senha JA mudou: o que falhar e limpeza e vira aviso,
     // nunca erro. Devolver erro faria o usuario achar que a troca falhou e tentar
