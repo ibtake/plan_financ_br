@@ -195,8 +195,8 @@ export default function ResetPasswordScreen() {
         </div>
 
         <div style={{ marginTop: 22 }}>
-          <h1 className="auth-title">{done ? 'Senha alterada' : 'Defina uma nova senha'}</h1>
-          <div className="text-sm text-muted">{done ? (warning ? 'Sua senha foi atualizada.' : 'Todas as sessões foram encerradas.') : 'Use uma senha forte para proteger sua conta.'}</div>
+          <h1 className="auth-title">{done ? 'Senha alterada' : mfaRequired ? 'Confirme sua identidade' : 'Defina uma nova senha'}</h1>
+          <div className="text-sm text-muted">{done ? (warning ? 'Sua senha foi atualizada.' : 'Todas as sessões foram encerradas.') : mfaRequired ? 'Digite o código do seu aplicativo autenticador. Em seguida você define a nova senha.' : 'Use uma senha forte para proteger sua conta.'}</div>
         </div>
 
         {error && <div id="reset-error" className="notice danger" style={{ marginTop: 16 }} role="alert">{error}</div>}

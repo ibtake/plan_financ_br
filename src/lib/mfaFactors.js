@@ -7,3 +7,11 @@ export function normalizeFactors({ data, error } = {}) {
   if (error) return { error }
   return { factors: (data?.totp || []).filter((f) => f.status === 'verified') }
 }
+
+// BUG-009: predicado de "precisa confirmar MFA antes de trocar a senha", derivado
+// do assurance (refreshAssurance). MFA habilitado = nextLevel 'aal2'; falta subir
+// quando a sessao ainda esta em aal1. Sem MFA (nextLevel != 'aal2'), aal2 e
+// inatingivel e a troca segue em aal1. Puro para o teste cobrir sem SDK nem render.
+export function needsMfaBeforePasswordChange(assurance) {
+  return assurance?.nextLevel === 'aal2' && assurance?.currentLevel !== 'aal2'
+}

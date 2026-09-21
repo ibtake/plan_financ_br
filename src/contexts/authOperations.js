@@ -3,7 +3,7 @@ import { supabase, translateAuthError } from '../lib/supabase.js'
 import { recoveryVerifier } from '../lib/recoveryCode.js'
 import { rememberedAccounts } from '../lib/rememberedAccounts.js'
 import { corpoVazioDoSdk } from '../lib/passkeyErrors.js'
-import { normalizeFactors } from '../lib/mfaFactors.js'
+import { normalizeFactors, needsMfaBeforePasswordChange } from '../lib/mfaFactors.js'
 import { AUTH_EVENTS, logAuthEvent } from './authAudit.js'
 import {
   registerFailedLogin,
@@ -210,25 +210,26 @@ export function useAuthOperations({ refreshAssurance }) {
     if (!supabase) return { error: 'Supabase não configurado.' }
     const strength = validatePassword(newPassword)
     if (!strength.valid) return { error: 'A nova senha não atende à política de segurança.' }
+    // Exigir aal2 antes da troca quando ha MFA, INDEPENDENTE de haver passkey.
+    // Hoje o unico caller (ResetPasswordScreen) ja verifica o MFA antes de liberar
+    // o formulario, entao a sessao chega aqui em aal2. Esta guarda torna
+    // updatePassword auto-suficiente: sem ela, um caller que pule a etapa de MFA
+    // (conta com MFA e SEM passkey) chegaria em aal1 e a limpeza pos-troca falharia
+    // no servidor - widget-setup recusa a revogacao em aal1 com 403 aal2_required
+    // (has_required_aal). refreshAssurance (nao o getAAL cru) para nao confundir
+    // "sem MFA" com "falha ao ler o nivel": no erro, aborta em vez de seguir como
+    // aal1. Sem MFA, aal2 e inatingivel e tudo opera no aal1 mesmo.
+    const assurance = await refreshAssurance()
+    if (assurance?.error) {
+      return { error: 'Não foi possível confirmar o nível de segurança da sessão. Tente novamente.' }
+    }
+    if (needsMfaBeforePasswordChange(assurance)) {
+      return { error: 'Confirme o código do seu aplicativo autenticador antes de trocar a senha.' }
+    }
     // Trocar a senha revoga todas as passkeys: a senha antiga pode ter vazado e a
-    // passkey e um caminho de entrada que ela nao deve deixar para tras. Gerir
-    // passkey exige aal2 quando ha MFA (medido na Fase 0: 403 insufficient_aal);
-    // sem MFA, aal2 e inatingivel e a revogacao opera no aal1 mesmo. Por isso o
-    // bloqueio so vale quando ha passkey a revogar E o MFA esta habilitado.
+    // passkey e um caminho de entrada que ela nao deve deixar para tras.
     const { data: passkeys } = await supabase.auth.passkey.list()
     if ((passkeys ?? []).length > 0) {
-      // refreshAssurance (nao o getAAL cru) para nao confundir "sem MFA" com
-      // "falha ao ler o nivel": no erro, aborta em vez de seguir como aal1. Mesmo
-      // padrao do signIn. O servidor ja barra a revogacao em aal1 com 403
-      // insufficient_aal (Fase 0) - isto e a camada de UX antes desse teto.
-      const assurance = await refreshAssurance()
-      if (assurance?.error) {
-        return { error: 'Não foi possível confirmar o nível de segurança da sessão. Tente novamente.' }
-      }
-      const mfaHabilitado = assurance?.nextLevel === 'aal2'
-      if (mfaHabilitado && assurance?.currentLevel !== 'aal2') {
-        return { error: 'Confirme o código do seu aplicativo autenticador antes de trocar a senha, para que as chaves de acesso possam ser revogadas.' }
-      }
       const revoke = await revokeAllPasskeys()
       if (revoke.error) return { error: `Não foi possível revogar as chaves de acesso: ${revoke.error} A senha não foi alterada.` }
     }
