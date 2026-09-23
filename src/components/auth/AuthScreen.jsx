@@ -15,16 +15,15 @@ export default function AuthScreen() {
   // Contas ja usadas neste navegador (IMPR-009). Lidas uma vez, no primeiro
   // render; como todo hook, ficam acima do early return de missingConfig.
   const [accounts, setAccounts] = useState(() => rememberedAccounts.list())
-  // Contas com passkey abrem no campo de usuario para permitir Conditional UI;
-  // a lista de contas continua acessivel pelo link da tela de login.
-  const hasRememberedPasskey = accounts.some((account) => account.hasPasskey)
+  // Mantem a conta reconhecida selecionada; contas com passkey tambem exibem
+  // um campo focavel para Conditional UI, sem remover o botao manual existente.
   const inicio = initialLoginStep(accounts)
   // accounts | login | forgot | mfa
   const [mode, setMode] = useState(inicio.mode)
   // E-mail escolhido na etapa de contas; null = formulario tradicional.
   const [selected, setSelected] = useState(inicio.selected)
   const [form, setForm] = useState({
-    email: inicio.selected || (accounts.length === 1 && hasRememberedPasskey ? accounts[0].email : ''),
+    email: inicio.selected || '',
     password: '',
   })
   const [code, setCode] = useState('')
@@ -135,7 +134,6 @@ export default function AuthScreen() {
     if (
       !conditionalFocused
       || mode !== 'login'
-      || selected
       || (captchaEnabled && !captchaToken)
       || conditionalStartedForFocus.current === conditionalFocusId
     ) return
@@ -181,6 +179,18 @@ export default function AuthScreen() {
   ])
 
   const set = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))
+  const focusConditionalLogin = () => {
+    setConditionalFocused(true)
+    setConditionalFocusId((id) => id + 1)
+  }
+  const setLoginEmail = (event) => {
+    const email = event.target.value
+    setForm((prev) => ({ ...prev, email }))
+    if (selected && email.trim().toLowerCase() !== selected.toLowerCase()) {
+      setSelected(null)
+      setPasskeyFailed(false)
+    }
+  }
 
   const resetMessages = () => {
     setError('')
@@ -315,6 +325,7 @@ export default function AuthScreen() {
   }
 
   const handlePasskeyLogin = async () => {
+    abortConditionalPasskey()
     resetMessages()
     setBusy(true)
     const result = await auth.signInWithPasskey({ captchaToken })
@@ -497,14 +508,33 @@ export default function AuthScreen() {
                     <h1 className="auth-account-email">{selected}</h1>
                   </div>
                 )}
-                <input
-                  type="email"
-                  name="email"
-                  autoComplete="username"
-                  value={form.email}
-                  readOnly
-                  hidden
-                />
+                {selectedHasPasskey ? (
+                  <div className="field">
+                    <label className="label" htmlFor="login-email">E-mail</label>
+                    <input
+                      id="login-email"
+                      className="input"
+                      type="email"
+                      name="email"
+                      autoComplete="username webauthn"
+                      inputMode="email"
+                      required
+                      value={form.email}
+                      onChange={setLoginEmail}
+                      onFocus={focusConditionalLogin}
+                      onBlur={() => setConditionalFocused(false)}
+                    />
+                  </div>
+                ) : (
+                  <input
+                    type="email"
+                    name="email"
+                    autoComplete="username"
+                    value={form.email}
+                    readOnly
+                    hidden
+                  />
+                )}
               </>
             ) : (
               <div className="field">
@@ -520,10 +550,7 @@ export default function AuthScreen() {
                   required
                   value={form.email}
                   onChange={set('email')}
-                  onFocus={() => {
-                    setConditionalFocused(true)
-                    setConditionalFocusId((id) => id + 1)
-                  }}
+                  onFocus={focusConditionalLogin}
                   onBlur={() => setConditionalFocused(false)}
                   placeholder="voce@exemplo.com"
                 />

@@ -120,14 +120,14 @@ export function createRememberedAccounts({
 export const rememberedAccounts = createRememberedAccounts()
 
 /**
- * Etapa em que a tela de login abre (TASK-006 / IMPR-013).
+ * Etapa em que a tela de login abre (TASK-006).
  *
- * Havendo passkey lembrada neste navegador, deixa a conta sem selecao para
- * exibir o campo `username webauthn` e permitir Conditional UI. A lista continua
- * acessivel como alternativa manual. Sem passkey, preserva o fluxo TASK-006.
+ * Escolher conta so faz sentido com duas ou mais lembradas. Com exatamente
+ * uma, a tela abre direto na senha com o e-mail ja identificado; com nenhuma,
+ * no formulario tradicional. `selected` tambem preserva o caminho manual da
+ * passkey para a conta marcada neste navegador.
  */
 export function initialLoginStep(list) {
-  if (list.some((account) => account.hasPasskey)) return { mode: 'login', selected: null }
   if (list.length > 1) return { mode: 'accounts', selected: null }
   return { mode: 'login', selected: list.length === 1 ? list[0].email : null }
 }
