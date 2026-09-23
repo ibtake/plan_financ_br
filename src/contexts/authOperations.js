@@ -114,10 +114,14 @@ export function useAuthOperations({ refreshAssurance }) {
     return { ok: true }
   }, [])
 
-  const signInWithPasskey = useCallback(async ({ captchaToken } = {}) => {
+  const signInWithPasskey = useCallback(async ({ captchaToken, mediation, signal } = {}) => {
     if (!supabase) return { error: 'Supabase não configurado.' }
     const { data, error } = await supabase.auth.signInWithPasskey({
-      options: captchaToken ? { captchaToken } : undefined,
+      options: {
+        ...(captchaToken ? { captchaToken } : {}),
+        ...(mediation ? { mediation } : {}),
+        ...(signal ? { signal } : {}),
+      },
     })
     if (error) return { error: translateAuthError(error), name: error.name }
     const assurance = await refreshAssurance()
