@@ -36,15 +36,16 @@ export default function AuthScreen() {
   // que zera o token no cleanup e emite um novo - sem esperar a expiracao.
   const [captchaNonce, setCaptchaNonce] = useState(0)
   const resetCaptcha = useCallback(() => { setCaptchaToken(null); setCaptchaNonce((n) => n + 1) }, [])
-  // Conta com passkey abre so no cracha; qualquer falha do passkey revela a
-  // senha (inclusive cancelar o Face ID/PIN), terminando como a tela de hoje.
-  const [passkeyFailed, setPasskeyFailed] = useState(false)
+  // Conta com passkey mantém o crachá até a pessoa escolher usar senha.
+  const [passwordRequested, setPasswordRequested] = useState(false)
   const passwordRef = useRef(null)
   const submittedMfaCode = useRef(null)
   const [conditionalFocused, setConditionalFocused] = useState(false)
   const [conditionalFocusId, setConditionalFocusId] = useState(0)
   const conditionalStartedForFocus = useRef(null)
   const conditionalPasskey = useRef(null)
+  const automaticPasskeyStartedFor = useRef(null)
+  const automaticPasskey = useRef(null)
 
   const abortConditionalPasskey = useCallback(() => {
     const attempt = conditionalPasskey.current
@@ -125,8 +126,8 @@ export default function AuthScreen() {
 
   // Passkey falhou: a senha sobe e recebe o foco, para o teclado seguir aberto.
   useEffect(() => {
-    if (passkeyFailed) passwordRef.current?.focus()
-  }, [passkeyFailed])
+    if (passwordRequested) passwordRef.current?.focus()
+  }, [passwordRequested])
 
   useEffect(() => abortConditionalPasskey, [abortConditionalPasskey, mode, selected])
 
@@ -192,15 +193,19 @@ export default function AuthScreen() {
 
   const switchMode = (next) => {
     abortConditionalPasskey()
+    automaticPasskey.current?.controller.abort()
+    automaticPasskey.current = null
+    if (next === 'login') automaticPasskeyStartedFor.current = null
     resetMessages()
     setCode('')
     submittedMfaCode.current = null
     setCaptchaToken(null)
-    setPasskeyFailed(false)
+    setPasswordRequested(false)
     slideTo(next)
   }
 
   const selectAccount = (email) => {
+    automaticPasskeyStartedFor.current = null
     setSelected(email)
     setForm({ email, password: '' })
     switchMode('login')
@@ -211,8 +216,8 @@ export default function AuthScreen() {
   const selectedHasPasskey = !!selected && accounts.some((a) => a.email === selected && a.hasPasskey)
   // Enquanto o passkey nao falha, a conta marcada mostra so o cracha clicavel e
   // esconde a senha. Conta sem marca: senha visivel de sempre, sem cracha.
-  const crachaMode = selectedHasPasskey && !passkeyFailed
-  const mostrarSenha = !selectedHasPasskey || passkeyFailed
+  const crachaMode = selectedHasPasskey && !passwordRequested
+  const mostrarSenha = !selectedHasPasskey || passwordRequested
   // Sinal visual do captcha embutido: cinza enquanto o token nao chega, cor de
   // "pronto" quando valida. Vazio quando o captcha nao esta configurado (sem
   // gate, sem sinal). Vira classe no cracha (login) e no botao (reset).
@@ -220,6 +225,73 @@ export default function AuthScreen() {
   // Cracha revelado: token validado, ou captcha nem configurado (nasce pronto).
   // "Usar senha" so existe depois desse ponto - nao aparece durante o skeleton.
   const gateRevealed = !captchaEnabled || !!captchaToken
+
+  // A conta lembrada identifica a credencial: inicia WebAuthn quando o
+  // Turnstile liberar. O timer é cancelado no replay do StrictMode para não
+  // pedir dois desafios; se o navegador exigir um toque, o card segue como
+  // alternativa manual.
+  useEffect(() => {
+    if (
+      mode !== 'login'
+      || !selectedHasPasskey
+      || passwordRequested
+      || (captchaEnabled && !captchaToken)
+      || automaticPasskeyStartedFor.current === selected
+    ) return undefined
+
+    const email = selected
+    const timer = window.setTimeout(() => {
+      if (automaticPasskeyStartedFor.current === email) return
+      automaticPasskeyStartedFor.current = email
+      const controller = new AbortController()
+      const attempt = { email, controller }
+      automaticPasskey.current = attempt
+      setBusy(true)
+      setError('')
+      setNotice('')
+
+      void signInWithPasskey({ captchaToken, mediation: 'optional', signal: controller.signal })
+        .then((result) => {
+          if (controller.signal.aborted) return
+          if (result.error) {
+            if (result.name !== 'NotAllowedError') setError(result.error)
+            resetCaptcha()
+            return
+          }
+          if (result.mfaRequired) {
+            slideTo('mfa')
+            setCode('')
+          }
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return
+          setError('Não foi possível iniciar o acesso por chave de acesso.')
+          resetCaptcha()
+        })
+        .finally(() => {
+          if (automaticPasskey.current === attempt) automaticPasskey.current = null
+          setBusy(false)
+        })
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timer)
+      if (automaticPasskey.current?.email === email) {
+        automaticPasskey.current.controller.abort()
+        automaticPasskey.current = null
+      }
+    }
+  }, [
+    captchaEnabled,
+    captchaToken,
+    mode,
+    passwordRequested,
+    resetCaptcha,
+    selected,
+    selectedHasPasskey,
+    signInWithPasskey,
+    slideTo,
+  ])
 
   const pickAnotherAccount = () => {
     setSelected(null)
@@ -325,9 +397,7 @@ export default function AuthScreen() {
     const result = await auth.signInWithPasskey({ captchaToken })
     setBusy(false)
     if (result.error) {
-      // Qualquer falha revela a senha. Cancelar o Face ID/PIN (NotAllowedError)
-      // e escolha do usuario, nao erro: revela em silencio, sem alarme vermelho.
-      setPasskeyFailed(true)
+      // Cancelar a passkey é uma escolha; mantém o card e deixa a senha opt-in.
       if (result.name !== 'NotAllowedError') setError(result.error)
       resetCaptcha()
       return
@@ -460,7 +530,7 @@ export default function AuthScreen() {
                     oferecer a senha salva nesta segunda etapa. */}
                 {crachaMode ? (
                   // Conta com passkey: a identidade vira botao. Tocar inicia o
-                  // login por chave de acesso; a senha so aparece se ele falhar.
+                  // login por chave de acesso; a senha só aparece se a pessoa pedir.
                   // Enquanto o Turnstile nao libera, um skeleton desenhado pulsa
                   // por cima do conteudo real (oculto com blur); ao validar, o
                   // skeleton fade-out + blur e o conteudo fade-in + un-blur.
@@ -484,7 +554,7 @@ export default function AuthScreen() {
                         <span className="auth-identity-key" aria-hidden="true"><KeyRound size={16} strokeWidth={2} /></span>
                       </span>
                       <span className="auth-account-email">{selected}</span>
-                      <span className="auth-identity-hint">Toque para entrar com a chave de acesso</span>
+                      <span className="auth-identity-hint">{busy ? 'Aguardando a chave de acesso' : 'Toque para tentar novamente'}</span>
                     </span>
                   </button>
                 ) : null}
@@ -492,7 +562,10 @@ export default function AuthScreen() {
                   // Escape sem esperar a passkey falhar: revela a senha ja.
                   // So depois do reveal do cracha - nada de atalho durante o
                   // skeleton, quando nem se sabe ainda se o gate vai passar.
-                  <button type="button" className="link-btn auth-use-password" onClick={() => setPasskeyFailed(true)}>
+                  <button type="button" className="link-btn auth-use-password" onClick={() => {
+                    if (automaticPasskey.current) resetCaptcha()
+                    setPasswordRequested(true)
+                  }}>
                     Usar senha
                   </button>
                 )}
@@ -533,7 +606,7 @@ export default function AuthScreen() {
             )}
 
             {mostrarSenha && (
-              <div className={`field${passkeyFailed ? ' auth-password-reveal' : ''}`}>
+              <div className={`field${passwordRequested ? ' auth-password-reveal' : ''}`}>
                 <label className="label" htmlFor="login-password">
                   Senha
                 </label>
