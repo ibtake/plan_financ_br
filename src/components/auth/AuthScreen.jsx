@@ -639,7 +639,7 @@ export default function AuthScreen() {
                 Esqueci minha senha
               </button>
               {accounts.length > 0 && (
-              <button type="button" className="link-btn" onClick={selected ? pickAnotherAccount : backToAccounts}>
+              <button type="button" className="link-btn" onClick={backToAccounts}>
                 {selected ? 'Trocar de conta' : 'Contas reconhecidas'}
               </button>
               )}
