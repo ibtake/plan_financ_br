@@ -15,8 +15,8 @@ export default function AuthScreen() {
   // Contas ja usadas neste navegador (IMPR-009). Lidas uma vez, no primeiro
   // render; como todo hook, ficam acima do early return de missingConfig.
   const [accounts, setAccounts] = useState(() => rememberedAccounts.list())
-  // Mantem a conta reconhecida selecionada; contas com passkey tambem exibem
-  // um campo focavel para Conditional UI, sem remover o botao manual existente.
+  // Uma conta conhecida com passkey abre a tela exclusiva da passkey; a
+  // Conditional UI fica no formulario separado de troca de conta.
   const inicio = initialLoginStep(accounts)
   // accounts | login | forgot | mfa
   const [mode, setMode] = useState(inicio.mode)
@@ -134,6 +134,7 @@ export default function AuthScreen() {
     if (
       !conditionalFocused
       || mode !== 'login'
+      || selected
       || (captchaEnabled && !captchaToken)
       || conditionalStartedForFocus.current === conditionalFocusId
     ) return
@@ -183,14 +184,6 @@ export default function AuthScreen() {
     setConditionalFocused(true)
     setConditionalFocusId((id) => id + 1)
   }
-  const setLoginEmail = (event) => {
-    const email = event.target.value
-    setForm((prev) => ({ ...prev, email }))
-    if (selected && email.trim().toLowerCase() !== selected.toLowerCase()) {
-      setSelected(null)
-      setPasskeyFailed(false)
-    }
-  }
 
   const resetMessages = () => {
     setError('')
@@ -231,6 +224,7 @@ export default function AuthScreen() {
   const pickAnotherAccount = () => {
     setSelected(null)
     setForm({ email: '', password: '' })
+    setCaptchaNonce((nonce) => nonce + 1)
     switchMode('login')
   }
 
@@ -508,33 +502,14 @@ export default function AuthScreen() {
                     <h1 className="auth-account-email">{selected}</h1>
                   </div>
                 )}
-                {selectedHasPasskey ? (
-                  <div className="field">
-                    <label className="label" htmlFor="login-email">E-mail</label>
-                    <input
-                      id="login-email"
-                      className="input"
-                      type="email"
-                      name="email"
-                      autoComplete="username webauthn"
-                      inputMode="email"
-                      required
-                      value={form.email}
-                      onChange={setLoginEmail}
-                      onFocus={focusConditionalLogin}
-                      onBlur={() => setConditionalFocused(false)}
-                    />
-                  </div>
-                ) : (
-                  <input
-                    type="email"
-                    name="email"
-                    autoComplete="username"
-                    value={form.email}
-                    readOnly
-                    hidden
-                  />
-                )}
+                <input
+                  type="email"
+                  name="email"
+                  autoComplete="username"
+                  value={form.email}
+                  readOnly
+                  hidden
+                />
               </>
             ) : (
               <div className="field">
@@ -591,9 +566,9 @@ export default function AuthScreen() {
                 Esqueci minha senha
               </button>
               {accounts.length > 0 && (
-                <button type="button" className="link-btn" onClick={backToAccounts}>
-                  {selected ? 'Trocar de conta' : 'Contas reconhecidas'}
-                </button>
+              <button type="button" className="link-btn" onClick={selected ? pickAnotherAccount : backToAccounts}>
+                {selected ? 'Trocar de conta' : 'Contas reconhecidas'}
+              </button>
               )}
             </div>
           </form>
