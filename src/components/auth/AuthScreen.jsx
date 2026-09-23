@@ -15,16 +15,16 @@ export default function AuthScreen() {
   // Contas ja usadas neste navegador (IMPR-009). Lidas uma vez, no primeiro
   // render; como todo hook, ficam acima do early return de missingConfig.
   const [accounts, setAccounts] = useState(() => rememberedAccounts.list())
-  // Semente das tres etapas abaixo, calculada da lista do primeiro render: com
-  // conta unica a escolha e ruido, entao a tela abre na senha (TASK-006). Nao e
-  // estado derivado - mudar `accounts` depois nao reabre a etapa de contas.
+  // Contas com passkey abrem no campo de usuario para permitir Conditional UI;
+  // a lista de contas continua acessivel pelo link da tela de login.
+  const hasRememberedPasskey = accounts.some((account) => account.hasPasskey)
   const inicio = initialLoginStep(accounts)
   // accounts | login | forgot | mfa
   const [mode, setMode] = useState(inicio.mode)
   // E-mail escolhido na etapa de contas; null = formulario tradicional.
   const [selected, setSelected] = useState(inicio.selected)
   const [form, setForm] = useState({
-    email: inicio.selected || '',
+    email: inicio.selected || (accounts.length === 1 && hasRememberedPasskey ? accounts[0].email : ''),
     password: '',
   })
   const [code, setCode] = useState('')
