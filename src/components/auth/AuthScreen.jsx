@@ -11,6 +11,7 @@ import TurnstileCaptcha, { isTurnstileConfigured } from './TurnstileCaptcha.jsx'
 
 export default function AuthScreen() {
   const auth = useAuth()
+  const signInWithPasskey = auth.signInWithPasskey
   // Contas ja usadas neste navegador (IMPR-009). Lidas uma vez, no primeiro
   // render; como todo hook, ficam acima do early return de missingConfig.
   const [accounts, setAccounts] = useState(() => rememberedAccounts.list())
@@ -35,12 +36,24 @@ export default function AuthScreen() {
   // reenviar o mesmo so repete o erro. Bumpar o nonce remonta o widget (via key),
   // que zera o token no cleanup e emite um novo - sem esperar a expiracao.
   const [captchaNonce, setCaptchaNonce] = useState(0)
-  const resetCaptcha = () => { setCaptchaToken(null); setCaptchaNonce((n) => n + 1) }
+  const resetCaptcha = useCallback(() => { setCaptchaToken(null); setCaptchaNonce((n) => n + 1) }, [])
   // Conta com passkey abre so no cracha; qualquer falha do passkey revela a
   // senha (inclusive cancelar o Face ID/PIN), terminando como a tela de hoje.
   const [passkeyFailed, setPasskeyFailed] = useState(false)
   const passwordRef = useRef(null)
   const submittedMfaCode = useRef(null)
+  const [conditionalFocused, setConditionalFocused] = useState(false)
+  const [conditionalFocusId, setConditionalFocusId] = useState(0)
+  const conditionalStartedForFocus = useRef(null)
+  const conditionalPasskey = useRef(null)
+
+  const abortConditionalPasskey = useCallback(() => {
+    const attempt = conditionalPasskey.current
+    if (!attempt) return
+    window.clearTimeout(attempt.timeout)
+    attempt.controller.abort()
+    conditionalPasskey.current = null
+  }, [])
 
   const missingConfig = auth.configurationProblem
   const captchaEnabled = isTurnstileConfigured()
@@ -116,6 +129,57 @@ export default function AuthScreen() {
     if (passkeyFailed) passwordRef.current?.focus()
   }, [passkeyFailed])
 
+  useEffect(() => abortConditionalPasskey, [abortConditionalPasskey, mode, selected])
+
+  useEffect(() => {
+    if (
+      !conditionalFocused
+      || mode !== 'login'
+      || selected
+      || (captchaEnabled && !captchaToken)
+      || conditionalStartedForFocus.current === conditionalFocusId
+    ) return
+
+    conditionalStartedForFocus.current = conditionalFocusId
+    const controller = new AbortController()
+    const attempt = { controller, timeout: null }
+    conditionalPasskey.current = attempt
+    // O desafio do GoTrue expira em cinco minutos; encerra a mediação antes disso.
+    attempt.timeout = window.setTimeout(() => controller.abort(), 4 * 60 * 1000)
+    if (captchaEnabled) resetCaptcha() // token Turnstile é de uso único
+
+    void signInWithPasskey({
+      captchaToken,
+      mediation: 'conditional',
+      signal: controller.signal,
+    }).then((result) => {
+      if (controller.signal.aborted) return
+      if (result.error) {
+        if (result.name !== 'NotAllowedError') setError(result.error)
+        return
+      }
+      if (result.mfaRequired) {
+        slideTo('mfa')
+        setCode('')
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) setError('Não foi possível iniciar o acesso por chave de acesso.')
+    }).finally(() => {
+      window.clearTimeout(attempt.timeout)
+      if (conditionalPasskey.current === attempt) conditionalPasskey.current = null
+    })
+  }, [
+    captchaEnabled,
+    captchaToken,
+    conditionalFocusId,
+    conditionalFocused,
+    mode,
+    resetCaptcha,
+    selected,
+    signInWithPasskey,
+    slideTo,
+  ])
+
   const set = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))
 
   const resetMessages = () => {
@@ -124,6 +188,7 @@ export default function AuthScreen() {
   }
 
   const switchMode = (next) => {
+    abortConditionalPasskey()
     resetMessages()
     setCode('')
     submittedMfaCode.current = null
@@ -227,6 +292,7 @@ export default function AuthScreen() {
 
   const handleLogin = async (event) => {
     event.preventDefault()
+    abortConditionalPasskey()
     resetMessages()
     if (captchaEnabled && !captchaToken) {
       setError('Conclua a verificação anti-bot antes de entrar.')
@@ -449,11 +515,16 @@ export default function AuthScreen() {
                   id="login-email"
                   className="input"
                   type="email"
-                  autoComplete="email"
+                  autoComplete="username webauthn"
                   inputMode="email"
                   required
                   value={form.email}
                   onChange={set('email')}
+                  onFocus={() => {
+                    setConditionalFocused(true)
+                    setConditionalFocusId((id) => id + 1)
+                  }}
+                  onBlur={() => setConditionalFocused(false)}
                   placeholder="voce@exemplo.com"
                 />
               </div>
@@ -471,6 +542,7 @@ export default function AuthScreen() {
                   type="password"
                   autoComplete="current-password"
                   autoFocus={!!selected}
+                  onFocus={abortConditionalPasskey}
                   required
                   value={form.password}
                   onChange={set('password')}
